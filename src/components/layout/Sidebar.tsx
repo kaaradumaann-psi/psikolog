@@ -37,6 +37,8 @@ export function Sidebar({ user, open, onClose }: Props) {
           <div className="sidebar-label">Çalışma</div>
           {link('/dashboard', 'Dashboard', 'dashboard')}
           {link('/clients', 'Danışanlar', 'clients')}
+          {link('/appointments', 'Randevular', 'appointments')}
+          {link('/tasks', 'Görevler', 'tasks')}
         </div>
 
         <div className="sidebar-section">

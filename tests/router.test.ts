@@ -22,6 +22,14 @@ test('parseRoute handles trailing slash', () => {
   assert.deepEqual(parseRoute('/clients/123/'), { page: 'client', id: '123', tab: undefined });
 });
 
+test('parseRoute handles appointments and tasks', () => {
+  assert.deepEqual(parseRoute('/appointments'), { page: 'appointments' });
+  assert.deepEqual(parseRoute('/tasks'), { page: 'tasks' });
+  assert.deepEqual(parseRoute('/settings'), { page: 'settings' });
+  assert.deepEqual(parseRoute('/admin'), { page: 'admin' });
+  assert.deepEqual(parseRoute('/audit'), { page: 'audit' });
+});
+
 test('parseRoute returns not_found for unknown', () => {
   assert.deepEqual(parseRoute('/unknown/path'), { page: 'not_found' });
   assert.deepEqual(parseRoute('/clients/123/extra'), { page: 'not_found' });

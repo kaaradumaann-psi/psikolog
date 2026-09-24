@@ -28,6 +28,14 @@ test(
         create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
         grant usage on schema auth to authenticated, anon;
         grant execute on function auth.uid() to authenticated, anon;
+        create schema if not exists storage;
+        create table if not exists storage.buckets(id text primary key, name text, public boolean, file_size_limit int, allowed_mime_types text[]);
+        create table if not exists storage.objects(id uuid primary key default gen_random_uuid(), bucket_id text, name text, owner uuid, created_at timestamptz default now(), updated_at timestamptz default now(), last_accessed_at timestamptz default now(), metadata jsonb, path_tokens text[]);
+        create or replace function storage.foldername(name text) returns text[] language plpgsql as $$ begin return string_to_array(name, '/'); end; $$;
+        grant usage on schema storage to authenticated, anon;
+        grant all on storage.buckets to authenticated, anon;
+        grant all on storage.objects to authenticated, anon;
+        grant execute on function storage.foldername(text) to authenticated, anon;
       `);
 
       for (const f of readdirSync('supabase/migrations').sort()) {

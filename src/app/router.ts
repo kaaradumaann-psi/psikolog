@@ -10,6 +10,8 @@ export type AppRoute =
   | { page: 'clients' }
   | { page: 'client'; id: string; tab?: string }
   | { page: 'client_new' }
+  | { page: 'appointments' }
+  | { page: 'tasks' }
   | { page: 'settings' }
   | { page: 'admin' }
   | { page: 'audit' }
@@ -29,6 +31,8 @@ export function parseRoute(pathname: string, search: string = ''): AppRoute {
   if (path === '/login') return { page: 'login' };
   if (path === '/clients') return { page: 'clients' };
   if (path === '/clients/new') return { page: 'client_new' };
+  if (path === '/appointments') return { page: 'appointments' };
+  if (path === '/tasks') return { page: 'tasks' };
   if (path === '/settings') return { page: 'settings' };
   if (path === '/admin') return { page: 'admin' };
   if (path === '/audit') return { page: 'audit' };

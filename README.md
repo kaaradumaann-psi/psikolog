@@ -43,10 +43,10 @@ Login → Dashboard → Danışanlar → Danışan Dosyası → Anamnez → Gör
 - PHASE-03: Anamnez + Görüşmeler — DONE (anamneses 1-1 upsert, sessions date Istanbul validation, audit, RLS, RHF+Zod)
 - PHASE-04: Değerlendirmeler + Test Sonuçları — DONE (assessments, test_definitions system+org seed MMPI harici, test_administrations external_source mmpi, test_results jsonb summary only, no scoring copy)
 - PHASE-05: Raporlar + Şablonlar — DONE (report_templates system+org, reports block model, source_snapshot, revision/version_number, prepare_report trigger autosave 10min versioning, version_report security definer, report_versions immutable, psychologist_settings letterhead, templateEngine safe placeholders, reportDataAdapter, autosave 1.4s, ReportEditor + ReportPreview + PDF print, optimistic concurrency)
-- PHASE-06: Belgeler (PRIVATE BUCKET signed URL) + Notlar + Geçmiş — NEXT
-- PHASE-07: Randevular+Görevler+Ayarlar+Yönetim+Audit Log
-- PHASE-08: Güvenlik+Test+Responsive Audit + E2E Playwright critical path
-- PHASE-09: Polish + Deploy psikolog.halilkaraduman.com.tr
+- PHASE-06: Belgeler + Notlar + Geçmiş — DONE (PRIVATE BUCKET client-documents private, file_size 50MB, allowlist pdf/jpg/png/webp/doc/docx/txt, storage policies foldername org isolation, documents table file_path org/client/fileId-name, notes pinned, audit_logs extended, signed URL 1h, no public URL)
+- PHASE-07: Randevular+Görevler+Ayarlar+Yönetim+Audit — DONE (appointments title 180 start/end status, tasks todo/in_progress/done/cancelled priority, settings antet/logo/imza data URL 1MB, admin RPCs security definer is_admin check list/update profiles/orgs, audit_logs server-side, dashboard 6 stats)
+- PHASE-08: Güvenlik+Test+Responsive Audit — DONE (RLS her tablo, anon revoke, IDOR 21 subtests org isolation, storage private, audit trigger, revision concurrency, content limits, KVKK, responsive viewport/dvh/16px/44px/no !important, 69 tests PGlite, router appointments/tasks, build 693kB gzip 192kB)
+- PHASE-09: Polish + Deploy psikolog.halilkaraduman.com.tr — NEXT (Cloudflare Workers Static Assets, _headers CSP, E2E Playwright, rate limit KV)
 
 ## Supabase
 

@@ -11,6 +11,8 @@ import { LoginPage } from './routes/Login';
 import { DashboardPage } from './routes/Dashboard';
 import { ClientsPage, ClientNewPage, ClientFilePage } from './routes/Clients';
 import { AdminPage, SettingsPage, AuditPage, NotFoundPage } from './routes/Admin';
+import { AppointmentsPage } from './routes/Appointments';
+import { TasksPage } from './routes/Tasks';
 
 type AuthState =
   | { status: 'loading' }
@@ -157,6 +159,12 @@ export default function App() {
       break;
     case 'client':
       content = <ClientFilePage id={route.id} tab={route.tab} user={user} />;
+      break;
+    case 'appointments':
+      content = <AppointmentsPage />;
+      break;
+    case 'tasks':
+      content = <TasksPage />;
       break;
     case 'settings':
       content = <SettingsPage />;

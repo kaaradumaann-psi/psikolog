@@ -6,9 +6,16 @@
   "preview_urls": true,
   "assets": {
     "directory": "./dist",
-    "not_found_handling": "single-page-application"
+    "not_found_handling": "single-page-application",
+    "html_handling": "auto-trailing-slash"
   },
   "observability": {
     "enabled": true
-  }
+  },
+  "routes": [
+    {
+      "pattern": "psikolog.halilkaraduman.com.tr/*",
+      "custom_domain": true
+    }
+  ]
 }

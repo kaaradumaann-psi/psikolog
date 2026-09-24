@@ -57,3 +57,27 @@
     /* İleride dark mode — şimdilik light korunuyor, KVKK için sade */
   }
 }
+
+/* Accessibility — skip link */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: auto;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+.skip-link:focus {
+  left: 16px;
+  top: 16px;
+  width: auto;
+  height: auto;
+  padding: 8px 12px;
+  background: var(--bg);
+  border: 2px solid var(--accent);
+  border-radius: var(--radius-sm);
+  z-index: 9999;
+  font-size: 14px;
+  font-weight: 600;
+}
+

@@ -34,6 +34,8 @@ import { listAppointmentsByClient } from '../../features/appointments/appointmen
 import type { Appointment } from '../../features/appointments/appointmentTypes';
 import { listTasksByClient } from '../../features/tasks/taskApi';
 import type { Task } from '../../features/tasks/taskTypes';
+import { ExportSection } from '../../features/export/ExportSection';
+import { summarizeWithAI } from '../../features/ai/aiTypes';
 
 export function ClientsPage() {
   return (
@@ -291,6 +293,20 @@ export function ClientFilePage({ id, tab, user }: { id: string; tab?: string; us
                       {tasks.slice(0, 3).map((t) => <div key={t.id} style={{ fontSize: 12 }}><b>{t.title}</b> • {t.status} • {t.priority}{t.dueDate ? ` • ${t.dueDate}` : ''}</div>)}
                     </div>
                   )}
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                <ExportSection clientId={client.id} fileNumber={client.fileNumber} />
+                <div className="card">
+                  <h4 style={{ fontSize: 13, marginBottom: 8 }}>AI Özet Yardımcısı (stub, tanı koymaz)</h4>
+                  <p style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.5 }}>AI ilk sürümde zorunlu değil; eklenirse tanı koymayacak, test puanı üretmeyecek, norm uydurmayacak. Sadece uzmanın yazdığı metni özetler.</p>
+                  <button type="button" className="btn btn--ghost btn--sm" style={{ marginTop: 8 }} onClick={async () => {
+                    try {
+                      const result = await summarizeWithAI({ text: `Danışan ${client.firstName} ${client.lastName} ile yapılan görüşmede ${client.profession || 'meslek belirtilmedi'} ve ${client.education || 'eğitim'} bilgileri değerlendirildi.`, type: 'session_notes' });
+                      showToast(`AI özet: ${result.summary.slice(0, 80)}…`, 'success');
+                    } catch (e) { showToast((e as Error).message, 'error'); }
+                  }}>Özet Dene (stub)</button>
                 </div>
               </div>
             </div>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, lazy, Suspense } from 'react';
 import { useRoute, navigate } from './router';
 import type { AuthenticatedUser } from '../auth/authTypes';
 import { getSession, onAuthChange, signOut, userFromSession } from '../auth/supabaseAuth';
@@ -7,27 +7,40 @@ import { Header } from '../components/layout/Header';
 import { Sidebar } from '../components/layout/Sidebar';
 import { ConnectivityBanner } from '../components/layout/ConnectivityBanner';
 import { ToastStack } from '../components/ui/Toast';
-import { LoginPage } from './routes/Login';
-import { DashboardPage } from './routes/Dashboard';
-import { ClientsPage, ClientNewPage, ClientFilePage } from './routes/Clients';
-import { AdminPage, SettingsPage, AuditPage, NotFoundPage } from './routes/Admin';
-import { AppointmentsPage } from './routes/Appointments';
-import { TasksPage } from './routes/Tasks';
+
+// PHASE-09: lazy routes for performance — manualChunks vendor/supabase/zod/rhf
+const LoginPage = lazy(() => import('./routes/Login').then((m) => ({ default: m.LoginPage })));
+const DashboardPage = lazy(() => import('./routes/Dashboard').then((m) => ({ default: m.DashboardPage })));
+const ClientsPage = lazy(() => import('./routes/Clients').then((m) => ({ default: m.ClientsPage })));
+const ClientNewPage = lazy(() => import('./routes/Clients').then((m) => ({ default: m.ClientNewPage })));
+const ClientFilePage = lazy(() => import('./routes/Clients').then((m) => ({ default: m.ClientFilePage })));
+const AdminPage = lazy(() => import('./routes/Admin').then((m) => ({ default: m.AdminPage })));
+const SettingsPage = lazy(() => import('./routes/Admin').then((m) => ({ default: m.SettingsPage })));
+const AuditPage = lazy(() => import('./routes/Admin').then((m) => ({ default: m.AuditPage })));
+const NotFoundPage = lazy(() => import('./routes/Admin').then((m) => ({ default: m.NotFoundPage })));
+const AppointmentsPage = lazy(() => import('./routes/Appointments').then((m) => ({ default: m.AppointmentsPage })));
+const TasksPage = lazy(() => import('./routes/Tasks').then((m) => ({ default: m.TasksPage })));
 
 type AuthState =
   | { status: 'loading' }
   | { status: 'signed_out' }
   | { status: 'signed_in'; user: AuthenticatedUser };
 
+function PageLoader() {
+  return (
+    <div className="card" style={{ padding: 24, textAlign: 'center', color: 'var(--muted)' }}>
+      Yükleniyor…
+    </div>
+  );
+}
+
 export default function App() {
   const route = useRoute();
   const [auth, setAuth] = useState<AuthState>({ status: 'loading' });
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // Session hydration — MMPI AuthGate pattern: race protection
   useEffect(() => {
     let cancelled = false;
-
     async function hydrate() {
       if (!supabaseConfig.configured) {
         setAuth({ status: 'signed_out' });
@@ -42,21 +55,14 @@ export default function App() {
         }
         const user = await userFromSession(session);
         if (cancelled) return;
-        if (!user) {
-          setAuth({ status: 'signed_out' });
-        } else {
-          setAuth({ status: 'signed_in', user });
-        }
+        if (!user) setAuth({ status: 'signed_out' });
+        else setAuth({ status: 'signed_in', user });
       } catch {
         if (!cancelled) setAuth({ status: 'signed_out' });
       }
     }
-
     hydrate();
-
     if (!supabaseConfig.configured) return;
-
-    // onAuthChange — new login vs existing session
     const { data: sub } = onAuthChange(async (_event, session) => {
       if (cancelled) return;
       try {
@@ -68,7 +74,6 @@ export default function App() {
         if (!cancelled) setAuth({ status: 'signed_out' });
       }
     });
-
     return () => {
       cancelled = true;
       sub.subscription.unsubscribe();
@@ -84,14 +89,11 @@ export default function App() {
     }
   };
 
-  // Loading
   if (auth.status === 'loading') {
     return (
       <div className="auth-page">
         <main className="auth-shell">
-          <div className="kicker">
-            <span className="kicker-dot" /> Psikolog Platformu
-          </div>
+          <div className="kicker"><span className="kicker-dot" /> Psikolog Platformu</div>
           <h1 style={{ marginTop: 16 }}>Yükleniyor…</h1>
           <p className="auth-sub">Oturum doğrulanıyor</p>
         </main>
@@ -100,35 +102,25 @@ export default function App() {
     );
   }
 
-  // Signed out → login (except not_found)
   if (auth.status === 'signed_out') {
-    if (route.page === 'not_found') return <NotFoundPage />;
+    if (route.page === 'not_found') return <Suspense fallback={<PageLoader />}><NotFoundPage /></Suspense>;
     return (
       <>
-        <LoginPage
-          onSuccess={() => {
-            navigate('/dashboard', { replace: true });
-          }}
-        />
+        <Suspense fallback={<PageLoader />}>
+          <LoginPage onSuccess={() => navigate('/dashboard', { replace: true })} />
+        </Suspense>
         <ToastStack />
       </>
     );
   }
 
-  // Signed in
   const user = auth.user;
 
-  // Role-based redirect: login page → dashboard
   if (route.page === 'login') {
     navigate('/dashboard', { replace: true });
   }
 
-  // Admin only pages
-  if (
-    (route.page === 'admin' || route.page === 'audit') &&
-    user.role !== 'ADMIN' &&
-    user.role !== 'ORG_ADMIN'
-  ) {
+  if ((route.page === 'admin' || route.page === 'audit') && user.role !== 'ADMIN' && user.role !== 'ORG_ADMIN') {
     return (
       <div className="auth-page">
         <main className="auth-shell">
@@ -136,9 +128,7 @@ export default function App() {
             <div className="empty-state-icon">!</div>
             <h4>Erişim Reddedildi</h4>
             <p>Bu sayfaya sadece Admin erişebilir.</p>
-            <button type="button" className="btn btn--primary btn--sm" onClick={() => navigate('/dashboard')}>
-              Dashboard'a Dön
-            </button>
+            <button type="button" className="btn btn--primary btn--sm" onClick={() => navigate('/dashboard')}>Dashboard'a Dön</button>
           </div>
         </main>
         <ToastStack />
@@ -188,26 +178,19 @@ export default function App() {
       <ConnectivityBanner />
       <div className="app-shell">
         <Sidebar user={user} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-        <main className="main">
-          <div className="main-inner">{content}</div>
+        <main className="main" id="main-content" tabIndex={-1}>
+          <div className="main-inner">
+            <Suspense fallback={<PageLoader />}>{content}</Suspense>
+          </div>
         </main>
       </div>
 
-      {/* Mobile sidebar toggle — visible ≤1024px via responsive.css */}
       <button
         type="button"
         className="btn btn--ghost"
-        style={{
-          position: 'fixed',
-          bottom: 16,
-          right: 16,
-          zIndex: 19,
-          borderRadius: 'var(--radius-pill)',
-          boxShadow: 'var(--shadow-md)',
-          display: 'none', // will be shown via CSS if needed, but keep for now
-        }}
+        style={{ position: 'fixed', bottom: 16, right: 16, zIndex: 19, borderRadius: 'var(--radius-pill)', boxShadow: 'var(--shadow-md)', display: 'none' }}
         onClick={() => setSidebarOpen((v) => !v)}
-        aria-label="Menü"
+        aria-label="Menüyü aç/kapat"
       >
         ☰
       </button>

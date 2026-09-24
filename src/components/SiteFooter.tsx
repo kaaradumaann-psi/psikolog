@@ -20,7 +20,7 @@ export function SiteFooter({ onNewEntry, compact }: SiteFooterProps) {
       <div className="site-footer-inner">
         <div className="site-footer-left">
           <span className="site-footer-mark" aria-hidden="true">
-            <BrandMark size={14} simplified />
+            <BrandMark size={14} />
           </span>
           <span className="site-footer-copyright">
             © {COPYRIGHT_YEAR} <b>{COPYRIGHT_HOLDER}</b>

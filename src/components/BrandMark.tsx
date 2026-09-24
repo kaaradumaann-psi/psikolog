@@ -4,27 +4,20 @@ import type { CSSProperties } from 'react';
  * Kurumsal işaret (mark) — danışanı anımsatan tek bir figür.
  *
  * Sözlük:
- *   • Baş + omuz figürü  → masada karşı karşıya oturulan kişi, yani **danışan**.
- *   • Gövde/omuz yayı    → görüşmenin taşıyıcı zemini (klinik çerçeve).
- *   • İç çekirdek        → danışanın iç dünyası; ölçek ve formülasyonun
- *                          görünmeyeni görünür kılma amacı. Tek vurgu rengi.
+ *   • Baş           → masada karşı karşıya oturulan kişi, yani **danışan**.
+ *   • Omuz/gövde yayı → görüşmenin taşıyıcı zemini (klinik çerçeve).
  *
- * Marka işareti koyu (mürekkep) zemin üzerinde `currentColor` ile çizilir;
- * zemin rengi CSS katmanından (`--forest`) gelir. Bu yüzden aynı bileşen
- * yan panel, üst şerit, giriş ekranı, bilgi sayfası ve alt bilgide birebir
- * aynı görünür.
- *
- * `simplified` küçük boyutlarda (≤18 px) kullanılır: iç çekirdek o boyutta
- * lekeye dönüşeceği için baş tek parça çizilir.
+ * İşaret tek renklidir ve dışarıdan renk almaz: `currentColor` ile çizilir,
+ * böylece yan panel, üst şerit, giriş ekranı, bilgi sayfası ve alt bilgide
+ * birebir aynı görünür. Zemin rengi CSS katmanından gelir (`--forest`,
+ * mürekkep `#0d0d0d`).
  */
 export function BrandMark({
   size = 24,
-  simplified = false,
   className,
   style,
 }: {
   size?: number;
-  simplified?: boolean;
   className?: string;
   style?: CSSProperties;
 }) {
@@ -45,7 +38,6 @@ export function BrandMark({
     >
       <path d={headPath} fill="currentColor" />
       <path d={shellPath} fill="currentColor" />
-      {!simplified && <circle cx="16" cy="11.9" r="2.05" fill="var(--primary, #0a84ff)" />}
     </svg>
   );
 }

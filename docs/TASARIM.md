@@ -12,18 +12,18 @@ Bu belge klinik çalışma alanının **ekran tasarımı** kararlarını özetle
 | Danışan ve randevu tablolarının işlemleri telefonda yana kaydırma gerektiriyordu. | `data-mobile-cards` ile alan adı taşıyan, işlemleri altta erişilebilir kayıt kartları. Danışan adı artık klavye ile açılabilen gerçek bir düğme. |
 | Klinik formlarının açılır pencerelerinde semantik diyalog ve odak yönetimi eksikti. | Ortak `ClinicalDialog`: `aria-modal`, başlık ilişkisi, Escape, odak döngüsü/geri dönüş, arka plan kaydırma kilidi ve kaydırılabilir form gövdesi. |
 | Yerel verinin nerede durduğu gezinme sırasında görünmüyordu. | Yan panelde tarayıcıda saklama/şifrelenmeme bilgisi ve yedek bağlantısı. Bulut oturumu ile yerel kayıt ayrımı açık. |
-| Marka işareti “HK” monogramıydı; psikoloji pratiğini anlatmıyordu ve favicon hâlâ kullanılmayan yeşil palette (`#205c48`) çizilmiş, “MMPI kamerası” gibi bir tarama çerçevesini andırıyordu. | İşaret **danışan figürüne** dönüştü: baş + omuz ve iç dünyayı temsil eden tek vurgu çekirdeği (`--primary`). Favicon aynı geometriden üretilir; tarayıcı sekmesi, iOS ana ekran simgesi ve rapor antedi tek kaynaktan gelir. |
+| Marka işareti “HK” monogramıydı; psikoloji pratiğini anlatmıyordu ve favicon hâlâ kullanılmayan yeşil palette (`#205c48`) çizilmiş, “MMPI kamerası” gibi bir tarama çerçevesini andırıyordu. | İşaret **danışan figürüne** dönüştü: baş + omuz, tek renk. Favicon aynı geometriden üretilir; tarayıcı sekmesi, iOS ana ekran simgesi ve rapor antedi tek kaynaktan gelir. |
 | Randevu formunda ücret/ödeme alanı yoktu, tabloda ödeme kolonu yoktu; buna karşılık `pending` varsayılanı yüzünden **henüz yapılmamış** görüşmeler için “Ücret bekliyor” uyarısı çıkıyordu. | Formda “Seans Ücreti” ve “Ödeme Durumu”, tabloda/kartta Ödeme kolonu. Ücret uyarısı yalnızca görüşme **tamamlandığında veya danışan gelmediğinde** ve ödeme hâlâ beklemedeyse doğar; gün tahtasında rozet, “takip gerekiyor” panelinde tek satır. |
 
 ## Marka işareti
 
 İşaret tek bir geometriden gelir ve `src/components/BrandMark.tsx` içinde tanımlıdır; yan panel, üst şerit, giriş ekranı, bilgi sayfası ve alt bilgi aynı bileşeni kullanır. Eskiden her bileşende kopyalanmış “tarama köşeleri + dört nokta” çizimi kaldırıldı.
 
-- **Baş + omuz figürü:** masada karşı karşıya oturulan kişi, yani danışan.
-- **Gövde yayı:** görüşmenin taşıyıcı zemini.
-- **Tek vurgu çekirdeği:** danışanın iç dünyası — ölçek ve formülasyonun görünmeyeni görünür kılma amacı. Markanın tek renk dışı öğesidir.
+- **Baş:** masada karşı karşıya oturulan kişi, yani danışan.
+- **Omuz/gövde yayı:** görüşmenin taşıyıcı zemini.
+- **Zemin çizgisi:** figürü taşıyan ince taban.
 
-Bileşen `currentColor` ile çizilir; zemin rengi CSS katmanından (`--forest`, mürekkep `#0d0d0d`) gelir. Küçük boyutlarda (≤18 px, alt bilgi) `simplified` kullanılır: çekirdek o boyutta lekeye dönüşeceği için baş tek parça çizilir.
+İşaret **tek renklidir**: `currentColor` ile çizilir, zemin rengi CSS katmanından (`--forest`, mürekkep `#0d0d0d`) gelir. Başın içindeki mavi vurgu çekirdeği kaldırıldı; marka artık hiçbir ikinci renk taşımıyor, bu yüzden boyuta bağlı sadeleştirme (`simplified`) seçeneği de gereksiz kaldı — aynı geometri 16 px'te de 320 px'te de kullanılır.
 
 Yayınlanan marka dosyaları `public/` altındadır ve `favicon.svg` kaynaktır:
 
@@ -54,7 +54,7 @@ Yayınlanan marka dosyaları `public/` altındadır ve `favicon.svg` kaynaktır:
 4. Bir klinik diyalogu klavyeyle açıp kapatın; odak tetikleyiciye dönmeli. Formun altındaki işlem düğmeleri dar ekran yüksekliğinde görünür olmalı.
 5. Ölçek geçmişinde kısa tarama kaydını, güvenlik uyarısını ve raporun A4 yazdırma önizlemesini kontrol edin. Ölçek puanı tanı değildir.
 6. Randevuyu planlanmış olarak kaydedin: gün tahtasında ödeme uyarısı **çıkmamalı**. “Görüşmeyi tamamla” dedikten sonra ödeme hâlâ beklemedeyse kart üzerinde “Ödeme bekliyor · 1.500 ₺” rozeti ve “takip gerekiyor” panelinde tek satır görünmeli.
-7. 16 px ve 32 px favicon'u tarayıcı sekmesinde kontrol edin; figür ve vurgu çekirdeği ayırt edilebilir olmalı.
+7. 16 px ve 32 px favicon'u tarayıcı sekmesinde kontrol edin; kişi figürü tek renk olarak ayırt edilebilir olmalı.
 
 ## Doğrulama (24 Eylül 2026)
 

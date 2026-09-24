@@ -14,7 +14,7 @@ Randevu, görev, not, belge, antet ve JSON yedek aynı alanda. Supabase yoksa uy
 
 ## Marka
 
-Logo danışanı anımsatır: baş + omuz figürü ve danışanın iç dünyasını temsil eden tek vurgu çekirdeği. İşaret `src/components/BrandMark.tsx` içinde tek kaynaktan gelir; favicon, iOS simgesi ve rapor antedi aynı geometriden türetilir. Kaynak dosya `public/favicon.svg`'dir.
+Logo danışanı anımsatır: koyu zemin üzerinde tek renkli baş + omuz figürü. İşaret `src/components/BrandMark.tsx` içinde tek kaynaktan gelir; favicon, iOS simgesi ve rapor antedi aynı geometriden türetilir. Kaynak dosya `public/favicon.svg`'dir.
 
 ## Ücret ve ödeme
 

@@ -1,0 +1,40 @@
+{
+  "name": "psikolog",
+  "version": "2.2.0",
+  "description": "Halil Karaduman - Uzman Klinik Psikolog Çalışma Alanı | MMPI-566 OMR, Beck, SCL-90-R, SOAP Seans ve Vaka Yönetimi",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "build": "tsc --noEmit && node scripts/build.mjs",
+    "deploy": "npm run build && npx wrangler deploy",
+    "pdf": "tsx scripts/generate-pdf.ts",
+    "verify:pdf": "tsx scripts/verify-pdf.ts",
+    "diagnose:supabase": "node scripts/diagnose-supabase.mjs"
+  },
+  "dependencies": {
+    "@noble/hashes": "2.4.0",
+    "@supabase/supabase-js": "^2.116.0",
+    "jsqr": "1.4.0",
+    "pdfjs-dist": "6.3.289",
+    "qrcode": "1.5.4",
+    "react": "19.2.0",
+    "react-dom": "19.2.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "@napi-rs/canvas": "^1.0.9",
+    "@types/qrcode": "1.5.6",
+    "@types/react": "19.2.2",
+    "@types/react-dom": "19.2.2",
+    "esbuild": "0.25.12",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3",
+    "vite": "7.3.6"
+  }
+}

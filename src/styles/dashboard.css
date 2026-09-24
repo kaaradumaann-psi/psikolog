@@ -1,0 +1,60 @@
+/* Dashboard — minimal, token/hairline uyumlu, inline style yerine sınıf tabanlı */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+}
+
+.dashboard-card {
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.dashboard-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.dashboard-card-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.dashboard-card-value {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.dashboard-card-hint {
+  font-size: 11px;
+}
+
+.dashboard-card-action {
+  margin-top: 0.35rem;
+  align-self: flex-start;
+}
+
+.dashboard-actions {
+  margin-top: 0.6rem;
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.dashboard-loading {
+  padding: 0.75rem;
+}
+
+.dashboard-container {
+  margin-bottom: 1rem;
+}
+
+.dashboard-wrapper {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 0.75rem 1rem 0;
+}

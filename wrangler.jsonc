@@ -1,0 +1,36 @@
+{
+  // Cloudflare Workers statik varlık yapılandırması.
+  //
+  // Bu dosya depoda olduğu sürece `wrangler deploy` doğrudan bu ayarları kullanır.
+  // Dosya yoksa wrangler, Vite projesini otomatik yapılandırmaya çalışır
+  // (`@cloudflare/vite-plugin` ekleyip vite.config.ts'i yeniden yazar) ve bu depo
+  // Vite ile derlenmediği için "Cannot modify Vite config" hatasıyla durur.
+  "$schema": "https://unpkg.com/wrangler@4/config-schema.json",
+  "name": "mmpi",
+  "compatibility_date": "2026-09-18",
+  // Aşağıdaki üç ayar Cloudflare panelindeki mevcut production durumunu yansıtır.
+  // Bunlar yazılmazsa `wrangler deploy` uzak yapılandırmayı yerel dosyayla ezer:
+  // workers.dev adresi açılır, custom domain (mmpi.halilkaraduman.com.tr) düşer.
+  // Farklı bir hesaba/zone'a yayınlıyorsanız `routes` bloğunu kendi alan adınızla
+  // güncelleyin ya da silin.
+  "routes": [
+    {
+      "pattern": "mmpi.halilkaraduman.com.tr",
+      "custom_domain": true
+    }
+  ],
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": {
+    "enabled": true
+  },
+  "assets": {
+    // `npm run build` çıktısı: dist/index.html (SPA tek dosya).
+    "directory": "./dist",
+    // Pathname tabanlı History API router'ı için SPA fallback.
+    // Bu ayar, `_redirects` içindeki `/*  /index.html  200` kuralının yerini alır:
+    // Workers API'si o catch-all kuralını "sonsuz döngü" sayıp reddeder
+    // (code 100324), bu yüzden build o dosyayı üretmez.
+    "not_found_handling": "single-page-application"
+  }
+}

@@ -1,0 +1,44 @@
+.form-page {
+  display: none;
+  position: relative;
+  width: var(--paper-width);
+  height: var(--paper-height);
+  background: #fff;
+  color: #000;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 9pt;
+  font-variant-numeric: tabular-nums;
+  text-rendering: auto;
+  -webkit-font-smoothing: auto;
+  flex: 0 0 auto;
+}
+.form-page.is-active { display: block; }
+.registration-marks { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.page-qr { position: absolute; z-index: 1; }
+.paper-header { position: absolute; inset: 0; pointer-events: none; }
+/* Every header line is one millimetre box produced by src/form/headerLayout.ts. Nothing in the
+   header is allowed to flow or wrap: the previous flow layout pushed the instruction block under
+   the answer grid, and the browser and the PDF disagreed about where each line sat. */
+.paper-line { position: absolute; white-space: nowrap; letter-spacing: 0; font-weight: 400; color: #000; }
+.paper-line > span { line-height: inherit; }
+.paper-rule { position: absolute; background: #000; }
+.paper-example { position: absolute; display: flex; align-items: flex-start; white-space: nowrap; letter-spacing: 0; color: #000; }
+.paper-example-disc { border-radius: 50%; background: #000; flex: 0 0 auto; }
+.answer-columns { position: absolute; left: var(--content-left); top: var(--grid-top); width: var(--content-width); display: grid; grid-template-columns: repeat(var(--column-count), minmax(0, 1fr)); gap: var(--column-gap); }
+.answer-column { position: relative; min-width: 0; }
+.answer-column:not(:last-child)::after { content: ''; position: absolute; top: 0; bottom: 0; right: calc(var(--column-gap) / -2); width: .15mm; background: #999; }
+.column-heading { position: relative; height: var(--grid-header); border-top: .3mm solid #000; border-bottom: .2mm solid #000; font-size: 8pt; font-weight: 700; }
+.column-heading .item-number { line-height: var(--grid-header); }
+.choice-heading { position: absolute; left: var(--choice-x); transform: translateX(-50%); line-height: var(--grid-header); }
+.column-rows { height: var(--column-height); }
+.answer-row { position: relative; height: var(--row-pitch); }
+.answer-row:nth-child(8n) { border-bottom: .13mm solid #999; }
+.answer-row:last-of-type, .answer-row:has(+ .column-end) { border-bottom: .2mm solid #000; }
+.item-number { position: absolute; left: 2mm; width: 10mm; text-align: right; line-height: var(--row-pitch); font-size: 9pt; }
+.answer-bubble { position: absolute; left: calc(var(--choice-x) - var(--bubble-diameter) / 2); top: calc((var(--row-pitch) - var(--bubble-diameter)) / 2); width: var(--bubble-diameter); height: var(--bubble-diameter); border: .3mm solid #000; border-radius: 50%; }
+.column-end { text-align: center; padding-top: 6mm; font-size: 7pt; line-height: 1.8; }
+.column-end > span { font-size: 6pt; letter-spacing: 1pt; font-weight: 700; }
+.paper-footer { position: absolute; top: 277mm; left: var(--content-left); width: var(--content-width); border-top: .25mm solid #000; padding-top: 2mm; display: flex; justify-content: space-between; font-size: 6.5pt; line-height: 1.5; }
+.paper-footer > div { display: flex; flex-direction: column; }
+.paper-footer > div:last-child { text-align: right; }
+.paper-footer strong { font-weight: 400; }

@@ -1,0 +1,12 @@
+project_id = "lgtahyruhyfozhueawft"
+
+[auth]
+enable_signup = false
+
+[functions.admin-users]
+verify_jwt = true
+
+# AI karar desteği: JWT kapıda da doğrulanır; fonksiyon ayrıca profil rolünü,
+# aktiflik durumunu ve (kayıt modunda) kayıt sahipliğini yeniden doğrular.
+[functions.ai-interpretation]
+verify_jwt = true

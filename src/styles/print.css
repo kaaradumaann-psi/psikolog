@@ -1,0 +1,46 @@
+@page { size: A4 portrait; margin: 0; }
+
+@media print {
+  html, body, #root {
+    width: 210mm;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff;
+    color: #000;
+  }
+  .app-header, .form-prep-hero, .form-sidebar-panel, .print-guide-card,
+  .preview-toolbar, .preview-bottom, .document-meta-strip, .print-status-note,
+  .workspace-tabs, .scanner-layout-container, .hero-cta-group, .is-screen-hidden {
+    display: none !important;
+  }
+  .app-main, .form-workspace-grid, .form-preview-column, .preview-panel, .paper-stage,
+  .scaled-paper, .paper-stack {
+    display: block !important;
+    position: static !important;
+    width: 210mm !important;
+    height: auto !important;
+    max-width: none !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+    transform: none !important;
+    background: #fff !important;
+  }
+  .form-page {
+    display: block !important;
+    width: 210mm;
+    height: 297mm;
+    margin: 0;
+    padding: 0;
+    break-inside: avoid;
+    break-after: page;
+    page-break-after: always;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  .form-page:last-child { break-after: auto; page-break-after: auto; }
+}

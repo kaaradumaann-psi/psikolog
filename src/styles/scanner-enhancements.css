@@ -1,0 +1,365 @@
+/* ==========================================================================
+   Scanner enhancements: live camera HUD, image enhancer, manual corners.
+   ========================================================================== */
+
+.scan-camera-stage {
+  position: relative;
+}
+
+.scan-camera-overlay {
+  /* Existing overlay — keep behaviour, leave room for the HUD above it. */
+  pointer-events: none;
+}
+
+.scan-camera-hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.scan-camera-hud-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.scan-camera-hud-frame .page-frame {
+  fill: rgba(33, 96, 254, 0.08);
+  stroke: var(--primary, #2160fe);
+  stroke-width: 3;
+  stroke-linejoin: round;
+  transition: stroke 120ms ease, fill 120ms ease;
+}
+
+.scan-camera-hud-frame .page-frame.is-warn {
+  fill: rgba(217, 119, 6, 0.10);
+  stroke: #d97706;
+}
+
+.scan-camera-hud-frame .page-frame.is-info {
+  fill: rgba(100, 116, 139, 0.06);
+  stroke: #64748b;
+  stroke-dasharray: 6 6;
+}
+
+.scan-camera-hud-tag {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: rgba(15, 23, 42, 0.78);
+  color: #f8fafc;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 999px;
+  backdrop-filter: blur(6px);
+}
+
+.scan-camera-hud-tag .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+
+.scan-camera-hud-tag.is-ok .dot { background: #10b981; }
+.scan-camera-hud-tag.is-warn .dot { background: #f59e0b; }
+.scan-camera-hud-tag.is-info .dot { background: #94a3b8; }
+
+/* Image Enhancer Pills ----------------------------------------------------- */
+
+.scan-enhancer {
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: var(--radius-md, 8px);
+}
+
+.scan-enhancer-header {
+  margin-bottom: 12px;
+}
+
+.scan-enhancer-hint {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  color: var(--slate-600, #475569);
+}
+
+.scan-enhancer-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.scan-enhancer-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--slate-700, #334155);
+  background: var(--slate-100, #f1f5f9);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.scan-enhancer-pill:hover {
+  background: var(--slate-200, #e2e8f0);
+}
+
+.scan-enhancer-pill.is-active {
+  background: var(--primary-tint, #eef3ff);
+  color: var(--primary, #2160fe);
+  border-color: var(--primary-border, #b9caff);
+}
+
+/* Uzun etiketli piller (ör. "OMR için optimize") dar kolonda satıra sığmayıp taşmasın. */
+.scan-enhancer-pill span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 148px;
+}
+
+.scan-enhancer-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--slate-500, #64748b);
+}
+
+.scan-enhancer-note svg {
+  flex: none;
+}
+
+/* Manual Corner Editor ----------------------------------------------------- */
+
+.manual-corner-editor {
+  margin-top: 18px;
+  padding: 16px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: var(--radius-md, 8px);
+}
+
+.manual-corner-editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.manual-corner-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.manual-corner-canvas {
+  width: 100%;
+  height: auto;
+  max-height: 60vh;
+  background: #0f172a;
+  border-radius: var(--radius-md, 8px);
+  display: block;
+  touch-action: none;
+}
+
+.manual-corner-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+@media (min-width: 900px) {
+  .manual-corner-grid {
+    grid-template-columns: 2fr 1fr;
+  }
+}
+
+.manual-corner-preview {
+  background: var(--slate-50, #f8fafc);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: var(--radius-md, 8px);
+  padding: 12px;
+}
+
+.manual-corner-preview-header {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--slate-600, #475569);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.manual-corner-preview-canvas {
+  display: block;
+  background: #fff;
+  border-radius: 4px;
+  width: 280px;
+  height: auto;
+}
+
+.manual-corner-polygon {
+  fill: rgba(33, 96, 254, 0.10);
+  stroke: #2160fe;
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+}
+
+.manual-corner-polygon.is-active {
+  stroke-dasharray: none;
+  fill: rgba(33, 96, 254, 0.18);
+}
+
+.manual-corner-handle {
+  fill: #2160fe;
+  stroke: #fff;
+  stroke-width: 2;
+  cursor: grab;
+  transition: r 80ms ease;
+}
+
+.manual-corner-handle.is-active {
+  cursor: grabbing;
+  fill: #f59e0b;
+}
+
+/* Comparison toggle -------------------------------------------------------- */
+
+.scan-comparison {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.scan-comparison[data-layout="side"] {
+  grid-template-columns: 1fr 1fr;
+}
+
+.scan-comparison[data-layout="stacked"] {
+  grid-template-columns: 1fr;
+}
+
+.scan-comparison-figure {
+  margin: 0;
+  background: var(--slate-50, #f8fafc);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: var(--radius-md, 8px);
+  overflow: hidden;
+}
+
+.scan-comparison-figure figcaption {
+  padding: 8px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--slate-600, #475569);
+  background: #fff;
+  border-bottom: 1px solid var(--border, #e2e8f0);
+}
+
+.scan-comparison-figure img {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: #0f172a;
+}
+
+.scan-comparison-toggle {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 8px;
+}
+
+.scan-comparison-toggle button {
+  padding: 4px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  border-radius: 999px;
+  border: 1px solid var(--border, #e2e8f0);
+  background: #fff;
+  color: var(--slate-600, #475569);
+  cursor: pointer;
+}
+
+.scan-comparison-toggle button[aria-pressed="true"] {
+  background: var(--primary-tint, #eef3ff);
+  color: var(--primary, #2160fe);
+  border-color: var(--primary-border, #b9caff);
+}
+
+/* İnceleme bekleyen cevaplar: tek adımda güvenli varsayılan çözümü (otomatik çözüm).
+   Uzun metin içeren uyarı olduğu için satır içi akış korunur; eylem sağda kalır. */
+.auto-resolve-banner {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.auto-resolve-body {
+  min-width: 0;
+  /* Inline flex:1 (eski hâli) dar ekranda metni 85px'e sıkıştırıp taşıyordu;
+     240px taban, satır daraldığında gövdeyi kendi satırına sarar. */
+  flex: 1 1 240px;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.auto-resolve-body strong {
+  font-weight: 600;
+}
+
+@media (max-width: 720px) {
+  .scan-comparison[data-layout="side"] {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Stage 9 — mobil ManualReview polish: 44px dokunma alanı + büyütme */
+@media (max-width: 720px) {
+  .item-select-chip {
+    min-height: 44px;
+    padding: 10px 4px;
+  }
+  .choice-action-btn {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 10px 14px;
+  }
+  .review-filters-bar .filter-group select,
+  .review-filters-bar .filter-group input {
+    min-height: 44px;
+  }
+  .scan-crop-image canvas {
+    touch-action: pinch-zoom;
+  }
+}
+/* Büyütme: kırpıntı üzerine dokununca yakınlaştırma (CSS-only hover/active) */
+.scan-crop-image canvas {
+  transition: transform 180ms ease;
+  transform-origin: center center;
+}
+@media (hover: hover) {
+  .scan-crop-image:hover canvas {
+    transform: scale(1.6);
+    cursor: zoom-in;
+  }
+}
+@media (max-width: 720px) {
+  .scan-crop-image:active canvas {
+    transform: scale(1.8);
+  }
+}

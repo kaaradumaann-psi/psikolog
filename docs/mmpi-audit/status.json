@@ -1,0 +1,62 @@
+{
+  "phase": 20,
+  "status": "PRODUCTION_VALIDATION_PHASE_18_19_20",
+  "clinicalLogicChanged": false,
+  "clinicalChanges": {
+    "kPlusProfile": "IMPLEMENTED (Mark & Seeman 1963, s.57 · Şekil 16 · MISSING-KPLUS-001)",
+    "kRelatedPatterns": "IMPLEMENTED (Ma:9_highK, Ma:9_lowK, s.152-153 · CONFLICT-039)",
+    "lBorders": "UNCHANGED (L_T_BANDS s.33 continuous mapping, CONFLICT-003)",
+    "fBorders": "UNCHANGED (VALIDITY_CUTOFFS & F_RAW_BANDS, CONFLICT-004)",
+    "lRawBands": "UNCHANGED (L_RAW_BANDS preserved in evaluateValidity)",
+    "kRawBands": "UNCHANGED (K_RAW_BANDS preserved in evaluateValidity)",
+    "wigginsSoc": "UNCHANGED (27 items per Ek 9c, DECISION-024 · CONFLICT-021)",
+    "ocrOnlyConditionalRules": "UNCHANGED (conditions intact)",
+    "scoringEngineVersion": "2.1.0"
+  },
+  "generatedAt": "2026-09-23T00:06:07.064Z",
+  "tests": {
+    "suites": 106,
+    "passed": 610,
+    "failed": 0,
+    "total": 610
+  },
+  "codes": {
+    "canonical": 45,
+    "block": 151,
+    "ownBodies": 76,
+    "aliases": 75
+  },
+  "conflicts": {
+    "headings": 68,
+    "uniqueIds": 43,
+    "duplicateIds": [
+      "CONFLICT-016",
+      "CONFLICT-019",
+      "CONFLICT-020",
+      "CONFLICT-024",
+      "CONFLICT-025",
+      "CONFLICT-026",
+      "CONFLICT-027",
+      "CONFLICT-030",
+      "CONFLICT-036"
+    ]
+  },
+  "decisions": {
+    "headings": 35,
+    "uniqueIds": 34,
+    "duplicateIds": [
+      "DECISION-028"
+    ]
+  },
+  "audit": {
+    "fileCount": 20
+  },
+  "source": {
+    "sourceIndexPresent": true,
+    "sourceFactsPresent": true,
+    "kaynakDenetimiPresent": true,
+    "sourcePdfPresent": true
+  },
+  "build": "PASS",
+  "typecheck": "PASS"
+}

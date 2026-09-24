@@ -12,6 +12,16 @@ Uzman psikoloğun günü için çalışma alanı: bugünkü seans hazırlığı,
 
 Randevu, görev, not, belge, antet ve JSON yedek aynı alanda. Supabase yoksa uygulama boş yerel çalışma alanı olarak açılır. Örnek danışan yüklenmez.
 
+## Marka
+
+Logo danışanı anımsatır: baş + omuz figürü ve danışanın iç dünyasını temsil eden tek vurgu çekirdeği. İşaret `src/components/BrandMark.tsx` içinde tek kaynaktan gelir; favicon, iOS simgesi ve rapor antedi aynı geometriden türetilir. Kaynak dosya `public/favicon.svg`'dir.
+
+## Ücret ve ödeme
+
+Randevu formunda seans ücreti ve ödeme durumu girilir. Randevu tablosu/kartları bir **Ödeme** alanı gösterir.
+
+Ödeme durumu varsayılan olarak “henüz ödenmedi” açılır; bu, **henüz yapılmamış** bir görüşme için uyarı üretmez. Ücret takibi yalnızca görüşme **tamamlandığında** veya danışan **gelmediğinde** (gelmeyen seans da ücrete tabidir) ve ödeme hâlâ beklemedeyse doğar: gün tahtasındaki kartta “Ödeme bekliyor” rozeti, ana sayfadaki “takip gerekiyor” panelinde tek satır.
+
 Arayüz değerlendirmesi, tasarım kararları ve dar ekran kontrol listesi: [Tasarım değerlendirmesi](docs/TASARIM.md).
 
 ## Çalıştırma

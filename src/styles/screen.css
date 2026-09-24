@@ -29,6 +29,13 @@
   --primary-tint: #f1f7ff;
   --primary-border: #d6e7ff;
 
+  /* Dolgu eylem yüzeyleri ayrı token kullanır. Vurgu mavisi (#0a84ff) beyaz
+     metinle yalnızca 3,65:1 verir ve WCAG AA'yı geçmez; ikon, kenarlık ve
+     bağlantı rengi olarak kaldığı yerde sorun yoktur. Beyaz etiket taşıyan
+     dolgular bu yüzden bir ton koyu mavidir: 4,70:1 / hover 6,47:1. */
+  --action: #0071e3;
+  --action-hover: #0a5ac1;
+
   --success: #0e9e6a;
   --success-tint: #f1fbf6;
   --success-border: #cdebdd;
@@ -345,7 +352,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   justify-content: center;
   gap: 8px;
   padding: 10px 18px;
-  background: var(--primary);
+  background: var(--action);
   color: var(--white);
   border-radius: var(--radius-md);
   font-size: 13.5px;
@@ -354,7 +361,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: var(--primary-hover);
+  background: var(--action-hover);
   box-shadow: 0 4px 6px rgba(37, 99, 235, 0.25);
 }
 
@@ -807,7 +814,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 
 .action-btn-primary:hover:not(:disabled) {
-  background: var(--primary);
+  background: var(--action-hover);
   color: var(--white);
 }
 
@@ -985,6 +992,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   color: var(--slate-500);
 }
 
+/* Seçim işareti: metin değil, 20 px simge. Metin dışı bileşenler için eşik
+   3:1'dir; vurgu mavisi beyaz işarete karşı 3,65:1 verir. Bu yüzden --action
+   yerine marka vurgusu kalır. */
 .selected-check {
   margin-left: auto;
   width: 20px;

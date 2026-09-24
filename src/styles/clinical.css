@@ -414,6 +414,15 @@
     color: var(--muted);
   }
 
+  /* Alan altı açıklama: formun ne yapacağını önceden söyler. */
+  .form-hint {
+    display: block;
+    margin-top: 5px;
+    font-size: 11.5px;
+    line-height: 1.45;
+    color: var(--soft);
+  }
+
   /* Rozetler / Badges */
   .badge {
     display: inline-flex;
@@ -437,6 +446,14 @@
     background: var(--primary-tint);
     border-color: var(--primary-border);
     color: var(--accent-ink);
+  }
+
+  /* Tahsil edilmemiş seans ücreti: uyarı rengi, ama sessiz — kart başlığında
+     birincil durum rozetinin yanında durur ve metin etiketi taşır. */
+  .badge-fee-pending {
+    background: var(--warning-tint);
+    border-color: var(--warning-border);
+    color: #815219;
   }
 
   .badge-completed {

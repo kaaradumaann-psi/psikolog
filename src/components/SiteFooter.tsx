@@ -1,3 +1,4 @@
+import { BrandMark } from './BrandMark';
 import { Icon } from './Icon';
 import { APP_NAME, CONTACT_EMAIL, COPYRIGHT_HOLDER, COPYRIGHT_YEAR, SITE_LABEL, SITE_URL } from '../site';
 
@@ -19,13 +20,7 @@ export function SiteFooter({ onNewEntry, compact }: SiteFooterProps) {
       <div className="site-footer-inner">
         <div className="site-footer-left">
           <span className="site-footer-mark" aria-hidden="true">
-            <svg width="14" height="14" viewBox="0 0 26 26" fill="none">
-              <path d="M9 3H3v6M17 3h6v6M23 17v6h-6M9 23H3v-6" stroke="currentColor" strokeWidth="2.2" />
-              <circle cx="10" cy="10" r="1.8" fill="currentColor" />
-              <circle cx="16" cy="10" r="1.8" stroke="currentColor" strokeWidth="1.5" />
-              <circle cx="10" cy="16" r="1.8" stroke="currentColor" strokeWidth="1.5" />
-              <circle cx="16" cy="16" r="1.8" fill="currentColor" />
-            </svg>
+            <BrandMark size={14} simplified />
           </span>
           <span className="site-footer-copyright">
             © {COPYRIGHT_YEAR} <b>{COPYRIGHT_HOLDER}</b>

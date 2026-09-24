@@ -14,6 +14,7 @@ import { ClinicalReportsPage } from './components/clinical/ClinicalReportsPage';
 import { RapidScreeningPage } from './components/clinical/RapidScreeningPage';
 import { Scl90Page } from './components/clinical/Scl90Page';
 import { SoapSessionsPage } from './components/clinical/SoapSessionsPage';
+import { BrandMark as BrandMarkIcon } from './components/BrandMark';
 import { ConnectivityBanner } from './components/ConnectivityBanner';
 import { Dashboard } from './components/Dashboard';
 import { FaqPage } from './components/FaqPage';
@@ -56,16 +57,9 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   },
 ];
 
-function BrandMark() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 26 26" fill="none" aria-hidden="true">
-      <path d="M9 3H3v6M17 3h6v6M23 17v6h-6M9 23H3v-6" stroke="currentColor" strokeWidth="2.2" />
-      <circle cx="10" cy="10" r="1.8" fill="currentColor" />
-      <circle cx="16" cy="10" r="1.8" stroke="currentColor" strokeWidth="1.5" />
-      <circle cx="10" cy="16" r="1.8" stroke="currentColor" strokeWidth="1.5" />
-      <circle cx="16" cy="16" r="1.8" fill="currentColor" />
-    </svg>
-  );
+/** Marka işareti ortak kaynaktan gelir; bkz. components/BrandMark.tsx */
+function BrandMark({ size = 24 }: { size?: number }) {
+  return <BrandMarkIcon size={size} />;
 }
 
 const LOCAL_USER: AuthenticatedUser = {

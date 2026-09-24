@@ -4,6 +4,7 @@ import {
   addDays,
   buildAttention,
   buildSessionPreps,
+  formatFee,
   localDateISO,
 } from '../clinical/casework';
 import type { CaseSnapshot, SessionPrep } from '../clinical/casework';
@@ -219,6 +220,12 @@ export function Dashboard({ user }: Props) {
                         <span className={`badge ${prep.status === 'completed' ? 'badge-active' : prep.status === 'noshow' ? 'badge-risk-high' : 'badge-followup'}`}>
                           {STATUS_LABEL[prep.status]}
                         </span>
+                        {prep.feePending && (
+                          <span className="badge badge-fee-pending" title="Görüşme yapıldı, ödeme kaydı hâlâ bekliyor">
+                            <Icon name="clock" size={12} />
+                            <span>Ödeme bekliyor{prep.fee ? ` · ${formatFee(prep.fee)}` : ''}</span>
+                          </span>
+                        )}
                       </div>
                       <p className="prep-meta">{prep.sessionType} · {prep.location}</p>
                       {prep.lastAssessment && <p className="prep-last">Son seans #{prep.lastSessionNumber} · {prep.lastSessionDate}: {prep.lastAssessment}</p>}

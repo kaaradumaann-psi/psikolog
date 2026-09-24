@@ -88,7 +88,11 @@ export type SessionPrep = {
   sessionType: string;
   location: string;
   status: Appointment['status'];
+  /** Görüşme gerçekleşti ve ödeme hâlâ bekliyor. */
   feePending: boolean;
+  /** Formdaki ham ödeme durumu — kart etiketi için. */
+  paymentStatus: Appointment['paymentStatus'];
+  fee?: number;
   lastSessionNumber?: number;
   lastSessionDate?: string;
   lastAssessment?: string;
@@ -282,6 +286,30 @@ function clip(text: string, max = 160): string {
   return `${clean.slice(0, max - 1).trim()}…`;
 }
 
+/**
+ * Ödeme durumu yalnızca **gerçekleşmiş** görüşmeler için uyarıya dönüşür.
+ *
+ * Randevu formu ödeme durumunu varsayılan olarak `pending` açar. Bu alan
+ * kendiliğinden "tahsil edilmedi" anlamına gelmez; planlanmış bir görüşmede
+ * ücretin beklenmesi normaldir. Bu yüzden ücret kontrolü yalnızca görüşme
+ * tamamlandığında veya danışan gelmediğinde (gelmeyen seans da ücrete tabidir)
+ * listeye girer. Aksi hâlde henüz yapılmamış bir görüşme için ödeme uyarısı
+ * çıkmaz.
+ */
+const FEE_RELEVANT_STATUSES: Appointment['status'][] = ['completed', 'noshow'];
+
+export function paymentIsOutstanding(appointment: Appointment): boolean {
+  if (appointment.paymentStatus !== 'pending') return false;
+  return FEE_RELEVANT_STATUSES.includes(appointment.status);
+}
+
+/** Excel/Intl bağımlılığı olmadan okunur tutar biçimi: 1500 → "1.500 ₺". */
+export function formatFee(amount: number): string {
+  const rounded = Math.round(amount);
+  const grouped = String(Math.abs(rounded)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return `${rounded < 0 ? '-' : ''}${grouped} ₺`;
+}
+
 function meaningfulRise(reading: ScoreReading): boolean {
   if (reading.direction !== 'up' || reading.delta === undefined) return false;
   if (reading.scale === 'GSI') return reading.delta >= 0.3;
@@ -312,9 +340,8 @@ export function buildSessionPreps(snapshot: CaseSnapshot, date = snapshot.today)
       if (formulation?.reviewDate && formulation.reviewDate <= date) {
         checks.push('Formülasyon gözden geçirme tarihi geldi.');
       }
-      if (appointment.paymentStatus === 'pending' && appointment.status !== 'cancelled') {
-        checks.push('Ücret bekliyor.');
-      }
+      // Ücret durumu burada tekrarlanmaz: kart üzerinde rozet olarak görünür ve
+      // klinik geneli için "takip gerekiyor" paneline düşer (buildAttention).
       return {
         appointmentId: appointment.id,
         clientId: appointment.clientId,
@@ -324,7 +351,9 @@ export function buildSessionPreps(snapshot: CaseSnapshot, date = snapshot.today)
         sessionType: appointment.sessionType,
         location: appointment.location,
         status: appointment.status,
-        feePending: appointment.paymentStatus === 'pending',
+        feePending: paymentIsOutstanding(appointment),
+        paymentStatus: appointment.paymentStatus,
+        fee: appointment.fee,
         lastSessionNumber: session?.sessionNumber,
         lastSessionDate: session?.date,
         lastAssessment: session?.assessment ? clip(session.assessment) : undefined,
@@ -389,6 +418,23 @@ export function buildAttention(snapshot: CaseSnapshot): AttentionItem[] {
         detail: `${appointment.date} ${appointment.time} randevusuna gelinmedi. Takip mesajı veya yeni saat netleşmeli.`,
       });
     }
+  }
+
+  // Tahsil edilmemiş seans ücretleri: görüşme yapıldı, ödeme kaydı bekliyor.
+  // Yalnızca son üç hafta — eski kayıtlar paneli doldurmasın.
+  for (const appointment of snapshot.appointments) {
+    if (!paymentIsOutstanding(appointment)) continue;
+    if (appointment.date > snapshot.today || appointment.date < horizon) continue;
+    items.push({
+      id: `fee:${appointment.id}`,
+      clientId: appointment.clientId,
+      clientName: appointment.clientName || clientName(snapshot, appointment.clientId),
+      severity: 'warning',
+      title: 'Ödeme bekliyor',
+      detail: `${appointment.date} · ${appointment.sessionType} görüşmesinin ücreti${
+        appointment.fee ? ` (${formatFee(appointment.fee)})` : ''
+      } tahsil edilmedi.`,
+    });
   }
 
   for (const task of snapshot.tasks) {

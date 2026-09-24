@@ -3,7 +3,9 @@ import test from 'node:test';
 import {
   buildAttention,
   buildSessionPreps,
+  formatFee,
   measurementNote,
+  paymentIsOutstanding,
   progressSections,
   readScale,
 } from '../src/clinical/casework.ts';
@@ -105,6 +107,61 @@ test('attention queue puts a safety flag ahead of a task', () => {
   assert.equal(items[0]?.severity, 'danger');
   assert.match(items[0]?.detail ?? '', /PHQ-9/);
   assert.ok(items.some((item) => item.title === 'Bugünkü görev'));
+});
+
+/*
+ * Ücret kuralı: randevu formu ödeme durumunu varsayılan olarak `pending` açar.
+ * Bu, henüz yapılmamış bir görüşme için "tahsil edilmedi" uyarısı üretmemelidir.
+ */
+test('planlanmış görüşme ödeme bekliyor diye uyarı üretmez', () => {
+  const [prep] = buildSessionPreps(snapshot);
+  assert.equal(prep?.status, 'scheduled');
+  assert.equal(prep?.paymentStatus, 'pending');
+  assert.equal(prep?.feePending, false);
+  assert.doesNotMatch(prep?.checks.join(' ') ?? '', /ücret/i);
+  assert.equal(
+    buildAttention(snapshot).some((item) => item.title === 'Ödeme bekliyor'),
+    false,
+  );
+});
+
+test('tamamlanmış görüşmede ödeme bekliyorsa tek ve okunur uyarı çıkar', () => {
+  const completed: CaseSnapshot = {
+    ...snapshot,
+    appointments: [{ ...snapshot.appointments[0], id: 'a2', status: 'completed', fee: 1500 }],
+  };
+  const [prep] = buildSessionPreps(completed);
+  assert.equal(prep?.feePending, true);
+
+  const feeItems = buildAttention(completed).filter((item) => item.title === 'Ödeme bekliyor');
+  assert.equal(feeItems.length, 1);
+  assert.equal(feeItems[0]?.severity, 'warning');
+  assert.match(feeItems[0]?.detail ?? '', /1\.500 ₺/);
+  assert.match(feeItems[0]?.detail ?? '', /tahsil edilmedi/);
+});
+
+test('ödenmiş görüşme ücret uyarısı üretmez', () => {
+  const paid: CaseSnapshot = {
+    ...snapshot,
+    appointments: [{ ...snapshot.appointments[0], status: 'completed', paymentStatus: 'paid' }],
+  };
+  assert.equal(buildSessionPreps(paid)[0]?.feePending, false);
+  assert.equal(buildAttention(paid).some((item) => item.title === 'Ödeme bekliyor'), false);
+});
+
+test('gelmeyen danışanın seansı da ücret takibine girer', () => {
+  const noshow: CaseSnapshot = {
+    ...snapshot,
+    appointments: [{ ...snapshot.appointments[0], status: 'noshow', fee: 1500 }],
+  };
+  assert.equal(buildSessionPreps(noshow)[0]?.feePending, true);
+  assert.equal(buildAttention(noshow).some((item) => item.title === 'Ödeme bekliyor'), true);
+});
+
+test('ücret biçimi Türkçe ayraçla yazılır', () => {
+  assert.equal(formatFee(1500), '1.500 ₺');
+  assert.equal(formatFee(0), '0 ₺');
+  assert.equal(formatFee(12500), '12.500 ₺');
 });
 
 test('progress text stays a screening note', () => {

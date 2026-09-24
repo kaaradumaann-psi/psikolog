@@ -152,15 +152,15 @@
   .board-text-link:hover { text-decoration: underline; text-underline-offset: 4px; }
 
   .btn-primary, .auth-submit-btn {
-    background: var(--primary);
-    border: 1px solid var(--primary);
+    background: var(--action);
+    border: 1px solid var(--action);
     color: #fff;
     box-shadow: none;
     border-radius: 10px;
     font-weight: 650;
     text-decoration: none;
   }
-  .btn-primary:hover:not(:disabled), .auth-submit-btn:hover:not(:disabled) { background: var(--primary-hover); border-color: var(--primary-hover); box-shadow: 0 5px 14px rgba(13, 13, 13, 0.12); transform: none; }
+  .btn-primary:hover:not(:disabled), .auth-submit-btn:hover:not(:disabled) { background: var(--action-hover); border-color: var(--action-hover); box-shadow: 0 5px 14px rgba(13, 13, 13, 0.12); transform: none; }
   .btn-primary:disabled { color: var(--soft); background: var(--slate-200); border-color: var(--slate-200); }
   .btn-secondary { border-radius: 10px; border-color: var(--hairline); background: #fff; color: var(--text); font-weight: 600; }
   .btn-secondary:hover:not(:disabled) { border-color: #c9c9ce; background: var(--bg-soft); color: var(--forest-dark); }
@@ -394,7 +394,7 @@
   .assessment-card-foot { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-top: auto; padding-top: 18px; }
   .assessment-card-foot > span { color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .08em; }
   .assessment-card-foot button { display: flex; align-items: center; gap: 7px; min-height: 40px; padding: 8px 13px; border: 1px solid var(--hairline); border-radius: 9px; color: var(--primary); font-size: 12px; font-weight: 700; }
-  .assessment-card-foot button:hover { color: #fff; border-color: var(--primary); background: var(--primary); }
+  .assessment-card-foot button:hover { color: #fff; border-color: var(--action-hover); background: var(--action-hover); }
   .assessment-history { margin-top: 35px; }
   .assessment-count { display: inline-grid; place-items: center; min-width: 26px; height: 26px; padding: 0 7px; vertical-align: middle; border: 1px solid var(--hairline); border-radius: 8px; background: #fff; color: var(--soft); font: 700 12px var(--font-sans); }
   .assessment-history-list { display: flex; flex-direction: column; gap: 9px; }

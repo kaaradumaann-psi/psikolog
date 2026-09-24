@@ -192,6 +192,24 @@
     min-width: 44px;
   }
 
+  /* Metin görünümlü satır içi düğmeler dokunma katmanında gerçek hedefe
+     dönüşür: danışan adı bağlantısı 19px, yedek alma düğmesi 17px yüksekti
+     ve parmakla ıskalanıyordu. Görsel ağırlık değişmez, yalnızca kutu büyür;
+     kırıcı satır içi akışta dikey kaymayı önlemek için hizalama korunur. */
+  .client-name-button,
+  .day-board-note button {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+
+  /* Ad, tablo hücresinin ilk satırında durur; 44px'lik kutu satır yüksekliğini
+     büyütmesin diye dikey dolgu yerine üst/alt boşluk negatifle dengelenir. */
+  .client-name-button {
+    padding-block: 12px;
+    margin-block: -12px;
+  }
+
   .date-filter-field input,
   .date-filter-field select,
   .raw-field input {

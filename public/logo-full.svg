@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 160" width="480" height="160" role="img" aria-label="Psikolog — Klinik çalışma alanı">
+  <!-- Yatay kilit: işaret + sözcük markası. Rapor antedi ve basılı materyal için. -->
+  <rect width="480" height="160" fill="#ffffff"/>
+
+  <g transform="translate(40 40)">
+    <rect width="80" height="80" rx="22" fill="#0d0d0d"/>
+    <g transform="scale(2.5)">
+      <path d="M11.5 11.9C11.5 9.19 13.52 7 16 7C18.48 7 20.5 9.19 20.5 11.9C20.5 14.61 18.48 16.8 16 16.8C13.52 16.8 11.5 14.61 11.5 11.9Z" fill="#f6f6f4"/>
+      <path d="M7.3 26.6C7.3 21.8 11.2 17.9 16 17.9C20.8 17.9 24.7 21.8 24.7 26.6Z" fill="#f6f6f4"/>
+      <circle cx="16" cy="11.9" r="2.05" fill="#0a84ff"/>
+      <path d="M9.9 27.3h12.2" stroke="#0d0d0d" stroke-width="1.5" stroke-linecap="round"/>
+    </g>
+  </g>
+
+  <text x="152" y="74" font-family="'DM Sans', 'Open Sans', 'Helvetica Neue', Arial, sans-serif"
+        font-size="38" font-weight="700" letter-spacing="-1.4" fill="#0d0d0d">Psikolog</text>
+  <text x="154" y="100" font-family="'DM Sans', 'Open Sans', 'Helvetica Neue', Arial, sans-serif"
+        font-size="13.5" font-weight="500" letter-spacing="1.6" fill="#6e6e73">KLİNİK ÇALIŞMA ALANI</text>
+</svg>

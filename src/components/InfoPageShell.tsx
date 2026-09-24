@@ -1,4 +1,5 @@
 import type { MouseEvent, ReactNode } from 'react';
+import { BrandMark } from './BrandMark';
 import { Icon } from './Icon';
 import { SiteFooter } from './SiteFooter';
 import { navigate } from '../router';
@@ -33,13 +34,7 @@ export function InfoPageShell({ kicker, title, onBack, children }: InfoPageShell
             }}
           >
             <span className="info-brand-mark" aria-hidden="true">
-              <svg width="22" height="22" viewBox="0 0 26 26" fill="none">
-                <path d="M9 3H3v6M17 3h6v6M23 17v6h-6M9 23H3v-6" stroke="currentColor" strokeWidth="2.2" />
-                <circle cx="10" cy="10" r="1.8" fill="currentColor" />
-                <circle cx="16" cy="10" r="1.8" stroke="currentColor" strokeWidth="1.5" />
-                <circle cx="10" cy="16" r="1.8" stroke="currentColor" strokeWidth="1.5" />
-                <circle cx="16" cy="16" r="1.8" fill="currentColor" />
-              </svg>
+              <BrandMark size={22} />
             </span>
             <span className="info-brand-text">
               <strong>Psikolog</strong>

@@ -8,10 +8,17 @@ import {
   subscribeClinicalStore,
 } from '../../clinical/clinicalStore';
 import { getSettings } from '../../clinical/practiceStore';
+import { paymentIsOutstanding, formatFee } from '../../clinical/casework';
 import { clinicToday } from '../../clinical/recordRules';
 import { ClinicalDialog } from './ClinicalDialog';
 import { Icon } from '../Icon';
 import { navigate } from '../../router';
+
+const PAYMENT_LABEL: Record<PaymentStatus, string> = {
+  paid: 'Ödendi',
+  pending: 'Henüz ödenmedi',
+  waived: 'Ücret alınmadı',
+};
 
 export function AppointmentsPage() {
   const [appointments, setAppointments] = useState<Appointment[]>(() => getAppointments());
@@ -201,6 +208,7 @@ export function AppointmentsPage() {
                 <th>Seans Türü</th>
                 <th>Görüşme Yeri</th>
                 <th>Durum</th>
+                <th>Ödeme</th>
                 <th>Notlar</th>
                 <th style={{ textAlign: 'right' }}>İşlemler</th>
               </tr>
@@ -247,6 +255,19 @@ export function AppointmentsPage() {
                       {app.status === 'cancelled' && 'İptal'}
                       {app.status === 'noshow' && 'Gelmedi'}
                     </span>
+                  </td>
+                  <td data-label="Ödeme">
+                    {paymentIsOutstanding(app) ? (
+                      <span className="badge badge-fee-pending">
+                        <Icon name="clock" size={12} />
+                        <span>{app.fee ? formatFee(app.fee) : 'Ücret alınmadı'}</span>
+                      </span>
+                    ) : (
+                      <span className="appointment-note">
+                        {PAYMENT_LABEL[app.paymentStatus]}
+                        {app.paymentStatus === 'paid' && app.fee ? ` · ${formatFee(app.fee)}` : ''}
+                      </span>
+                    )}
                   </td>
                   <td data-label="Notlar">
                     <span className="appointment-note">
@@ -400,6 +421,35 @@ export function AppointmentsPage() {
                       value={form.durationMinutes || 50}
                       onChange={e => setForm({ ...form, durationMinutes: Number(e.target.value) })}
                     />
+                  </div>
+                </div>
+
+                <div className="form-row-2">
+                  <div className="form-group">
+                    <label>Seans Ücreti (₺)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step={50}
+                      value={form.fee ?? 0}
+                      onChange={e => setForm({ ...form, fee: Math.max(0, Number(e.target.value) || 0) })}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Ödeme Durumu</label>
+                    <select
+                      value={form.paymentStatus || 'pending'}
+                      onChange={e => setForm({ ...form, paymentStatus: e.target.value as PaymentStatus })}
+                    >
+                      <option value="pending">Henüz ödenmedi</option>
+                      <option value="paid">Ödendi</option>
+                      <option value="waived">Ücret alınmadı</option>
+                    </select>
+                    <small className="form-hint">
+                      {form.status === 'completed' || form.status === 'noshow'
+                        ? '“Henüz ödenmedi” seçilirse ana sayfadaki takip listesine düşer.'
+                        : 'Ödeme uyarısı görüşme tamamlandıktan sonra görünür.'}
+                    </small>
                   </div>
                 </div>
 

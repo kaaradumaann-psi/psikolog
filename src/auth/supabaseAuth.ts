@@ -55,8 +55,51 @@ export async function profileForUser(userId: string): Promise<AuthenticatedUser>
     .select('id,email,first_name,last_name,role,active,organization_id')
     .eq('id', userId)
     .maybeSingle();
-  if (error) throw new Error('Kullanıcı profili alınamadı.');
-  if (!data) throw new Error('Kullanıcı profili bulunamadı.');
+  if (error) {
+    console.error('[profileForUser] Supabase error:', {
+      message: error.message,
+      code: error.code,
+      details: (error as { details?: string }).details,
+      hint: (error as { hint?: string }).hint,
+    });
+    if (error.code === '42501' || /permission denied/i.test(error.message)) {
+      throw new Error('Profil okuma izni reddedildi (RLS). Lütfen admin ile iletişime geçin.');
+    }
+    if (error.code === 'PGRST116' || /406/i.test(error.message)) {
+      throw new Error('Kullanıcı profili bulunamadı (PGRST116).');
+    }
+    throw new Error(`Kullanıcı profili alınamadı: ${error.message} (kod: ${error.code || '—'})`);
+  }
+  if (!data) {
+    console.warn('[profileForUser] No profile row for userId:', userId, '— attempting self-heal insert');
+    // Self-heal: try to create own profile if missing (requires profiles_insert_self policy)
+    try {
+      const { data: sessionData } = await client.auth.getSession();
+      const email = sessionData.session?.user.email || '';
+      const meta = sessionData.session?.user.user_metadata as { first_name?: string; last_name?: string } | undefined;
+      const { data: inserted, error: insertError } = await client
+        .from('profiles')
+        .insert({
+          id: userId,
+          email: email || null,
+          first_name: meta?.first_name?.trim() || 'Yeni',
+          last_name: meta?.last_name?.trim() || 'Kullanıcı',
+          role: 'PSYCHOLOG',
+          active: true,
+        })
+        .select('id,email,first_name,last_name,role,active,organization_id')
+        .maybeSingle();
+      if (insertError) {
+        console.error('[profileForUser] self-heal insert failed:', insertError);
+        throw new Error('Kullanıcı profili bulunamadı — trigger çalışmamış olabilir. Lütfen admin panelinden profil oluşturun veya SQL ile backfill yapın.');
+      }
+      if (!inserted) throw new Error('Kullanıcı profili oluşturulamadı (insert null).');
+      return profileFromRow(inserted as ProfileRow);
+    } catch (e) {
+      console.error('[profileForUser] self-heal failed:', e);
+      throw new Error('Kullanıcı profili bulunamadı — trigger çalışmamış olabilir. Lütfen admin panelinden profil oluşturun veya SQL ile backfill yapın.');
+    }
+  }
   return profileFromRow(data as ProfileRow);
 }
 

@@ -1,11 +1,11 @@
 /* One visual language for the login gate and the clinic.
-   Canvas is quiet gray. Surfaces are white. Headlines are the existing serif.
-   Ink marks selection. The green accent carries clinical status and actions.
-   Screen only — print rules stay in clinical.css. */
+   Canvas is quiet gray. Surfaces are white. Headlines are Newsreader serif.
+   Ink marks selection. Blue accent (#0a84ff) carries status and actions — aligned
+   with halilkaraduman.com.tr & Repo123. Screen only — print rules stay in clinical.css. */
 
 :root {
   --shell: 1120px;
-  --canvas: #f5f7f3;
+  --canvas: #ffffff;
 }
 
 @media screen {

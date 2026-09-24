@@ -34,9 +34,31 @@ import { APP_NAME } from './site';
 
 type Workspace = 'home' | 'danisanlar' | 'seanslar' | 'testler' | 'takvim' | 'raporlar' | 'gorevler' | 'ayarlar';
 
+type NavItem = { id: Workspace; label: string; icon: IconName; path: string };
+const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
+  {
+    label: 'Çalışma alanı',
+    items: [
+      { id: 'home', label: 'Genel bakış', icon: 'layers', path: '/' },
+      { id: 'danisanlar', label: 'Danışanlar', icon: 'users', path: '/danisanlar' },
+      { id: 'takvim', label: 'Takvim', icon: 'calendar', path: '/takvim' },
+      { id: 'seanslar', label: 'Seanslar', icon: 'clipboard', path: '/seanslar' },
+    ],
+  },
+  {
+    label: 'Klinik araçlar',
+    items: [
+      { id: 'testler', label: 'Değerlendirmeler', icon: 'activity', path: '/testler' },
+      { id: 'raporlar', label: 'Raporlar', icon: 'fileText', path: '/raporlar' },
+      { id: 'gorevler', label: 'Görevler', icon: 'checkCircle', path: '/gorevler' },
+      { id: 'ayarlar', label: 'Ayarlar', icon: 'shield', path: '/ayarlar' },
+    ],
+  },
+];
+
 function BrandMark() {
   return (
-    <svg width="22" height="22" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+    <svg width="24" height="24" viewBox="0 0 26 26" fill="none" aria-hidden="true">
       <path d="M9 3H3v6M17 3h6v6M23 17v6h-6M9 23H3v-6" stroke="currentColor" strokeWidth="2.2" />
       <circle cx="10" cy="10" r="1.8" fill="currentColor" />
       <circle cx="16" cy="10" r="1.8" stroke="currentColor" strokeWidth="1.5" />
@@ -54,17 +76,6 @@ const LOCAL_USER: AuthenticatedUser = {
   role: 'PSYCHOLOG',
   active: true,
   organizationId: null,
-};
-
-const TAB_PATH: Record<Workspace, string> = {
-  home: '/',
-  danisanlar: '/danisanlar',
-  seanslar: '/seanslar',
-  testler: '/testler',
-  takvim: '/takvim',
-  raporlar: '/raporlar',
-  gorevler: '/gorevler',
-  ayarlar: '/ayarlar',
 };
 
 function resolveWorkspace(route: AppRoute): Workspace | null {
@@ -173,7 +184,7 @@ function CloudGate() {
     return (
       <div className="auth-page">
         <main className="auth-shell">
-          <div className="auth-card auth-loading">
+          <div className="auth-card auth-loading" role="status">
             <span className="auth-brand-mark"><BrandMark /></span>
             <p>Oturum doğrulanıyor…</p>
           </div>
@@ -185,29 +196,38 @@ function CloudGate() {
     return (
       <div className="auth-page">
         <main className="auth-shell">
-          <form className="auth-card" onSubmit={onSubmit}>
-            <div className="auth-brand">
-              <span className="auth-brand-mark"><BrandMark /></span>
-              <div>
-                <strong>{APP_NAME}</strong>
-                <small>Klinik çalışma alanı</small>
+          <div className="auth-layout">
+            <div className="auth-intro">
+              <span className="auth-intro-kicker">UZMANLAR İÇİN KLİNİK ALAN</span>
+              <h2>Her görüşmeye<br /><em>hazır gelin.</em></h2>
+              <p>Danışan dosyaları, seans notları ve ölçüm izlemi; günlük klinik akışınız için tek bir çalışma alanında.</p>
+              <span className="auth-intro-foot"><Icon name="shield" size={17} /> Yalnızca yetkili hesaplarla erişim</span>
+            </div>
+            <form className="auth-card" onSubmit={onSubmit}>
+              <div className="auth-brand">
+                <span className="auth-brand-mark"><BrandMark /></span>
+                <div>
+                  <strong>{APP_NAME}</strong>
+                  <small>Klinik çalışma alanı</small>
+                </div>
               </div>
-            </div>
-            <div className="auth-heading">
-              <h1>Giriş</h1>
-              <p>Halka açık kayıt yoktur. Hesabınız yönetici tarafından açılır.</p>
-            </div>
-            <div className="form-group">
-              <label htmlFor="email">E-posta</label>
-              <input id="email" name="email" type="email" autoComplete="username" required />
-            </div>
-            <div className="form-group">
-              <label htmlFor="password">Parola</label>
-              <input id="password" name="password" type="password" autoComplete="current-password" required />
-            </div>
-            {error && <p className="form-error" role="alert">{error}</p>}
-            <button type="submit" className="btn-primary auth-submit-btn">Giriş yap</button>
-          </form>
+              <div className="auth-heading">
+                <h1>Hoş geldiniz.</h1>
+                <p>Çalışma alanınıza devam etmek için hesabınızla giriş yapın.</p>
+              </div>
+              <div className="form-group">
+                <label htmlFor="email">E-posta</label>
+                <input id="email" name="email" type="email" autoComplete="username" required />
+              </div>
+              <div className="form-group">
+                <label htmlFor="password">Parola</label>
+                <input id="password" name="password" type="password" autoComplete="current-password" required />
+              </div>
+              {error && <p className="form-error" role="alert">{error}</p>}
+              <button type="submit" className="btn-primary auth-submit-btn">Giriş yap <Icon name="arrowRight" size={16} /></button>
+              <p className="auth-card-note">Halka açık kayıt yoktur. Hesabınız yönetici tarafından açılır.</p>
+            </form>
+          </div>
         </main>
         <SiteFooter compact />
       </div>
@@ -235,101 +255,111 @@ function WorkspaceShell({ user, onLogout, localMode }: { user: AuthenticatedUser
     window.addEventListener('psikolog:storage-error', onError);
     return () => window.removeEventListener('psikolog:storage-error', onError);
   }, []);
+
   const workspace = resolveWorkspace(route) ?? 'home';
-  const tabs: Workspace[] = ['home', 'danisanlar', 'seanslar', 'testler', 'takvim', 'raporlar', 'gorevler', 'ayarlar'];
-  const tabLabel: Record<Workspace, string> = {
-    home: 'Genel Bakış',
-    danisanlar: 'Danışanlar',
-    seanslar: 'Seanslar',
-    testler: 'Testler',
-    takvim: 'Takvim',
-    raporlar: 'Raporlar',
-    gorevler: 'Görevler',
-    ayarlar: 'Ayarlar',
-  };
-  const tabIcon: Record<Workspace, IconName> = {
-    home: 'pulse',
-    danisanlar: 'users',
-    seanslar: 'clipboard',
-    testler: 'activity',
-    takvim: 'calendar',
-    raporlar: 'fileText',
-    gorevler: 'list',
-    ayarlar: 'shield',
-  };
-
-  function activateTab(next: Workspace) {
-    navigate(TAB_PATH[next]);
-  }
-
+  const activeItem = NAV_GROUPS.flatMap((group) => group.items).find((item) => item.id === workspace);
   const canAdmin = user.role === 'ADMIN' || user.role === 'ORG_ADMIN';
+  const roleLabel = localMode ? 'Yerel çalışma alanı' : canAdmin ? 'Yönetici' : 'Uzman psikolog';
 
   return (
     <div className="portal-layout">
       <a className="skip-link" href="#main">Ana içeriğe atla</a>
-      <header className="app-header">
-        <div className="header-inner">
-          <a className="brand" href="/" aria-label={`${APP_NAME} ana sayfa`}>
-            <span className="brand-mark" aria-hidden="true">
-              <BrandMark />
-            </span>
-            <div className="brand-text">
-              <strong className="brand-title">{APP_NAME}</strong>
-              <span className="brand-subtitle">Klinik çalışma alanı</span>
-            </div>
-            </a>
-          <div className="header-current">{tabLabel[workspace]}</div>
-          <div className="header-user">
-            <div className="user-profile-summary">
-              <div className="user-avatar-circle">{user.firstName.charAt(0)}{user.lastName.charAt(0)}</div>
-              <div className="user-info-text">
-                <strong className="user-full-name">{displayName(user)}</strong>
-                <span className={`user-role-badge ${canAdmin ? 'badge-admin' : 'badge-psy'}`}>
-                  {localMode ? 'Yerel çalışma alanı' : canAdmin ? 'Yönetici' : 'Uzman Psikolog'}
-                </span>
-              </div>
-            </div>
-            {!localMode && (
-              <button type="button" className="btn-logout" onClick={onLogout}>Çıkış</button>
-            )}
-          </div>
-          <MobileNav
-            items={tabs.map((tab) => ({
-              id: tab,
-              label: tabLabel[tab],
-              icon: tabIcon[tab],
-              active: workspace === tab,
-              onSelect: () => activateTab(tab),
-            }))}
-            user={user}
-            onLogout={onLogout}
-            showLogout={!localMode}
-          />
+      <aside className="workspace-sidebar" aria-label="Çalışma alanı gezinmesi">
+        <a className="brand sidebar-brand" href="/" aria-label={`${APP_NAME} ana sayfa`}>
+          <span className="brand-mark" aria-hidden="true"><BrandMark /></span>
+          <span className="brand-text">
+            <strong className="brand-title">{APP_NAME}</strong>
+            <span className="brand-subtitle">Klinik çalışma alanı</span>
+          </span>
+        </a>
+        <div className="sidebar-nav-wrap">
+          {NAV_GROUPS.map((group) => (
+            <nav className="sidebar-nav" aria-label={group.label} key={group.label}>
+              <span className="sidebar-label">{group.label}</span>
+              {group.items.map((item) => (
+                <a
+                  key={item.id}
+                  href={item.path}
+                  className={`sidebar-link${workspace === item.id ? ' is-current' : ''}`}
+                  aria-current={workspace === item.id ? 'page' : undefined}
+                >
+                  <Icon name={item.icon} size={19} />
+                  <span>{item.label}</span>
+                  {workspace === item.id && <span className="sidebar-current-dot" aria-hidden="true" />}
+                </a>
+              ))}
+            </nav>
+          ))}
         </div>
-      </header>
-      <ConnectivityBanner />
-      {storageError && <p className="shell-alert" role="alert">{storageError}</p>}
-      <main className="app-main" id="main">
-        {route.page === 'danisan' && <ClientDetailPage clientId={route.id} />}
-        {route.page === 'danisanlar' && <ClientListPage />}
-        {route.page === 'seanslar' && <SoapSessionsPage />}
-        {route.page === 'takvim' && <AppointmentsPage />}
-        {route.page === 'testler' && <AssessmentHubPage />}
-        {route.page === 'beck_depresyon' && <BeckDepressionPage />}
-        {route.page === 'beck_anksiyete' && <BeckAnxietyPage />}
-        {route.page === 'scl90' && <Scl90Page />}
-        {route.page === 'tarama' && <RapidScreeningPage />}
-        {route.page === 'raporlar' && <ClinicalReportsPage />}
-        {route.page === 'gorevler' && <TasksPage />}
-        {route.page === 'ayarlar' && <SettingsPage canAdmin={canAdmin} />}
-        {route.page === 'denetim' && <AuditPage />}
-        {route.page === 'home' && (
-          <div className="dashboard-wrapper">
-            <Dashboard user={user} />
+        <div className="sidebar-bottom">
+          <div className="sidebar-privacy">
+            <span className="sidebar-privacy-icon"><Icon name="shield" size={18} /></span>
+            <strong>{localMode ? 'Yerel çalışma alanı' : 'Bulut hesabı açık'}</strong>
+            <p>{localMode ? 'Kayıtlar bu tarayıcıda tutulur ve şifrelenmez. Düzenli yedek alın.' : 'Yerel klinik kayıtlar bu cihazda tutulur. Hesap ayarlarınızı kontrol edin.'}</p>
+            <a href="/ayarlar">Ayarları aç <Icon name="arrowRight" size={14} /></a>
           </div>
-        )}
-      </main>
-      <SiteFooter onNewEntry={() => navigate('/seanslar')} />
+          <span className="sidebar-version">PSİKOLOG · KLİNİK ÇALIŞMA ALANI</span>
+        </div>
+      </aside>
+
+      <div className="workspace-content">
+        <header className="app-header">
+          <div className="header-inner">
+            <a className="brand header-brand" href="/" aria-label={`${APP_NAME} ana sayfa`}>
+              <span className="brand-mark" aria-hidden="true"><BrandMark /></span>
+              <span className="brand-text">
+                <strong className="brand-title">{APP_NAME}</strong>
+                <span className="brand-subtitle">Klinik çalışma alanı</span>
+              </span>
+            </a>
+            <div className="header-current">
+              <span>Çalışma alanı <Icon name="right" size={13} /></span>
+              <strong>{activeItem?.label}</strong>
+            </div>
+            <div className="header-user">
+              <div className="user-profile-summary">
+                <div className="user-avatar-circle" aria-hidden="true">{user.firstName.charAt(0)}{user.lastName.charAt(0)}</div>
+                <div className="user-info-text">
+                  <strong className="user-full-name">{displayName(user)}</strong>
+                  <span className={`user-role-badge ${canAdmin ? 'badge-admin' : 'badge-psy'}`}>{roleLabel}</span>
+                </div>
+              </div>
+              {!localMode && <button type="button" className="btn-logout" onClick={onLogout}>Çıkış</button>}
+            </div>
+            <MobileNav
+              items={NAV_GROUPS.flatMap((group) => group.items).map((item) => ({
+                id: item.id,
+                label: item.label,
+                icon: item.icon,
+                active: workspace === item.id,
+                onSelect: () => navigate(item.path),
+              }))}
+              user={user}
+              onLogout={onLogout}
+              showLogout={!localMode}
+            />
+          </div>
+        </header>
+        <ConnectivityBanner />
+        {storageError && <p className="shell-alert" role="alert">{storageError}</p>}
+        <main className="app-main" id="main" tabIndex={-1}>
+          {route.page === 'danisan' && <ClientDetailPage clientId={route.id} />}
+          {route.page === 'danisanlar' && <ClientListPage />}
+          {route.page === 'seanslar' && <SoapSessionsPage />}
+          {route.page === 'takvim' && <AppointmentsPage />}
+          {route.page === 'testler' && <AssessmentHubPage />}
+          {route.page === 'beck_depresyon' && <BeckDepressionPage />}
+          {route.page === 'beck_anksiyete' && <BeckAnxietyPage />}
+          {route.page === 'scl90' && <Scl90Page />}
+          {route.page === 'tarama' && <RapidScreeningPage />}
+          {route.page === 'raporlar' && <ClinicalReportsPage />}
+          {route.page === 'gorevler' && <TasksPage />}
+          {route.page === 'ayarlar' && <SettingsPage canAdmin={canAdmin} />}
+          {route.page === 'denetim' && <AuditPage />}
+          {route.page === 'home' && <Dashboard user={user} />}
+        </main>
+        <SiteFooter onNewEntry={() => navigate('/seanslar')} />
+      </div>
     </div>
   );
 }

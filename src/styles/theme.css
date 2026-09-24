@@ -1,22 +1,7 @@
-/* ==========================================================================
-   Author design layer — www.halilkaraduman.com.tr
-   --------------------------------------------------------------------------
-   This file transplants the visual language of the author's site onto the
-   portal: paper-white surfaces, near-black ink, hairline borders, a single
-   Apple-blue accent, light serif headlines and pill-shaped controls.
-
-   The site is a single 780 px editorial page, so its *language* is reused
-   rather than its layout: the same tokens (`:root` in screen.css), the same
-   type hierarchy and the same surface treatment, now carried by tables,
-   forms and workspaces.
-
-   Order matters: main.tsx imports this file last, so it can refine rules from
-   screen.css, auth.css and scanner.css without touching their behaviour.
-
-   Everything is wrapped in `@media screen` on purpose. The printable A4 sheet
-   (form.css + print.css) owns its own geometry and must not inherit a single
-   declaration from here.
-   ========================================================================== */
+/* Legacy component skin retained for the clinical forms and reports.
+   Shared palette tokens live in screen.css; workspace.css is the current screen
+   design layer for navigation, daily workflow, states and interactive controls.
+   Print geometry remains in the existing @media print rules. */
 
 @media screen {
   /* ========================================================================

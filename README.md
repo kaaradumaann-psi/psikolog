@@ -12,6 +12,8 @@ Uzman psikoloğun günü için çalışma alanı: bugünkü seans hazırlığı,
 
 Randevu, görev, not, belge, antet ve JSON yedek aynı alanda. Supabase yoksa uygulama boş yerel çalışma alanı olarak açılır. Örnek danışan yüklenmez.
 
+Arayüz değerlendirmesi, tasarım kararları ve dar ekran kontrol listesi: [Tasarım değerlendirmesi](docs/TASARIM.md).
+
 ## Çalıştırma
 
 Node 22+.
@@ -26,6 +28,8 @@ npm run typecheck
 npm test
 npm run build
 ```
+
+Tarayıcı uçtan uca testleri için ilk kurulumda `npx playwright install` çalıştırın; ardından `npm run test:e2e` dört tarayıcı projesini test eder (yalnızca Chromium için `npm run test:e2e -- --project=chromium`).
 
 Bulut kurulumu: `.env.example` dosyasını `.env` yapın. Yalnızca publishable/anon anahtarı yazın.
 

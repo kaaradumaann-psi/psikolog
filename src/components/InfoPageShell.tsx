@@ -20,6 +20,7 @@ type InfoPageShellProps = {
 export function InfoPageShell({ kicker, title, onBack, children }: InfoPageShellProps) {
   return (
     <div className="info-shell">
+      <a className="skip-link" href="#main">Ana içeriğe atla</a>
       <header className="info-topbar">
         <div className="info-topbar-inner">
           <a

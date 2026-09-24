@@ -6,6 +6,7 @@ import {
   deleteClient,
   subscribeClinicalStore,
 } from '../../clinical/clinicalStore';
+import { ClinicalDialog } from './ClinicalDialog';
 import { Icon } from '../Icon';
 import { ageFromBirthDate, isValidTc, nextFileNumber, normalizeTc } from '../../clinical/recordRules';
 import { navigate } from '../../router';
@@ -104,6 +105,15 @@ export function ClientListPage() {
     setDiagInput('');
     setModalOpen(true);
   }
+
+  // The dashboard's "Yeni danışan" action opens the intake form directly.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('yeni') !== '1') return;
+    openNewModal();
+    url.searchParams.delete('yeni');
+    window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+  }, []);
 
   function openEditModal(c: Client, e: React.MouseEvent) {
     e.stopPropagation();
@@ -279,6 +289,7 @@ export function ClientListPage() {
           <Icon name="search" size={18} />
           <input
             type="text"
+            aria-label="Danışanlarda ara"
             placeholder="Danışan adı, dosya no, telefon, TC veya tanı ara..."
             value={search}
             onChange={e => setSearch(e.target.value)}
@@ -299,19 +310,20 @@ export function ClientListPage() {
       </div>
 
       {/* Danışan Tablosu */}
-      <div className="client-table-wrap">
+      <div className="client-table-wrap mobile-card-table">
         {filteredClients.length === 0 ? (
-          <div style={{ padding: '48px 24px', textAlign: 'center' }}>
-            <div style={{ color: 'var(--muted)', marginBottom: 12 }}>
-              <Icon name="users" size={36} />
-            </div>
-            <h4 style={{ margin: '0 0 6px', fontSize: 16 }}>Danışan Bulunamadı</h4>
-            <p style={{ color: 'var(--soft)', fontSize: 13, margin: 0 }}>
-              {search ? 'Arama kriterinize uygun bir danışan kaydı yok.' : 'Henüz kayıtlı bir danışan bulunmamaktadır.'}
-            </p>
+          <div className="empty-state-card client-list-empty">
+            <Icon name="users" size={30} />
+            <h4>{clients.length > 0 ? 'Eşleşen danışan yok' : 'Henüz danışan dosyası yok'}</h4>
+            <p>{clients.length > 0 ? 'Arama veya filtre seçiminizi değiştirerek tekrar deneyin.' : 'İlk danışanınızı ekleyin; görüşmeler, ölçekler ve notlar bu dosyada birikir.'}</p>
+            {clients.length > 0 ? (
+              <button type="button" className="btn-secondary btn-sm" onClick={() => { setSearch(''); setStatusFilter('all'); }}>Filtreleri temizle</button>
+            ) : (
+              <button type="button" className="btn-primary btn-sm" onClick={openNewModal}><Icon name="plus" size={16} /> Yeni danışan ekle</button>
+            )}
           </div>
         ) : (
-          <table className="client-table">
+          <table className="client-table" data-mobile-cards>
             <thead>
               <tr>
                 <th>Protokol No</th>
@@ -325,35 +337,33 @@ export function ClientListPage() {
             </thead>
             <tbody>
               {filteredClients.map(client => (
-                <tr
-                  key={client.id}
-                  style={{ cursor: 'pointer' }}
-                  onClick={() => navigate(`/danisanlar/${client.id}`)}
-                >
-                  <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--soft)' }}>
+                <tr key={client.id}>
+                  <td data-label="Protokol no" style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--soft)' }}>
                     {client.fileNumber}
                   </td>
-                  <td>
+                  <td data-label="Danışan">
                     <div className="client-avatar-cell">
-                      <div className="client-mini-avatar">
+                      <div className="client-mini-avatar" aria-hidden="true">
                         {client.firstName.charAt(0)}{client.lastName.charAt(0)}
                       </div>
                       <div className="client-name-group">
-                        <strong>{client.firstName} {client.lastName}</strong>
+                        <button type="button" className="client-name-button" onClick={() => navigate(`/danisanlar/${client.id}`)}>
+                          {client.firstName} {client.lastName}
+                        </button>
                         <span>{client.occupation || 'Meslek belirtilmedi'}</span>
                       </div>
                     </div>
                   </td>
-                  <td>
+                  <td data-label="Cinsiyet / yaş">
                     <span>{client.gender === 'ERKEK' ? 'Erkek' : 'Kadın'}{client.birthDate ? `, ${client.age} yaş` : ''}</span>
                   </td>
-                  <td>
+                  <td data-label="İletişim">
                     <div style={{ fontSize: 12.5 }}>
                       <div>{client.phone || '—'}</div>
                       <span style={{ color: 'var(--muted)', fontSize: 11.5 }}>{client.email || ''}</span>
                     </div>
                   </td>
-                  <td>
+                  <td data-label="Tanı / odak">
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', maxWidth: 260 }}>
                       {client.diagnoses && client.diagnoses.length > 0 ? (
                         client.diagnoses.map((d, i) => (
@@ -375,7 +385,7 @@ export function ClientListPage() {
                       )}
                     </div>
                   </td>
-                  <td>
+                  <td data-label="Durum">
                     <span className={`badge badge-${client.status}`}>
                       {client.status === 'active' && 'Aktif'}
                       {client.status === 'followup' && 'Takipte'}
@@ -383,8 +393,8 @@ export function ClientListPage() {
                       {client.status === 'archived' && 'Arşiv'}
                     </span>
                   </td>
-                  <td style={{ textAlign: 'right' }}>
-                    <div style={{ display: 'inline-flex', gap: 6 }}>
+                  <td data-label="İşlemler" style={{ textAlign: 'right' }}>
+                    <div className="client-row-actions">
                       <button
                         type="button"
                         className="btn-secondary btn-sm"
@@ -400,7 +410,8 @@ export function ClientListPage() {
                       <button
                         type="button"
                         className="btn-secondary btn-sm"
-                        title="Danışan Bilgilerini Düzenle"
+                        title="Danışan bilgilerini düzenle"
+                        aria-label={`${client.firstName} ${client.lastName} bilgilerini düzenle`}
                         onClick={e => openEditModal(client, e)}
                       >
                         <Icon name="edit" size={14} />
@@ -409,7 +420,8 @@ export function ClientListPage() {
                         type="button"
                         className="btn-secondary btn-sm"
                         style={{ color: 'var(--danger)' }}
-                        title="Danışanı Sil"
+                        title="Danışanı sil"
+                        aria-label={`${client.firstName} ${client.lastName} kaydını sil`}
                         onClick={e => handleDelete(client.id, `${client.firstName} ${client.lastName}`, e)}
                       >
                         <Icon name="trash" size={14} />
@@ -425,11 +437,10 @@ export function ClientListPage() {
 
       {/* Danışan Ekleme / Düzenleme Modalı */}
       {modalOpen && (
-        <div className="clinical-modal-backdrop" onClick={() => setModalOpen(false)}>
-          <div className="clinical-modal" onClick={e => e.stopPropagation()}>
+        <ClinicalDialog titleId="client-dialog-title" onClose={() => setModalOpen(false)}>
             <div className="clinical-modal-head">
-              <h3>{editingClient ? 'Danışan Bilgilerini Düzenle' : 'Yeni Danışan Kaydı'}</h3>
-              <button type="button" className="btn-icon" onClick={() => setModalOpen(false)}>
+              <h3 id="client-dialog-title">{editingClient ? 'Danışan Bilgilerini Düzenle' : 'Yeni Danışan Kaydı'}</h3>
+              <button type="button" className="btn-icon" aria-label="Pencereyi kapat" onClick={() => setModalOpen(false)}>
                 <Icon name="close" size={20} />
               </button>
             </div>
@@ -777,8 +788,7 @@ export function ClientListPage() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </ClinicalDialog>
       )}
     </div>
   );

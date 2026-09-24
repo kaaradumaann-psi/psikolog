@@ -13,6 +13,7 @@ import './styles/site.css';
 import './styles/mobile.css';
 import './styles/theme.css';
 import './styles/coherence.css';
+import './styles/workspace.css';
 import './styles/responsive.css';
 
 installLinkInterceptor();

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { SoapSession } from '../../clinical/clinicalTypes';
 import { summarizeWithAI } from '../../features/ai/aiTypes';
+import { ClinicalDialog } from '../clinical/ClinicalDialog';
 import { Icon } from '../Icon';
 
 export function SessionSummaryButton({ sessions }: { sessions: SoapSession[] }) {
@@ -42,10 +43,9 @@ export function SessionSummaryButton({ sessions }: { sessions: SoapSession[] }) 
       </button>
       {error && <span style={{ fontSize: 12, color: 'var(--danger-ink)' }}>{error}</span>}
       {open && (
-        <div className="clinical-modal-backdrop" onClick={() => setOpen(false)}>
-          <div className="clinical-modal" onClick={(event) => event.stopPropagation()}>
+        <ClinicalDialog titleId="summary-dialog-title" onClose={() => setOpen(false)}>
             <div className="clinical-modal-head">
-              <h3>Ayıklayıcı özet — tanı değildir</h3>
+              <h3 id="summary-dialog-title">Ayıklayıcı özet — tanı değildir</h3>
               <button type="button" className="btn-icon" onClick={() => setOpen(false)} aria-label="Kapat"><Icon name="close" size={18} /></button>
             </div>
             <div className="clinical-modal-body">
@@ -55,8 +55,7 @@ export function SessionSummaryButton({ sessions }: { sessions: SoapSession[] }) 
                 {warnings.map((warning) => <li key={warning}>{warning}</li>)}
               </ul>
             </div>
-          </div>
-        </div>
+        </ClinicalDialog>
       )}
     </>
   );

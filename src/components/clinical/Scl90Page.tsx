@@ -256,17 +256,17 @@ export function Scl90Page() {
 
       {/* Soru Listesi (Sayfalı 10'arlı görünüm) */}
       <div className="btn-print-hide">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <h3 style={{ fontSize: 18, margin: 0 }}>
-            Maddeler ({pageIndex * 10 + 1} - {Math.min(90, (pageIndex + 1) * 10)} / 90)
-          </h3>
-          <div style={{ display: 'flex', gap: 6 }}>
+        <div className="scl-question-pagination">
+          <h3>Maddeler ({pageIndex * 10 + 1} - {Math.min(90, (pageIndex + 1) * 10)} / 90)</h3>
+          <div className="scl-page-buttons" role="group" aria-label="Madde sayfaları">
             {Array.from({ length: 9 }).map((_, i) => (
               <button
                 key={i}
                 type="button"
                 className={`btn-secondary btn-sm ${pageIndex === i ? 'active' : ''}`}
-                style={{ minWidth: 32, fontWeight: pageIndex === i ? 700 : 400, background: pageIndex === i ? 'var(--text)' : undefined, color: pageIndex === i ? 'var(--bg)' : undefined }}
+                aria-label={`${i + 1}. sayfa: ${i * 10 + 1}–${(i + 1) * 10}. maddeler`}
+                aria-current={pageIndex === i ? 'page' : undefined}
+                style={{ fontWeight: pageIndex === i ? 700 : 400, background: pageIndex === i ? 'var(--text)' : undefined, color: pageIndex === i ? 'var(--bg)' : undefined }}
                 onClick={() => setPageIndex(i)}
               >
                 {i + 1}
@@ -277,7 +277,7 @@ export function Scl90Page() {
 
         {currentPageItems.map((item, localIdx) => {
           const globalIdx = pageIndex * 10 + localIdx;
-          const currentVal = answers[globalIdx] || 0;
+          const currentVal = answers[globalIdx];
 
           return (
             <div
@@ -317,7 +317,7 @@ export function Scl90Page() {
         })}
 
         {/* Sayfa Gezinme Butonları */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16 }}>
+        <div className="scl-page-stepper">
           <button
             type="button"
             className="btn-secondary"
@@ -340,7 +340,7 @@ export function Scl90Page() {
       </div>
 
       {/* Alt Kaydet & Yazdır */}
-      <div className="btn-print-hide" style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 28 }}>
+      <div className="scl-form-actions btn-print-hide">
         <button type="button" className="btn-secondary" onClick={() => window.print()}>
           <Icon name="print" size={16} />
           <span>Yazdır / PDF</span>

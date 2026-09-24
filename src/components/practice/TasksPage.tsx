@@ -11,6 +11,7 @@ import {
   type TaskPriority,
   type TaskStatus,
 } from '../../clinical/practiceStore';
+import { ClinicalDialog } from '../clinical/ClinicalDialog';
 import { Icon } from '../Icon';
 
 const STATUS_LABEL: Record<TaskStatus, string> = {
@@ -86,23 +87,30 @@ export function TasksPage() {
       {visible.length === 0 ? (
         <div className="empty-state-card">
           <Icon name="clipboard" size={28} />
-          <h4>Açık görev yok</h4>
-          <p>Seans sonrası takip, ölçek tekrarı veya idari iş için görev ekleyin.</p>
+          <h4>{tasks.length > 0 ? 'Açık görev kalmadı' : 'Henüz görev yok'}</h4>
+          <p>{tasks.length > 0 ? 'Tamamlanan görevleri görmek için tümünü gösterin.' : 'Seans sonrası takip, ölçek tekrarı veya idari işler için bir görev oluşturun.'}</p>
+          {tasks.length > 0 ? (
+            <button type="button" className="btn-secondary btn-sm" onClick={() => setFilter('all')}>Tümünü göster</button>
+          ) : (
+            <button type="button" className="btn-primary btn-sm" onClick={() => setOpen(true)}><Icon name="plus" size={16} /> Görev ekle</button>
+          )}
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div className="task-list">
           {visible.map((task) => (
-            <article key={task.id} className="modern-table-card" style={{ padding: 16, display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-              <div>
-                <strong>{task.title}</strong>
-                <div style={{ fontSize: 12, color: 'var(--soft)', marginTop: 4 }}>
-                  {task.clientName || 'Danışansız'} · {task.dueDate || 'Tarihsiz'} · {task.priority === 'high' ? 'Yüksek' : task.priority === 'low' ? 'Düşük' : 'Orta'} öncelik
+            <article key={task.id} className={`task-card priority-${task.priority}`}>
+              <div className="task-card-main">
+                <span className="task-card-kicker">{task.clientName || 'Genel görev'}</span>
+                <h2>{task.title}</h2>
+                {task.description && <p>{task.description}</p>}
+                <div className="task-card-meta">
+                  <span><Icon name="calendar" size={15} /> {task.dueDate || 'Tarih belirlenmedi'}</span>
+                  <span className={`task-priority priority-${task.priority}`}>{task.priority === 'high' ? 'Yüksek öncelik' : task.priority === 'low' ? 'Düşük öncelik' : 'Orta öncelik'}</span>
                 </div>
-                {task.description && <p style={{ margin: '8px 0 0', fontSize: 13, color: 'var(--soft)' }}>{task.description}</p>}
               </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <button type="button" className="btn-secondary btn-sm" onClick={() => cycle(task)}>{STATUS_LABEL[task.status]}</button>
-                <button type="button" className="btn-icon" aria-label="Görevi sil" onClick={() => deleteTask(task.id)}>
+              <div className="task-card-actions">
+                <button type="button" className="btn-secondary btn-sm" aria-label={`${task.title}: ${STATUS_LABEL[task.status]}. Durumu değiştir`} onClick={() => cycle(task)}>{STATUS_LABEL[task.status]} <Icon name="right" size={14} /></button>
+                <button type="button" className="btn-icon" aria-label={`${task.title} görevini sil`} onClick={() => { if (window.confirm('Bu görevi silmek istiyor musunuz?')) deleteTask(task.id); }}>
                   <Icon name="trash" size={16} />
                 </button>
               </div>
@@ -112,10 +120,9 @@ export function TasksPage() {
       )}
 
       {open && (
-        <div className="clinical-modal-backdrop" onClick={() => setOpen(false)}>
-          <form className="clinical-modal" onClick={(event) => event.stopPropagation()} onSubmit={onSubmit}>
+        <ClinicalDialog titleId="task-dialog-title" onClose={() => setOpen(false)} onSubmit={onSubmit}>
             <div className="clinical-modal-head">
-              <h3>Yeni görev</h3>
+              <h3 id="task-dialog-title">Yeni görev</h3>
               <button type="button" className="btn-icon" onClick={() => setOpen(false)} aria-label="Kapat"><Icon name="close" size={18} /></button>
             </div>
             <div className="clinical-modal-body">
@@ -155,8 +162,7 @@ export function TasksPage() {
               <button type="button" className="btn-secondary" onClick={() => setOpen(false)}>Vazgeç</button>
               <button type="submit" className="btn-primary">Kaydet</button>
             </div>
-          </form>
-        </div>
+        </ClinicalDialog>
       )}
     </div>
   );

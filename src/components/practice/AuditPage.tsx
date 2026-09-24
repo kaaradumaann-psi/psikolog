@@ -23,18 +23,18 @@ export function AuditPage() {
       {events.length === 0 ? (
         <div className="empty-state-card"><h4>Kayıt yok</h4><p>Kaydetme ve silme işlemleri burada görünür.</p></div>
       ) : (
-        <div className="client-table-wrap">
-          <table className="client-table">
+        <div className="client-table-wrap mobile-card-table">
+          <table className="client-table" data-mobile-cards>
             <thead>
               <tr><th>Zaman</th><th>İşlem</th><th>Varlık</th><th>Özet</th></tr>
             </thead>
             <tbody>
               {events.map((event) => (
                 <tr key={event.id}>
-                  <td>{new Date(event.at).toLocaleString('tr-TR')}</td>
-                  <td>{auditActionLabel(event.action)}</td>
-                  <td>{auditEntityLabel(event.entity)}</td>
-                  <td>{event.summary}</td>
+                  <td data-label="Zaman">{new Date(event.at).toLocaleString('tr-TR')}</td>
+                  <td data-label="İşlem">{auditActionLabel(event.action)}</td>
+                  <td data-label="Varlık">{auditEntityLabel(event.entity)}</td>
+                  <td data-label="Özet">{event.summary}</td>
                 </tr>
               ))}
             </tbody>

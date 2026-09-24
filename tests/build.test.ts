@@ -24,8 +24,8 @@ test('built index.html contains theme tokens and no source imports', () => {
   const html = readFileSync('dist/index.html', 'utf8');
   // No direct src import in prod
   assert.ok(!html.includes('src="/src/main.tsx"'), 'Should not contain dev src import');
-  // Should contain our app title
-  assert.ok(html.includes('Psikolog Platformu') || html.includes('psikolog'), 'Title should be present');
+  // The browser tab uses the same name as the workspace navigation.
+  assert.ok(html.includes('<title>Psikolog — Klinik Çalışma Alanı</title>'), 'Title should be present');
 });
 
 test('responsive.css contract in built CSS', () => {

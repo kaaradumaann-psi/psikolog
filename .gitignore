@@ -13,3 +13,5 @@ yarn-debug.log*
 !.vscode/extensions.json
 .idea
 coverage
+playwright-report
+test-results

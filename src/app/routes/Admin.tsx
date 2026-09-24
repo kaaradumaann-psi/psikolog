@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { adminListProfiles, adminUpdateProfile, adminListOrganizations, adminCreateOrganization, type AdminProfile, type AdminOrg } from '../../features/admin/adminApi';
+import { adminListProfiles, adminUpdateProfile, adminListOrganizations, adminCreateOrganization, adminCreateUser, type AdminProfile, type AdminOrg } from '../../features/admin/adminApi';
 import { getPsychologistSettings, upsertPsychologistSettings } from '../../features/settings/settingsApi';
 import { listAuditLogs } from '../../features/audit/auditApi';
 import type { AuditLog } from '../../features/audit/auditApi';
@@ -13,6 +13,8 @@ export function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [newOrgName, setNewOrgName] = useState('');
   const [editing, setEditing] = useState<AdminProfile | null>(null);
+  const [newUser, setNewUser] = useState({ firstName: '', lastName: '', email: '', password: '', role: 'PSYCHOLOG' as AdminProfile['role'], organizationId: '' });
+  const [creatingUser, setCreatingUser] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -43,6 +45,31 @@ export function AdminPage() {
     }
   };
 
+  const handleCreateUser = async () => {
+    if (!newUser.firstName.trim() || !newUser.lastName.trim() || !newUser.email.trim() || !newUser.password) {
+      showToast('Ad, soyad, e-posta, şifre zorunlu (şifre min 10)', 'error');
+      return;
+    }
+    setCreatingUser(true);
+    try {
+      const created = await adminCreateUser({
+        firstName: newUser.firstName,
+        lastName: newUser.lastName,
+        email: newUser.email,
+        password: newUser.password,
+        role: newUser.role as 'PSYCHOLOG' | 'ORG_ADMIN',
+        organizationId: newUser.organizationId || null,
+      });
+      setProfiles((prev) => [created, ...prev]);
+      setNewUser({ firstName: '', lastName: '', email: '', password: '', role: 'PSYCHOLOG', organizationId: '' });
+      showToast(`Psikolog hesabı oluşturuldu: ${created.email}`, 'success');
+    } catch (e) {
+      showToast((e as Error).message, 'error');
+    } finally {
+      setCreatingUser(false);
+    }
+  };
+
   const handleUpdateProfile = async () => {
     if (!editing) return;
     try {
@@ -67,7 +94,29 @@ export function AdminPage() {
       <div className="page-header">
         <div>
           <h1>Yönetim</h1>
-          <p>Kullanıcı ve organizasyon yönetimi — sadece ADMIN (RPC security definer)</p>
+          <p>Kullanıcı ve organizasyon yönetimi — sadece ADMIN (RPC + Edge Function admin-users)</p>
+        </div>
+      </div>
+
+      <div className="card">
+        <h3 style={{ fontSize: 14, marginBottom: 12 }}>Yeni Psikolog Hesabı Oluştur (Edge Function)</h3>
+        <p style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 12, lineHeight: 1.5 }}>
+          Public registration kapalı. Hesap oluşturma sadece ADMIN tarafından Edge Function <code>admin-users</code> üzerinden. Şifre min 10 karakter, e-posta unique, organizasyon seçersen o kuruma atanır.
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="field"><label className="field-label">Ad *</label><input className="input" value={newUser.firstName} onChange={(e) => setNewUser({ ...newUser, firstName: e.target.value })} maxLength={80} placeholder="Halil" /></div>
+          <div className="field"><label className="field-label">Soyad *</label><input className="input" value={newUser.lastName} onChange={(e) => setNewUser({ ...newUser, lastName: e.target.value })} maxLength={80} placeholder="Karaduman" /></div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 8 }}>
+          <div className="field"><label className="field-label">E-posta *</label><input className="input" type="email" value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} maxLength={254} placeholder="psikolog@ornek.com" /></div>
+          <div className="field"><label className="field-label">Şifre * (min 10)</label><input className="input" type="password" value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} maxLength={128} placeholder="••••••••••" /></div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 8 }}>
+          <div className="field"><label className="field-label">Rol</label><select className="select" value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value as AdminProfile['role'] })}><option value="PSYCHOLOG">PSYCHOLOG</option><option value="ORG_ADMIN">ORG_ADMIN</option></select></div>
+          <div className="field"><label className="field-label">Organizasyon</label><select className="select" value={newUser.organizationId} onChange={(e) => setNewUser({ ...newUser, organizationId: e.target.value })}><option value="">— Yok (sonra ata) —</option>{orgs.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select></div>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+          <button type="button" className="btn btn--primary btn--sm" onClick={handleCreateUser} disabled={creatingUser}>{creatingUser ? 'Oluşturuluyor…' : '+ Psikolog Oluştur'}</button>
         </div>
       </div>
 

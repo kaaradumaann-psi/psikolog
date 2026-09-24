@@ -51,3 +51,47 @@ export async function adminCreateOrganization(name: string): Promise<AdminOrg> {
   if (error) throw new Error('Organizasyon oluşturulamadı: ' + error.message);
   return data as AdminOrg;
 }
+
+export async function adminCreateUser(input: {
+  firstName: string;
+  lastName: string;
+  email: string;
+  password: string;
+  role?: 'PSYCHOLOG' | 'ORG_ADMIN';
+  organizationId?: string | null;
+}): Promise<AdminProfile> {
+  const supabase = requireSupabase();
+  const { data, error } = await supabase.functions.invoke('admin-users', {
+    body: {
+      action: 'create',
+      firstName: input.firstName.trim(),
+      lastName: input.lastName.trim(),
+      email: input.email.trim().toLowerCase(),
+      password: input.password,
+      role: input.role || 'PSYCHOLOG',
+      organizationId: input.organizationId || null,
+    },
+  });
+  if (error) throw new Error('Kullanıcı oluşturulamadı: ' + error.message);
+  if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
+  return data as AdminProfile;
+}
+
+export async function adminDeleteUser(userId: string): Promise<void> {
+  const supabase = requireSupabase();
+  const { data, error } = await supabase.functions.invoke('admin-users', {
+    body: { action: 'delete', userId },
+  });
+  if (error) throw new Error('Kullanıcı silinemedi: ' + error.message);
+  if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
+}
+
+export async function adminSetActive(userId: string, active: boolean): Promise<void> {
+  const supabase = requireSupabase();
+  const { data, error } = await supabase.functions.invoke('admin-users', {
+    body: { action: 'set_active', userId, active },
+  });
+  if (error) throw new Error('Aktiflik değiştirilemedi: ' + error.message);
+  if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
+}
+

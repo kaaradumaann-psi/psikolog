@@ -242,13 +242,13 @@
     outline-offset: 2px;
   }
 
-  .mobile-nav-overlay .mobile-nav-link.active {
+  .mobile-nav-panel .mobile-nav-link.active {
     background: var(--bg-soft);
     border-color: var(--hairline);
     color: var(--text);
   }
 
-  .mobile-nav-overlay .mobile-nav-link.active svg {
+  .mobile-nav-panel .mobile-nav-link.active svg {
     color: var(--text);
   }
 

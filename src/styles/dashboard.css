@@ -59,6 +59,112 @@
   padding: 0.75rem 1rem 0;
 }
 
+.day-board {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.desk {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(220px, 0.8fr) auto;
+  gap: 18px;
+  align-items: end;
+  padding: 8px 0 4px;
+}
+
+.desk-date p,
+.desk-now p {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--soft);
+}
+
+.desk-date h1 {
+  margin: 6px 0 8px;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(36px, 5vw, 56px);
+  letter-spacing: -0.04em;
+  line-height: 0.95;
+}
+
+.desk-date span,
+.desk-now span {
+  color: var(--soft);
+  font-size: 14px;
+}
+
+.desk-now {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 18px;
+  background: #fff;
+  border: 1px solid var(--hairline);
+  border-radius: 16px;
+}
+
+.desk-now strong {
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: 400;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.desk-now-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.desk-backup {
+  align-self: start;
+}
+
+.desk-rail {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.desk-rail button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 14px 16px;
+  background: #fff;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  text-align: left;
+  color: inherit;
+}
+
+.desk-rail strong {
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.desk-rail span {
+  font-size: 12.5px;
+  color: var(--soft);
+}
+
+@media screen and (max-width: 800px) {
+  .desk,
+  .desk-rail {
+    grid-template-columns: 1fr;
+  }
+}
+
 .day-board-head,
 .section-row,
 .formulation-head {

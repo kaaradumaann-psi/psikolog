@@ -9,7 +9,7 @@
   align-items: center;
   justify-content: center;
   padding: 32px 20px;
-  background: radial-gradient(circle at 10% 20%, #f1f5f9 0%, #e2e8f0 90%);
+  background: #f3f3f4;
 }
 
 .auth-card-wrapper {
@@ -22,7 +22,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 36px 32px;
-  box-shadow: var(--shadow-xl);
+  box-shadow: none;
 }
 
 .auth-card.auth-loading {
@@ -44,20 +44,21 @@
 .auth-brand-mark {
   width: 44px;
   height: 44px;
-  border-radius: var(--radius-md);
-  background: var(--primary-tint);
-  color: var(--primary);
+  border-radius: 10px;
+  background: #111213;
+  color: #ececec;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex: none;
 }
 
 .auth-brand strong {
   display: block;
-  font-size: 18px;
-  font-weight: 800;
-  color: var(--dark);
-  letter-spacing: -0.4px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.02em;
 }
 
 .auth-brand small {
@@ -72,10 +73,11 @@
 
 .auth-heading h1 {
   margin: 6px 0 6px;
-  font-size: 24px;
-  font-weight: 800;
-  color: var(--dark);
-  letter-spacing: -0.5px;
+  font-family: var(--font-display);
+  font-size: 34px;
+  font-weight: 400;
+  color: var(--text);
+  letter-spacing: -0.03em;
 }
 
 .auth-heading p {
@@ -90,8 +92,8 @@
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.8px;
-  color: var(--primary);
+  letter-spacing: 0.12em;
+  color: var(--soft);
 }
 
 .auth-form {
@@ -124,8 +126,8 @@
 }
 
 .form-group input:focus, .form-group select:focus {
-  border-color: var(--border-focus);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+  border-color: var(--text);
+  box-shadow: none;
   outline: none;
 }
 
@@ -145,6 +147,12 @@
   color: var(--slate-500);
   font-size: 11.5px;
   line-height: 1.5;
+}
+
+.form-error {
+  margin: 0;
+  color: var(--danger-ink);
+  font-size: 13.5px;
 }
 
 .auth-footer-help svg {

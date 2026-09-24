@@ -1,4 +1,4 @@
-/** Real PostgreSQL (WASM) RLS/policies/triggers — MMPI reportDatabase.test.ts pattern */
+/** Real PostgreSQL (WASM) RLS/policies/triggers */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync, readdirSync } from 'node:fs';

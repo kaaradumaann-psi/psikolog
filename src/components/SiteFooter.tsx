@@ -66,7 +66,7 @@ export function SiteFooter({ onNewEntry, compact }: SiteFooterProps) {
         <div className="site-footer-legal">
           <div className="site-footer-legal-inner">
             <p className="site-footer-disclaimer">
-              Bu yazılım tanı koymaz ve tedavi önermez. Ölçek puanları klinik karar destek içindir; nihai değerlendirme uygulayıcı uzmana aittir.
+              Bu yazılım tek başına tanı aracı değildir. Klinik karar uygulayıcı uzmana aittir.
             </p>
           </div>
         </div>

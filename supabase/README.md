@@ -2,7 +2,7 @@
 
 Bu klasör yeni platformun şemasını, RLS politikalarını ve kullanıcı yönetimi Edge Function'ını içerir.
 
-**ÖNEMLİ:** Bu yeni Supabase project'tir. MMPI (`Repo123`) veritabanı kullanılmaz. Ayrı project.
+**ÖNEMLİ:** Bu çalışma alanının kendi Supabase projesidir. Başka bir uygulamanın veritabanı kullanılmaz.
 
 ## 1. Proje Değişkenleri
 

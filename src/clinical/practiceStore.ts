@@ -149,13 +149,42 @@ export const DEFAULT_SETTINGS: PracticeSettings = {
   defaultFee: 0,
 };
 
+const AUDIT_ACTIONS: Record<string, string> = {
+  save: 'Kaydetme',
+  delete: 'Silme',
+  import: 'Geri yükleme',
+  kaydetme: 'Kaydetme',
+  silme: 'Silme',
+};
+
+const AUDIT_ENTITIES: Record<string, string> = {
+  client: 'Danışan',
+  note: 'Not',
+  task: 'Görev',
+  document: 'Belge',
+  settings: 'Ayar',
+  screening: 'Tarama',
+  formulation: 'Formülasyon',
+  safety: 'Güvenlik planı',
+  backup: 'Yedek',
+  danışan: 'Danışan',
+};
+
+export function auditActionLabel(value: string): string {
+  return AUDIT_ACTIONS[value] ?? value;
+}
+
+export function auditEntityLabel(value: string): string {
+  return AUDIT_ENTITIES[value] ?? value;
+}
+
 export function recordAudit(input: { action: string; entity: string; entityId: string; summary: string }): void {
   const list = read<AuditEvent[]>(AUDIT_KEY, []);
   const event: AuditEvent = {
     id: newId('aud'),
     at: new Date().toISOString(),
-    action: input.action.slice(0, 40),
-    entity: input.entity.slice(0, 40),
+    action: auditActionLabel(input.action).slice(0, 40),
+    entity: auditEntityLabel(input.entity).slice(0, 40),
     entityId: input.entityId.slice(0, 80),
     summary: input.summary.slice(0, 240),
   };

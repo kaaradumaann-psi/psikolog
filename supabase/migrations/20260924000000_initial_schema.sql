@@ -1,5 +1,5 @@
 -- Psikolog Platformu — Initial Schema
--- New Supabase project, separate from MMPI
+-- Klinik çalışma alanı şeması. Ayrı Supabase projesi.
 -- Run: supabase db push
 
 create extension if not exists pgcrypto;
@@ -337,7 +337,7 @@ for delete to authenticated
 using (public.is_admin());
 
 -- Profiles: user sees own, admin sees all, org_admin sees same org
--- Uses my_organization_id() security definer to avoid infinite recursion (MMPI pattern)
+-- Uses my_organization_id() security definer to avoid infinite recursion
 drop policy if exists profiles_select on public.profiles;
 create policy profiles_select on public.profiles
 for select to authenticated

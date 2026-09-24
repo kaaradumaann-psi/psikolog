@@ -77,7 +77,7 @@ create table if not exists public.psychologist_settings (
 );
 
 -- ---------------------------------------------------------------------------
--- Triggers — prepare + versioning (MMPI pattern)
+-- Triggers — prepare + versioning
 -- ---------------------------------------------------------------------------
 create or replace function public.prepare_report()
 returns trigger

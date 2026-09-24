@@ -5,7 +5,7 @@ import { PGlite } from '@electric-sql/pglite';
 
 /**
  * Negative security tests — IDOR, anon, role escalation, wrong IDs
- * MMPI pattern: User A → User B patient, org B, anon, expired, wrong IDs
+ * User A → User B patient, org B, anon, expired, wrong IDs
  */
 
 const ORG_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';

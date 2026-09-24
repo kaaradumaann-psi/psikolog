@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import type { FormEvent, KeyboardEvent } from 'react';
+import { useEffect, useState } from 'react';
+import type { FormEvent } from 'react';
 import type { AuthenticatedUser } from './auth/authTypes';
 import { displayName } from './auth/userDisplay';
 import { supabaseConfig } from './auth/supabaseClient';
@@ -30,9 +30,21 @@ import { SourcesPage } from './components/SourcesPage';
 import { TermsPage } from './components/TermsPage';
 import { navigate, useRoute } from './router';
 import type { AppRoute } from './router';
-import { APP_NAME, SITE_URL } from './site';
+import { APP_NAME } from './site';
 
 type Workspace = 'home' | 'danisanlar' | 'seanslar' | 'testler' | 'takvim' | 'raporlar' | 'gorevler' | 'ayarlar';
+
+function BrandMark() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+      <path d="M9 3H3v6M17 3h6v6M23 17v6h-6M9 23H3v-6" stroke="currentColor" strokeWidth="2.2" />
+      <circle cx="10" cy="10" r="1.8" fill="currentColor" />
+      <circle cx="16" cy="10" r="1.8" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="10" cy="16" r="1.8" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="16" cy="16" r="1.8" fill="currentColor" />
+    </svg>
+  );
+}
 
 const LOCAL_USER: AuthenticatedUser = {
   id: 'local-psychologist',
@@ -160,7 +172,12 @@ function CloudGate() {
   if (user === undefined) {
     return (
       <div className="auth-page">
-        <main className="auth-shell"><p>Oturum doğrulanıyor…</p></main>
+        <main className="auth-shell">
+          <div className="auth-card auth-loading">
+            <span className="auth-brand-mark"><BrandMark /></span>
+            <p>Oturum doğrulanıyor…</p>
+          </div>
+        </main>
       </div>
     );
   }
@@ -169,9 +186,15 @@ function CloudGate() {
       <div className="auth-page">
         <main className="auth-shell">
           <form className="auth-card" onSubmit={onSubmit}>
+            <div className="auth-brand">
+              <span className="auth-brand-mark"><BrandMark /></span>
+              <div>
+                <strong>{APP_NAME}</strong>
+                <small>Klinik çalışma alanı</small>
+              </div>
+            </div>
             <div className="auth-heading">
-              <span className="auth-eyebrow">{APP_NAME}</span>
-              <h1>Klinik çalışma alanı</h1>
+              <h1>Giriş</h1>
               <p>Halka açık kayıt yoktur. Hesabınız yönetici tarafından açılır.</p>
             </div>
             <div className="form-group">
@@ -182,7 +205,7 @@ function CloudGate() {
               <label htmlFor="password">Parola</label>
               <input id="password" name="password" type="password" autoComplete="current-password" required />
             </div>
-            {error && <p style={{ color: 'var(--danger-ink)' }}>{error}</p>}
+            {error && <p className="form-error" role="alert">{error}</p>}
             <button type="submit" className="btn-primary auth-submit-btn">Giriş yap</button>
           </form>
         </main>
@@ -214,7 +237,6 @@ function WorkspaceShell({ user, onLogout, localMode }: { user: AuthenticatedUser
   }, []);
   const workspace = resolveWorkspace(route) ?? 'home';
   const tabs: Workspace[] = ['home', 'danisanlar', 'seanslar', 'testler', 'takvim', 'raporlar', 'gorevler', 'ayarlar'];
-  const tabRefs = useRef<Partial<Record<Workspace, HTMLButtonElement | null>>>({});
   const tabLabel: Record<Workspace, string> = {
     home: 'Genel Bakış',
     danisanlar: 'Danışanlar',
@@ -238,20 +260,6 @@ function WorkspaceShell({ user, onLogout, localMode }: { user: AuthenticatedUser
 
   function activateTab(next: Workspace) {
     navigate(TAB_PATH[next]);
-    tabRefs.current[next]?.focus();
-  }
-
-  function onTablistKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    const current = Math.max(0, tabs.indexOf(workspace));
-    const nextIndex =
-      event.key === 'Home' ? 0
-      : event.key === 'End' ? tabs.length - 1
-      : event.key === 'ArrowRight' || event.key === 'ArrowDown' ? (current + 1) % tabs.length
-      : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? (current - 1 + tabs.length) % tabs.length
-      : -1;
-    if (nextIndex < 0) return;
-    event.preventDefault();
-    activateTab(tabs[nextIndex]!);
   }
 
   const canAdmin = user.role === 'ADMIN' || user.role === 'ORG_ADMIN';
@@ -261,45 +269,17 @@ function WorkspaceShell({ user, onLogout, localMode }: { user: AuthenticatedUser
       <a className="skip-link" href="#main">Ana içeriğe atla</a>
       <header className="app-header">
         <div className="header-inner">
-          <div className="header-left">
-            <a className="brand" href="/" aria-label={`${APP_NAME} ana sayfa`}>
-              <span className="brand-mark" aria-hidden="true">
-                <svg width="26" height="26" viewBox="0 0 26 26" fill="none">
-                  <path d="M9 3H3v6M17 3h6v6M23 17v6h-6M9 23H3v-6" stroke="currentColor" strokeWidth="2.2" />
-                  <circle cx="10" cy="10" r="1.8" fill="currentColor" />
-                  <circle cx="16" cy="10" r="1.8" stroke="currentColor" strokeWidth="1.5" />
-                  <circle cx="10" cy="16" r="1.8" stroke="currentColor" strokeWidth="1.5" />
-                  <circle cx="16" cy="16" r="1.8" fill="currentColor" />
-                </svg>
-              </span>
-              <div className="brand-text">
-                <strong className="brand-title">{APP_NAME}</strong>
-                <span className="brand-subtitle">Klinik çalışma alanı</span>
-              </div>
+          <a className="brand" href="/" aria-label={`${APP_NAME} ana sayfa`}>
+            <span className="brand-mark" aria-hidden="true">
+              <BrandMark />
+            </span>
+            <div className="brand-text">
+              <strong className="brand-title">{APP_NAME}</strong>
+              <span className="brand-subtitle">Klinik çalışma alanı</span>
+            </div>
             </a>
-            <nav className="workspace-tabs" role="tablist" aria-label="Çalışma alanı" onKeyDown={onTablistKeyDown}>
-              {tabs.map((tab) => (
-                <button
-                  type="button"
-                  role="tab"
-                  key={tab}
-                  ref={(element) => { tabRefs.current[tab] = element; }}
-                  aria-selected={workspace === tab}
-                  tabIndex={workspace === tab ? 0 : -1}
-                  className={`portal-tab ${workspace === tab ? 'active' : ''}`}
-                  onClick={() => activateTab(tab)}
-                >
-                  <Icon name={tabIcon[tab]} size={16} />
-                  <span>{tabLabel[tab]}</span>
-                </button>
-              ))}
-            </nav>
-          </div>
+          <div className="header-current">{tabLabel[workspace]}</div>
           <div className="header-user">
-            <a className="home-site-link" href={SITE_URL} target="_blank" rel="noopener noreferrer">
-              <span>halilkaraduman.com.tr</span>
-              <Icon name="external" size={13} />
-            </a>
             <div className="user-profile-summary">
               <div className="user-avatar-circle">{user.firstName.charAt(0)}{user.lastName.charAt(0)}</div>
               <div className="user-info-text">
@@ -328,7 +308,7 @@ function WorkspaceShell({ user, onLogout, localMode }: { user: AuthenticatedUser
         </div>
       </header>
       <ConnectivityBanner />
-      {storageError && <p role="alert" style={{ margin: '12px 16px 0', color: 'var(--danger-ink)' }}>{storageError}</p>}
+      {storageError && <p className="shell-alert" role="alert">{storageError}</p>}
       <main className="app-main" id="main">
         {route.page === 'danisan' && <ClientDetailPage clientId={route.id} />}
         {route.page === 'danisanlar' && <ClientListPage />}

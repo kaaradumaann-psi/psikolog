@@ -24,12 +24,9 @@ type MobileNavProps = {
 };
 
 /**
- * Mobil tam ekran gezinme katmanı (full-screen navigation overlay).
+ * Tam ekran gezinme katmanı.
  *
- * ≤900px'te başlıktaki sekme şeridi, kullanıcı özeti ve dış site bağlantısı
- * başlıkta yer kaplamak yerine sağ üstteki tek bir düğmeden açılan tam ekran
- * menüye taşınır. Masaüstünde (≥901px) bileşen yalnızca gizli düğmeyi üretir;
- * görünürlük tamamen CSS medya sorgularına bırakılmıştır.
+ * Sekmeler başlıkta yan yana durmaz. Sağ üstteki düğme bölümleri açar.
  *
  * Erişilebilirlik: `role="dialog"` + `aria-modal`, Escape ile kapanma, açılışta
  * odak kapatma düğmesine gider, kapanışta odak tetikleyiciye döner; menü

@@ -213,39 +213,29 @@ export function ClinicalReportsPage() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 24, alignItems: 'start' }}>
-        {/* Sol Kolon: Rapor Listesi */}
-        <div className="btn-print-hide" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--soft)' }}>
-            Kayıtlı Raporlar ({reports.length})
-          </div>
+      <div className="report-split">
+        <div className="report-list btn-print-hide">
+          <div className="report-list-label">Kayıtlı raporlar ({reports.length})</div>
 
           {reports.length === 0 ? (
-            <div className="empty-state-card" style={{ padding: 24 }}>
-              <p style={{ margin: 0, fontSize: 13 }}>Kayıtlı rapor yok.</p>
+            <div className="empty-state-card">
+              <p>Kayıtlı rapor yok.</p>
             </div>
           ) : (
             reports.map(r => (
-              <div
+              <button
+                type="button"
                 key={r.id}
-                className={`modern-table-card ${activeReport?.id === r.id ? 'active' : ''}`}
-                style={{
-                  padding: 14,
-                  cursor: 'pointer',
-                  border: activeReport?.id === r.id ? '2px solid var(--accent)' : '1px solid var(--hairline)',
-                  background: activeReport?.id === r.id ? '#fcfdff' : 'var(--bg)',
-                }}
+                className={`report-list-item${activeReport?.id === r.id ? ' is-selected' : ''}`}
                 onClick={() => {
                   setActiveReport(r);
                   setIsEditing(false);
                 }}
               >
-                <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 2 }}>{r.clientName}</div>
-                <div style={{ fontSize: 12, color: 'var(--soft)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {r.reportTitle}
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>{r.reportDate}</div>
-              </div>
+                <strong>{r.clientName}</strong>
+                <span>{r.reportTitle}</span>
+                <small>{r.reportDate}</small>
+              </button>
             ))
           )}
 
@@ -258,27 +248,18 @@ export function ClinicalReportsPage() {
               ))}
             </select>
           </label>
-          <div style={{ marginTop: 12 }}>
-            <button
-              type="button"
-              className="btn-secondary btn-full btn-sm"
-              style={{ marginBottom: 6 }}
-              onClick={() => handleCreateNew('referral')}
-            >
-              + Psikiyatrik Sevk Raporu
+          <div className="report-create">
+            <button type="button" className="btn-secondary btn-full btn-sm" onClick={() => handleCreateNew('referral')}>
+              Psikiyatrik Sevk Raporu
             </button>
-            <button
-              type="button"
-              className="btn-secondary btn-full btn-sm"
-              onClick={() => handleCreateNew('session_progress')}
-            >
-              + Seans İlerleme Raporu
+            <button type="button" className="btn-secondary btn-full btn-sm" onClick={() => handleCreateNew('session_progress')}>
+              Seans İlerleme Raporu
             </button>
-            <button type="button" className="btn-secondary btn-full btn-sm" style={{ marginTop: 6 }} onClick={() => handleCreateNew('beck')}>
-              + Beck Raporu
+            <button type="button" className="btn-secondary btn-full btn-sm" onClick={() => handleCreateNew('beck')}>
+              Beck Raporu
             </button>
-            <button type="button" className="btn-secondary btn-full btn-sm" style={{ marginTop: 6 }} onClick={() => handleCreateNew('scl90')}>
-              + SCL-90-R Raporu
+            <button type="button" className="btn-secondary btn-full btn-sm" onClick={() => handleCreateNew('scl90')}>
+              SCL-90-R Raporu
             </button>
           </div>
         </div>

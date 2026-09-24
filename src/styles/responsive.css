@@ -773,15 +773,96 @@
    düğme tam ekran bir gezinme katmanı açar. Masaüstü (>900px) hiç değişmez:
    bileşenin düğmesi ve katmanı orada display:none'dur.
    -------------------------------------------------------------------------- */
-@media screen and (min-width: 901px) {
-  .nav-toggle,
-  .mobile-nav-overlay {
+@media screen {
+  /* Sekme şeridi kalabalık. Gezinme her genişlikte hamburger menüdedir. */
+  .workspace-tabs {
     display: none;
+  }
+
+  .nav-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    flex: none;
+    margin-left: 8px;
+    border: 1px solid var(--hairline);
+    border-radius: 12px;
+    background: #fff;
+    color: var(--text);
+  }
+
+  .mobile-nav-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+    padding-top: env(safe-area-inset-top, 0px);
+    overflow-y: auto;
+  }
+
+  .mobile-nav-head,
+  .mobile-nav-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .mobile-nav-head {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--hairline);
+    position: sticky;
+    top: 0;
+    background: #fff;
+  }
+
+  .mobile-nav-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 16px;
+  }
+
+  .mobile-nav-link {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 48px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    text-align: left;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+    text-decoration: none;
+    background: transparent;
+    border: 1px solid transparent;
+  }
+
+  .mobile-nav-link.active {
+    background: var(--bg-soft);
+    border-color: var(--hairline);
+  }
+
+  .nav-close {
+    width: 44px;
+    height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--hairline);
+    border-radius: 12px;
+    background: #fff;
   }
 }
 
 @media screen and (max-width: 900px) {
-  .header-left .workspace-tabs,
+  .workspace-tabs,
   .header-user {
     display: none;
   }

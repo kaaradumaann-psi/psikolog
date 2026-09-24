@@ -36,15 +36,17 @@ export function AssessmentHubPage() {
         <div className="clinical-title-wrap">
           <div className="clinical-kicker">
             <span className="clinical-kicker-dot" />
-            <span>Klinik Psikometri &amp; Test Bataryası</span>
+            <span>Türk poliklinik seti</span>
           </div>
           <h1>Psikolojik Değerlendirme Araçları</h1>
-          <p>Beck envanterleri, SCL-90-R ve seans içi tarama ölçekleri. Sonuçlar dosyadaki ölçüm çizelgesine işlenir; tanı koymaz.</p>
+          <p>
+            Türkiye’de ayaktan izlemde en sık işlenen öz bildirim seti: Beck Depresyon (Hisli, 1989), Beck Anksiyete (Ulusoy, Şahin ve Erkmen, 1998), SCL-90-R (Dağ, 1991), PHQ-9 ve GAD-7. Puan tarama içindir, tanı değildir.
+          </p>
         </div>
       </div>
 
       {/* Test Kartları Izgarası */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20, marginBottom: 36 }}>
+      <div className="tool-grid">
         {/* Beck Depresyon Envanteri (BDI) */}
         <div className="assessment-card">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -54,9 +56,9 @@ export function AssessmentHubPage() {
             <span className="badge badge-followup">21 Madde · BDI</span>
           </div>
           <div>
-            <h3 style={{ margin: '0 0 6px', fontSize: 18 }}>Beck Depresyon Envanteri (BDI)</h3>
+            <h3 style={{ margin: '0 0 6px', fontSize: 18 }}>Beck Depresyon Envanteri</h3>
             <p style={{ margin: 0, fontSize: 13, color: 'var(--soft)' }}>
-              Depresif belirtilerin şiddetini, bilişsel-duygusal ve somatik-performans alt boyutlarını ölçen standart ölçek. Madde 9 intihar riski güvenlik alarmı içerir.
+              Türkçe uyarlaması Hisli (1989). Depresif belirti şiddeti. Madde 9 güvenlik uyarısı açar; karar görüşmeye aittir.
             </p>
           </div>
           <div style={{ marginTop: 'auto' }}>
@@ -79,9 +81,9 @@ export function AssessmentHubPage() {
             <span className="badge badge-risk-low">21 Belirti · BAI</span>
           </div>
           <div>
-            <h3 style={{ margin: '0 0 6px', fontSize: 18 }}>Beck Anksiyete Envanteri (BAI)</h3>
+            <h3 style={{ margin: '0 0 6px', fontSize: 18 }}>Beck Anksiyete Envanteri</h3>
             <p style={{ margin: 0, fontSize: 13, color: 'var(--soft)' }}>
-              Subjektif kaygı, nörovejetatif, otonomik ve motor anksiyete semptomlarının şiddetini ölçen standart klinik ölçek.
+              Türkçe uyarlaması Ulusoy, Şahin ve Erkmen (1998). Bedensel ve bilişsel kaygı şiddetini ayırır.
             </p>
           </div>
           <div style={{ marginTop: 'auto' }}>
@@ -104,9 +106,9 @@ export function AssessmentHubPage() {
             <span className="badge badge-active">90 Madde · 9 Boyut</span>
           </div>
           <div>
-            <h3 style={{ margin: '0 0 6px', fontSize: 18 }}>SCL-90-R Belirti Tarama Listesi</h3>
+            <h3 style={{ margin: '0 0 6px', fontSize: 18 }}>SCL-90-R Belirti Tarama</h3>
             <p style={{ margin: 0, fontSize: 13, color: 'var(--soft)' }}>
-              Somatizasyon, Obsesif-Kompulsif, Depresyon, Anksiyete, Öfke, Fobi, Paranoya, Psikotizm boyutları ile GSI, PST ve PSDI genel semptom indeksleri.
+              Türkçe uyarlaması Dağ (1991). Dokuz belirti boyutu ile GSI, PST ve PSDI. Poliklinik taramasının geniş ölçeği.
             </p>
           </div>
           <div style={{ marginTop: 'auto' }}>
@@ -129,9 +131,9 @@ export function AssessmentHubPage() {
             <span className="badge badge-active">Hızlı Tarama · 2 Dk</span>
           </div>
           <div>
-            <h3 style={{ margin: '0 0 6px', fontSize: 18 }}>GAD-7 &amp; PHQ-9 Hızlı Tarama</h3>
+            <h3 style={{ margin: '0 0 6px', fontSize: 18 }}>PHQ-9 ve GAD-7</h3>
             <p style={{ margin: 0, fontSize: 13, color: 'var(--soft)' }}>
-              Seans içi hızlı anksiyete (GAD-7, 7 madde) ve majör depresyon semptom yükü (PHQ-9, 9 madde) anlık tarama ve takip aracı.
+              Seans içi kısa izlem. PHQ-9 depresyon yükü, GAD-7 kaygı yükü. PHQ-9 madde 9 güvenlik uyarısı açar.
             </p>
           </div>
           <div style={{ marginTop: 'auto' }}>

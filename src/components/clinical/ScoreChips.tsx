@@ -4,7 +4,7 @@ import '../../styles/dashboard.css';
 
 export function ScoreChips({ readings }: { readings: ScoreReading[] }) {
   if (!readings.length) {
-    return <span className="score-empty">Henüz ölçek kaydı yok</span>;
+    return <span className="score-empty">Bu dosyada henüz ölçek yok.</span>;
   }
   return (
     <div className="score-row">

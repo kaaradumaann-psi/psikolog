@@ -43,7 +43,7 @@ export function parseRoute(pathname: string): AppRoute {
   if (path === '/kullanim') return { page: 'kullanim' };
   if (path === '/kaynaklar') return { page: 'kaynaklar' };
 
-  if (path === '/islem' || path === '/mmpi' || path === '/form' || path === '/optik-form.html') {
+  if (path === '/islem' || path === '/form' || path === '/optik-form.html') {
     return { page: 'bulunamadi' };
   }
   if (path === '/kayitlar') return { page: 'danisanlar' };

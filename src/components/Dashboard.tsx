@@ -78,55 +78,74 @@ export function Dashboard({ user }: Props) {
   const openTasks = snapshot.tasks.filter((task) => task.status === 'todo' || task.status === 'in_progress').length;
   const activeClients = snapshot.clients.length;
 
+  const nextPrep = preps.find((item) => item.status === 'scheduled') ?? preps[0];
+  const todayLabel = new Date().toLocaleDateString('tr-TR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    timeZone: 'Europe/Istanbul',
+  });
+
   return (
     <div className="dashboard-container clinical-container day-board">
-      <div className="day-board-head">
-        <div>
-          <div className="clinical-kicker">
-            <span className="clinical-kicker-dot" />
-            <span>Bugünün klinik tahtası</span>
-          </div>
-          <h2>İyi Çalışmalar, {user.firstName} {user.lastName}</h2>
-          <div className="day-board-date">
-            {new Date().toLocaleDateString('tr-TR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Europe/Istanbul' })}
-          </div>
+      <section className="desk">
+        <div className="desk-date">
+          <p>{todayLabel}</p>
+          <h1>Bugünün tahtası</h1>
+          <span>{user.firstName} {user.lastName}</span>
         </div>
-        <button type="button" className="btn-secondary btn-sm" onClick={() => setBackupModalOpen(true)}>
+        <div className="desk-now">
+          {nextPrep ? (
+            <>
+              <p>Sıradaki görüşme</p>
+              <strong>{nextPrep.time}</strong>
+              <span>{nextPrep.clientName}</span>
+              <button type="button" className="btn-primary btn-sm" onClick={() => navigate(`/danisanlar/${nextPrep.clientId}`)}>Dosyayı aç</button>
+            </>
+          ) : (
+            <>
+              <p>Bugün için randevu yok</p>
+              <strong>Tahta boş</strong>
+              <span>İlk dosyayı açın veya takvime bir saat yazın.</span>
+              <div className="desk-now-actions">
+                <button type="button" className="btn-primary btn-sm" onClick={() => navigate('/danisanlar')}>Dosya aç</button>
+                <button type="button" className="btn-secondary btn-sm" onClick={() => navigate('/takvim')}>Takvim</button>
+              </div>
+            </>
+          )}
+        </div>
+        <button type="button" className="btn-secondary btn-sm desk-backup" onClick={() => setBackupModalOpen(true)}>
           <Icon name="database" size={14} />
           <span>Yedek</span>
         </button>
-      </div>
+      </section>
+
+      <nav className="desk-rail" aria-label="Günün özeti">
+        <button type="button" onClick={() => navigate('/takvim')}>
+          <strong>{preps.length}</strong>
+          <span>Bugünkü seans</span>
+        </button>
+        <button type="button" onClick={() => navigate('/danisanlar')}>
+          <strong>{attention.length}</strong>
+          <span>Dikkat</span>
+        </button>
+        <button type="button" onClick={() => navigate('/gorevler')}>
+          <strong>{openTasks}</strong>
+          <span>Açık görev</span>
+        </button>
+        <button type="button" onClick={() => navigate('/danisanlar')}>
+          <strong>{activeClients}</strong>
+          <span>Dosya</span>
+        </button>
+      </nav>
 
       {snapshot.clients.length === 0 && (
         <section className="modern-table-card empty-prep">
-          <h3>Klinik boş</h3>
-          <p>Örnek danışan yok. İlk dosyayı siz açarsınız; seans, ölçek ve rapor o dosyaya bağlanır.</p>
+          <h3>İlk dosya sizden</h3>
+          <p>Örnek kayıt yok. Danışan, seans ve ölçek bu dosyaya bağlanır.</p>
           <button type="button" className="btn-primary btn-sm" onClick={() => navigate('/danisanlar')}>Danışan dosyası aç</button>
         </section>
       )}
-
-      <div className="stats-grid-4">
-        <button type="button" className="metric-card metric-link" onClick={() => navigate('/takvim')}>
-          <div className="metric-card-head"><span>Bugünkü seans</span><Icon name="calendar" size={16} /></div>
-          <div className="metric-card-value">{preps.length}</div>
-          <span className="metric-card-sub">{preps.filter((item) => item.status === 'completed').length} tamamlandı</span>
-        </button>
-        <button type="button" className="metric-card metric-link" onClick={() => navigate('/danisanlar')}>
-          <div className="metric-card-head"><span>Dikkat</span><Icon name="alert" size={16} /></div>
-          <div className="metric-card-value">{attention.length}</div>
-          <span className="metric-card-sub">{attention.filter((item) => item.severity === 'danger').length} güvenlik</span>
-        </button>
-        <button type="button" className="metric-card metric-link" onClick={() => navigate('/gorevler')}>
-          <div className="metric-card-head"><span>Açık görev</span><Icon name="list" size={16} /></div>
-          <div className="metric-card-value">{openTasks}</div>
-          <span className="metric-card-sub">Yüksek öncelik tahtada görünür</span>
-        </button>
-        <button type="button" className="metric-card metric-link" onClick={() => navigate('/danisanlar')}>
-          <div className="metric-card-head"><span>Dosya</span><Icon name="users" size={16} /></div>
-          <div className="metric-card-value">{activeClients}</div>
-          <span className="metric-card-sub">Kayıtlı danışan</span>
-        </button>
-      </div>
 
       {attention.length > 0 && (
         <section className="attention-panel">

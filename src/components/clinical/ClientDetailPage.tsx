@@ -33,6 +33,17 @@ import { navigate } from '../../router';
 
 type Tab = 'overview' | 'sessions' | 'formulation' | 'tests' | 'progress' | 'reports' | 'notes' | 'documents';
 
+const FILE_SECTIONS: { id: Tab; label: string }[] = [
+  { id: 'sessions', label: 'Seans notları' },
+  { id: 'formulation', label: 'Formülasyon' },
+  { id: 'tests', label: 'Ölçekler' },
+  { id: 'progress', label: 'Gelişim' },
+  { id: 'overview', label: 'Anamnez' },
+  { id: 'notes', label: 'Notlar' },
+  { id: 'documents', label: 'Belgeler' },
+  { id: 'reports', label: 'Raporlar' },
+];
+
 function tabFromLocation(): Tab {
   const sekme = new URLSearchParams(window.location.search).get('sekme');
   const allowed: Tab[] = ['overview', 'sessions', 'formulation', 'tests', 'progress', 'reports', 'notes', 'documents'];
@@ -42,6 +53,7 @@ function tabFromLocation(): Tab {
 export function ClientDetailPage({ clientId }: { clientId: string }) {
   const [client, setClient] = useState<Client | undefined>(() => getClientById(clientId));
   const [activeTab, setActiveTab] = useState<Tab>(tabFromLocation);
+  const [sectionMenuOpen, setSectionMenuOpen] = useState(false);
 
   const [sessions, setSessions] = useState<SoapSession[]>(() => getSessionsByClientId(clientId));
   const [bdiTests, setBdiTests] = useState<BeckDepressionResult[]>([]);
@@ -244,85 +256,56 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
           <button type="button" className="btn-secondary btn-sm" onClick={() => setActiveTab('formulation')}>Formülasyon</button>
         </div>
         <ScoreChips readings={readings} />
+        {readings.length === 0 && (
+          <button type="button" className="btn-secondary btn-sm" onClick={() => setActiveTab('tests')}>
+            Ölçek başlat
+          </button>
+        )}
         {safetyNeeded && safetyPlanIsEmpty(getSafetyPlan(client.id)) && (
           <p className="safety-callout">Güvenlik uyarısı var, plan boş.</p>
         )}
       </section>
 
-      {/* Sekmeler */}
-      <div className="clinical-tabs">
+      <div className="file-section">
         <button
           type="button"
-          className={`clinical-tab-btn ${activeTab === 'sessions' ? 'active' : ''}`}
-          onClick={() => setActiveTab('sessions')}
+          className="file-section-toggle"
+          aria-expanded={sectionMenuOpen}
+          aria-controls="file-section-panel"
+          onClick={() => setSectionMenuOpen((open) => !open)}
         >
-          <Icon name="clipboard" size={16} />
-          <span>Seans Notları (SOAP)</span>
-          <span className="tab-badge">{sessions.length}</span>
+          <Icon name="menu" size={18} />
+          <span>{FILE_SECTIONS.find((section) => section.id === activeTab)?.label}</span>
+          <small>{sectionMenuOpen ? 'Kapat' : 'Bölümler'}</small>
         </button>
-
-        <button
-          type="button"
-          className={`clinical-tab-btn ${activeTab === 'formulation' ? 'active' : ''}`}
-          onClick={() => setActiveTab('formulation')}
-        >
-          <Icon name="shield" size={16} />
-          <span>Formülasyon</span>
-        </button>
-
-        <button
-          type="button"
-          className={`clinical-tab-btn ${activeTab === 'tests' ? 'active' : ''}`}
-          onClick={() => setActiveTab('tests')}
-        >
-          <Icon name="activity" size={16} />
-          <span>Test Bataryası &amp; Ölçekler</span>
-          <span className="tab-badge">{bdiTests.length + baiTests.length + scl90Tests.length}</span>
-        </button>
-
-        <button
-          type="button"
-          className={`clinical-tab-btn ${activeTab === 'progress' ? 'active' : ''}`}
-          onClick={() => setActiveTab('progress')}
-        >
-          <Icon name="trend" size={16} />
-          <span>Gelişim &amp; Klinik Trend</span>
-        </button>
-
-        <button
-          type="button"
-          className={`clinical-tab-btn ${activeTab === 'overview' ? 'active' : ''}`}
-          onClick={() => setActiveTab('overview')}
-        >
-          <Icon name="user" size={16} />
-          <span>Anamnez &amp; Klinik Profil</span>
-        </button>
-
-        <button
-          type="button"
-          className={`clinical-tab-btn ${activeTab === 'notes' ? 'active' : ''}`}
-          onClick={() => setActiveTab('notes')}
-        >
-          <Icon name="edit" size={16} />
-          <span>Notlar</span>
-        </button>
-        <button
-          type="button"
-          className={`clinical-tab-btn ${activeTab === 'documents' ? 'active' : ''}`}
-          onClick={() => setActiveTab('documents')}
-        >
-          <Icon name="file" size={16} />
-          <span>Belgeler</span>
-        </button>
-        <button
-          type="button"
-          className={`clinical-tab-btn ${activeTab === 'reports' ? 'active' : ''}`}
-          onClick={() => setActiveTab('reports')}
-        >
-          <Icon name="fileText" size={16} />
-          <span>Klinik Raporlar</span>
-          <span className="tab-badge">{reports.length}</span>
-        </button>
+        {sectionMenuOpen && (
+          <div className="file-section-panel" id="file-section-panel" role="menu">
+            {FILE_SECTIONS.map((section) => {
+              const count = section.id === 'sessions'
+                ? sessions.length
+                : section.id === 'tests'
+                  ? bdiTests.length + baiTests.length + scl90Tests.length
+                  : section.id === 'reports'
+                    ? reports.length
+                    : undefined;
+              return (
+                <button
+                  key={section.id}
+                  type="button"
+                  role="menuitem"
+                  className={activeTab === section.id ? 'is-current' : ''}
+                  onClick={() => {
+                    setActiveTab(section.id);
+                    setSectionMenuOpen(false);
+                  }}
+                >
+                  {section.label}
+                  {count !== undefined && <span>{count}</span>}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* ----------------- TAB: SEANS NOTLARI ----------------- */}

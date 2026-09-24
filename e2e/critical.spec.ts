@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test('workspace opens without a public registration form', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: /İyi Çalışmalar/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Bugünün tahtası' })).toBeVisible();
   await expect(page.getByText('Kayıt Ol')).toHaveCount(0);
 });
 

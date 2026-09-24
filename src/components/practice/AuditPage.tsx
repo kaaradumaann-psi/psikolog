@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getAuditLog, subscribePracticeStore, type AuditEvent } from '../../clinical/practiceStore';
+import { auditActionLabel, auditEntityLabel, getAuditLog, subscribePracticeStore, type AuditEvent } from '../../clinical/practiceStore';
 import { Icon } from '../Icon';
 import { navigate } from '../../router';
 
@@ -11,9 +11,9 @@ export function AuditPage() {
     <div className="clinical-container">
       <div className="clinical-header">
         <div className="clinical-title-wrap">
-          <div className="clinical-kicker"><span className="clinical-kicker-dot" /><span>İz</span></div>
+          <div className="clinical-kicker"><span className="clinical-kicker-dot" /><span>Kayıt izi</span></div>
           <h1>Denetim kaydı</h1>
-          <p>Bu cihazdaki son işlemler. Bulut modunda tablo tetikleyicileri ayrıca sunucu tarafında yazar; istemci o izi silemez.</p>
+          <p>Bu cihazdaki son kaydetme ve silme işlemleri. Bulut açıksa sunucu kendi kaydını ayrıca tutar.</p>
         </div>
         <button type="button" className="btn-secondary" onClick={() => navigate('/ayarlar')}>
           <Icon name="left" size={14} />
@@ -32,8 +32,8 @@ export function AuditPage() {
               {events.map((event) => (
                 <tr key={event.id}>
                   <td>{new Date(event.at).toLocaleString('tr-TR')}</td>
-                  <td>{event.action}</td>
-                  <td>{event.entity}</td>
+                  <td>{auditActionLabel(event.action)}</td>
+                  <td>{auditEntityLabel(event.entity)}</td>
                   <td>{event.summary}</td>
                 </tr>
               ))}

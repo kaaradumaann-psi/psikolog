@@ -1,0 +1,215 @@
+/* Layout — Header/Sidebar/Main — psikolog sitesi nav + MMPI dashboard */
+
+/* Nav — sticky + blur — psikolog sitesi */
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+  height: var(--nav-h);
+}
+.nav-inner {
+  height: var(--nav-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: min(var(--max-wide), 100% - 40px);
+  margin-inline: auto;
+}
+.logo {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+}
+.logo span {
+  font-weight: 300;
+  font-style: italic;
+  color: var(--soft);
+}
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+}
+.nav-link {
+  font-size: 13px;
+  color: var(--soft);
+  transition: color var(--ease);
+  padding: 6px 0;
+  position: relative;
+}
+.nav-link:hover {
+  color: var(--text);
+}
+.nav-link.active {
+  color: var(--text);
+  font-weight: 500;
+}
+.nav-link.active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  height: 2px;
+  background: var(--text);
+  border-radius: 1px;
+}
+.mobile-toggle {
+  display: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px;
+}
+.hamburger {
+  width: 18px;
+  height: 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.hamburger span {
+  height: 1.5px;
+  background: var(--text);
+  border-radius: 999px;
+  transition: 0.2s;
+}
+
+/* App shell */
+.app-shell {
+  display: flex;
+  min-height: 100dvh;
+}
+.sidebar {
+  width: var(--sidebar-w);
+  flex-shrink: 0;
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: var(--nav-h);
+  height: calc(100dvh - var(--nav-h));
+  overflow-y: auto;
+}
+.sidebar-inner {
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  flex: 1;
+}
+.sidebar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sidebar-label {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+  padding: 8px 10px 4px;
+}
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  color: var(--soft);
+  transition:
+    background var(--ease),
+    color var(--ease);
+}
+.sidebar-link:hover {
+  background: var(--bg-soft);
+  color: var(--text);
+}
+.sidebar-link.active {
+  background: var(--text);
+  color: white;
+}
+.main {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-soft);
+}
+.main-inner {
+  padding: 24px;
+  width: 100%;
+  max-width: var(--max-wide);
+  margin-inline: auto;
+}
+@media (max-width: 1024px) {
+  .main-inner {
+    padding: 16px;
+  }
+}
+
+/* Client file tabs */
+.client-tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0;
+  margin-bottom: 20px;
+  scrollbar-width: none;
+}
+.client-tabs::-webkit-scrollbar {
+  display: none;
+}
+.client-tab {
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--soft);
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  transition:
+    color var(--ease),
+    border-color var(--ease);
+  cursor: pointer;
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+}
+.client-tab:hover {
+  color: var(--text);
+}
+.client-tab.active {
+  color: var(--text);
+  border-bottom-color: var(--text);
+  font-weight: 500;
+}
+
+/* Page header */
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+.page-header h1 {
+  font-family: var(--font-serif);
+  font-size: 28px;
+  font-weight: 400;
+  letter-spacing: -0.03em;
+}
+.page-header p {
+  color: var(--soft);
+  font-size: 14px;
+  margin-top: 4px;
+}

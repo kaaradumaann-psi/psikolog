@@ -1,10 +1,5 @@
--- PHASE-09/12 fix: profiles RLS 400 error, backfill missing profiles, ensure storage bucket
-
--- Ensure storage schema exists (for PGlite tests and fresh projects)
-create schema if not exists storage;
-create table if not exists storage.buckets(id text primary key, name text, public boolean, file_size_limit int, allowed_mime_types text[]);
-create table if not exists storage.objects(id uuid primary key default gen_random_uuid(), bucket_id text, name text, owner uuid, created_at timestamptz default now(), updated_at timestamptz default now(), last_accessed_at timestamptz default now(), metadata jsonb, path_tokens text[]);
-create or replace function storage.foldername(name text) returns text[] language plpgsql as $$ begin return string_to_array(name, '/'); end; $$;
+-- PHASE-09/12 fix: profiles RLS 400 error, backfill missing profiles
+-- NOTE: storage schema creation removed for Supabase Cloud (permission denied) — storage.buckets already exists via 20260924000004
 
 -- Backfill missing profiles from auth.users (handles trigger failure or pre-trigger users)
 insert into public.profiles (id, email, first_name, last_name, role, active)
@@ -32,7 +27,6 @@ using (
 );
 
 -- Allow authenticated users to insert their own profile if missing (self-healing)
--- This is safe because id must equal auth.uid() and role forced to PSYCHOLOG via trigger default, but we also enforce in policy
 drop policy if exists profiles_insert_self on public.profiles;
 create policy profiles_insert_self on public.profiles
 for insert to authenticated
@@ -45,7 +39,7 @@ with check (
 -- Ensure grants
 grant select, insert on public.profiles to authenticated;
 
--- Ensure audit_logs check includes all actions (in case earlier migrations missed)
+-- Ensure audit_logs check includes all actions
 alter table public.audit_logs drop constraint if exists audit_logs_action_check;
 alter table public.audit_logs add constraint audit_logs_action_check check (action in (
   'client_insert', 'client_update', 'client_delete',
@@ -63,53 +57,3 @@ alter table public.audit_logs add constraint audit_logs_action_check check (acti
   'appointment_insert', 'appointment_update', 'appointment_delete',
   'task_insert', 'task_update', 'task_delete'
 ));
-
--- Ensure storage bucket private exists (idempotent)
-insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values (
-  'client-documents',
-  'client-documents',
-  false,
-  52428800,
-  array['application/pdf','image/jpeg','image/png','image/webp','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document','text/plain']
-)
-on conflict (id) do update set
-  public = false,
-  file_size_limit = 52428800,
-  allowed_mime_types = array['application/pdf','image/jpeg','image/png','image/webp','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document','text/plain'];
-
--- Recreate storage policies (idempotent)
-drop policy if exists "client_docs_select" on storage.objects;
-create policy "client_docs_select" on storage.objects
-for select to authenticated using (
-  bucket_id = 'client-documents' and
-  public.is_active_user() and (
-    public.is_admin() or
-    public.is_org_member(((storage.foldername(name))[1])::uuid)
-  )
-);
-
-drop policy if exists "client_docs_insert" on storage.objects;
-create policy "client_docs_insert" on storage.objects
-for insert to authenticated with check (
-  bucket_id = 'client-documents' and
-  public.is_active_user() and (
-    public.is_admin() or
-    public.is_org_member(((storage.foldername(name))[1])::uuid)
-  ) and
-  (storage.foldername(name))[2] is not null
-);
-
-drop policy if exists "client_docs_update" on storage.objects;
-create policy "client_docs_update" on storage.objects
-for update to authenticated using (
-  bucket_id = 'client-documents' and public.is_active_user() and (public.is_admin() or public.is_org_member(((storage.foldername(name))[1])::uuid))
-) with check (
-  bucket_id = 'client-documents' and public.is_active_user() and (public.is_admin() or public.is_org_member(((storage.foldername(name))[1])::uuid))
-);
-
-drop policy if exists "client_docs_delete" on storage.objects;
-create policy "client_docs_delete" on storage.objects
-for delete to authenticated using (
-  bucket_id = 'client-documents' and public.is_active_user() and (public.is_admin() or public.is_org_member(((storage.foldername(name))[1])::uuid))
-);

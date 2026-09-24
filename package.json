@@ -17,9 +17,12 @@
     "check": "npm run lint && npm run typecheck && npm run build"
   },
   "dependencies": {
+    "@hookform/resolvers": "^5.9.1",
     "@supabase/supabase-js": "^2.116.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "react-hook-form": "^7.88.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",

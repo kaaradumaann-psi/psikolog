@@ -153,10 +153,10 @@ export default function App() {
       content = <ClientsPage />;
       break;
     case 'client_new':
-      content = <ClientNewPage />;
+      content = <ClientNewPage user={user} />;
       break;
     case 'client':
-      content = <ClientFilePage id={route.id} tab={route.tab} />;
+      content = <ClientFilePage id={route.id} tab={route.tab} user={user} />;
       break;
     case 'settings':
       content = <SettingsPage />;

@@ -38,9 +38,9 @@ Login → Dashboard → Danışanlar → Danışan Dosyası → Anamnez → Gör
 ## Fazlar
 
 - PHASE-00: Mevcut proje analizi — DONE (docs/architecture/*)
-- PHASE-01: İskelet + Auth + DB — DONE (bu faz)
-- PHASE-02: Danışanlar + Dosya — NEXT
-- PHASE-03: Anamnez + Görüşmeler
+- PHASE-01: İskelet + Auth + DB — DONE
+- PHASE-02: Danışanlar + Dosya — DONE (bu faz, CRUD + file tabs + file_number auto + search/pagination + RLS)
+- PHASE-03: Anamnez + Görüşmeler — NEXT
 - PHASE-04: Değerlendirmeler + Test Sonuçları (external mmpi link, no scoring copy)
 - PHASE-05: Raporlar + Şablonlar (templateEngine block model MMPI reuse)
 - PHASE-06: PDF + Belgeler (browser print + @react-pdf, private bucket)

@@ -1,263 +1,176 @@
-import { useState, useEffect } from 'react';
-import type {
-  BeckDepressionResult,
-  BeckAnxietyResult,
-  Scl90Result,
-} from '../../clinical/clinicalTypes';
+import { useEffect, useState } from 'react';
+import type { BeckDepressionResult, BeckAnxietyResult, Scl90Result } from '../../clinical/clinicalTypes';
+import type { RapidScreeningResult } from '../../clinical/rapidScreening';
 import {
   getBeckDepressionTests,
   getBeckAnxietyTests,
   getScl90Tests,
   subscribeClinicalStore,
 } from '../../clinical/clinicalStore';
+import { getScreenings, subscribePracticeStore } from '../../clinical/practiceStore';
 import { Icon } from '../Icon';
+import type { IconName } from '../Icon';
 import { navigate } from '../../router';
+
+type AssessmentTool = {
+  code: string;
+  title: string;
+  detail: string;
+  meta: string;
+  icon: IconName;
+  path: string;
+  action: string;
+};
+
+const TOOLS: AssessmentTool[] = [
+  {
+    code: 'BDI', title: 'Beck Depresyon Envanteri', icon: 'pulse', meta: '21 MADDE · DEPRESYON',
+    detail: 'Hisli (1989) Türkçe uyarlaması. Depresif belirti şiddetini izleyin; madde 9 için güvenlik uyarısı görünür.',
+    path: '/testler/beck-depresyon', action: 'Beck Depresyon testini başlat',
+  },
+  {
+    code: 'BAI', title: 'Beck Anksiyete Envanteri', icon: 'activity', meta: '21 BELİRTİ · KAYGI',
+    detail: 'Ulusoy, Şahin ve Erkmen (1998) Türkçe uyarlaması. Bedensel ve bilişsel kaygı şiddetini izleyin.',
+    path: '/testler/beck-anksiyete', action: 'Beck Anksiyete testini başlat',
+  },
+  {
+    code: 'SCL', title: 'SCL-90-R Belirti Tarama', icon: 'layers', meta: '90 MADDE · 9 BOYUT',
+    detail: 'Dağ (1991) Türkçe uyarlaması. Dokuz belirti boyutu ile GSI, PST ve PSDI sonuçlarını birlikte görün.',
+    path: '/testler/scl90', action: 'SCL-90-R testini başlat',
+  },
+  {
+    code: 'KISA', title: 'PHQ-9 ve GAD-7', icon: 'trend', meta: 'KISA TARAMA · İKİ ÖLÇEK',
+    detail: 'Seans içi depresyon ve kaygı izlemi. PHQ-9 madde 9 pozitifse güvenlik uyarısı açılır.',
+    path: '/testler/tarama', action: 'PHQ-9 ve GAD-7 taramasını başlat',
+  },
+];
+
+type HistoryItem = {
+  id: string;
+  clientId?: string;
+  clientName: string;
+  title: string;
+  date: string;
+  score: string;
+  severity: string;
+  tone: 'normal' | 'warning' | 'danger';
+  safetyFlag?: boolean;
+};
+
+function severityTone(severity: string): HistoryItem['tone'] {
+  if (severity.includes('Şiddetli')) return 'danger';
+  if (severity.includes('Orta')) return 'warning';
+  return 'normal';
+}
 
 export function AssessmentHubPage() {
   const [bdiTests, setBdiTests] = useState<BeckDepressionResult[]>(() => getBeckDepressionTests());
   const [baiTests, setBaiTests] = useState<BeckAnxietyResult[]>(() => getBeckAnxietyTests());
   const [scl90Tests, setScl90Tests] = useState<Scl90Result[]>(() => getScl90Tests());
+  const [screenings, setScreenings] = useState<RapidScreeningResult[]>(() => getScreenings());
 
   useEffect(() => {
-    const unsub = subscribeClinicalStore(() => {
+    const unsubClinical = subscribeClinicalStore(() => {
       setBdiTests(getBeckDepressionTests());
       setBaiTests(getBeckAnxietyTests());
       setScl90Tests(getScl90Tests());
     });
-    return unsub;
+    const unsubPractice = subscribePracticeStore(() => setScreenings(getScreenings()));
+    return () => {
+      unsubClinical();
+      unsubPractice();
+    };
   }, []);
 
-  const totalCompleted = bdiTests.length + baiTests.length + scl90Tests.length;
+  const history: HistoryItem[] = [
+    ...bdiTests.map((test) => ({
+      id: test.id, clientId: test.clientId, clientName: test.clientName,
+      title: 'Beck Depresyon · BDI', date: test.testDate, score: `${test.totalScore}/63`,
+      severity: `${test.severity} depresyon`, tone: severityTone(test.severity), safetyFlag: test.suicideRisk,
+    })),
+    ...baiTests.map((test) => ({
+      id: test.id, clientId: test.clientId, clientName: test.clientName,
+      title: 'Beck Anksiyete · BAI', date: test.testDate, score: `${test.totalScore}/63`,
+      severity: `${test.severity} anksiyete`, tone: severityTone(test.severity),
+    })),
+    ...scl90Tests.map((test) => ({
+      id: test.id, clientId: test.clientId, clientName: test.clientName,
+      title: 'SCL-90-R Belirti Tarama', date: test.testDate, score: `GSI ${test.gsi} · PST ${test.pst}`,
+      severity: test.gsi >= 1 ? 'Klinik eşik üzerinde' : 'Eşik altında',
+      tone: test.gsi >= 1 ? 'warning' as const : 'normal' as const,
+      safetyFlag: (test.answers?.[14] ?? 0) > 0,
+    })),
+    ...screenings.map((test) => ({
+      id: test.id, clientId: test.clientId, clientName: test.clientName,
+      title: test.type === 'phq9' ? 'PHQ-9 Kısa Tarama' : 'GAD-7 Kısa Tarama',
+      date: test.testDate, score: `${test.totalScore}/${test.type === 'phq9' ? 27 : 21}`,
+      severity: test.severity, tone: severityTone(test.severity), safetyFlag: test.suicideRisk,
+    })),
+  ].sort((a, b) => b.date.localeCompare(a.date));
 
   return (
-    <div className="clinical-container">
-      {/* Üst Başlık */}
+    <div className="clinical-container assessment-page">
       <div className="clinical-header">
         <div className="clinical-title-wrap">
-          <div className="clinical-kicker">
-            <span className="clinical-kicker-dot" />
-            <span>Türk poliklinik seti</span>
-          </div>
+          <div className="clinical-kicker"><span className="clinical-kicker-dot" /><span>Ölçek kütüphanesi</span></div>
           <h1>Psikolojik Değerlendirme Araçları</h1>
-          <p>
-            Türkiye’de ayaktan izlemde en sık işlenen öz bildirim seti: Beck Depresyon (Hisli, 1989), Beck Anksiyete (Ulusoy, Şahin ve Erkmen, 1998), SCL-90-R (Dağ, 1991), PHQ-9 ve GAD-7. Puan tarama içindir, tanı değildir.
-          </p>
+          <p>Danışan sürecini izlemek için öz bildirim ölçekleri ve kısa taramalar. Bir araç seçerek değerlendirmeye başlayın.</p>
         </div>
       </div>
 
-      {/* Test Kartları Izgarası */}
-      <div className="tool-grid">
-        {/* Beck Depresyon Envanteri (BDI) */}
-        <div className="assessment-card">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div className="assessment-card-icon" style={{ color: 'var(--accent)' }}>
-              <Icon name="pulse" size={24} />
+      <div className="assessment-note"><Icon name="info" size={18} /><span>Puanlar tarama amaçlıdır, tanı koymaz. Güvenlik maddesi pozitifse klinik karar görüşmeye aittir.</span></div>
+
+      <section aria-label="Değerlendirme araçları" className="tool-grid">
+        {TOOLS.map((tool, index) => (
+          <article className="assessment-card" key={tool.code}>
+            <div className="assessment-card-top">
+              <span className="assessment-card-icon"><Icon name={tool.icon} size={23} /></span>
+              <span className="assessment-card-index">0{index + 1} / 0{TOOLS.length}</span>
             </div>
-            <span className="badge badge-followup">21 Madde · BDI</span>
-          </div>
-          <div>
-            <h3 style={{ margin: '0 0 6px', fontSize: 18 }}>Beck Depresyon Envanteri</h3>
-            <p style={{ margin: 0, fontSize: 13, color: 'var(--soft)' }}>
-              Türkçe uyarlaması Hisli (1989). Depresif belirti şiddeti. Madde 9 güvenlik uyarısı açar; karar görüşmeye aittir.
-            </p>
-          </div>
-          <div style={{ marginTop: 'auto' }}>
-            <button
-              type="button"
-              className="btn-primary btn-full"
-              onClick={() => navigate('/testler/beck-depresyon')}
-            >
-              BDI Testini Başlat
-            </button>
-          </div>
-        </div>
-
-        {/* Beck Anksiyete Envanteri (BAI) */}
-        <div className="assessment-card">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div className="assessment-card-icon" style={{ color: 'var(--warning)' }}>
-              <Icon name="activity" size={24} />
+            <div className="assessment-card-content">
+              <span className="assessment-card-code">{tool.code}</span>
+              <h2>{tool.title}</h2>
+              <p>{tool.detail}</p>
             </div>
-            <span className="badge badge-risk-low">21 Belirti · BAI</span>
-          </div>
-          <div>
-            <h3 style={{ margin: '0 0 6px', fontSize: 18 }}>Beck Anksiyete Envanteri</h3>
-            <p style={{ margin: 0, fontSize: 13, color: 'var(--soft)' }}>
-              Türkçe uyarlaması Ulusoy, Şahin ve Erkmen (1998). Bedensel ve bilişsel kaygı şiddetini ayırır.
-            </p>
-          </div>
-          <div style={{ marginTop: 'auto' }}>
-            <button
-              type="button"
-              className="btn-primary btn-full"
-              onClick={() => navigate('/testler/beck-anksiyete')}
-            >
-              BAI Testini Başlat
-            </button>
-          </div>
-        </div>
-
-        {/* SCL-90-R */}
-        <div className="assessment-card">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div className="assessment-card-icon" style={{ color: 'var(--text)' }}>
-              <Icon name="layers" size={24} />
+            <div className="assessment-card-foot">
+              <span>{tool.meta}</span>
+              <button type="button" onClick={() => navigate(tool.path)} aria-label={tool.action}>
+                Başlat <Icon name="arrowRight" size={16} />
+              </button>
             </div>
-            <span className="badge badge-active">90 Madde · 9 Boyut</span>
-          </div>
-          <div>
-            <h3 style={{ margin: '0 0 6px', fontSize: 18 }}>SCL-90-R Belirti Tarama</h3>
-            <p style={{ margin: 0, fontSize: 13, color: 'var(--soft)' }}>
-              Türkçe uyarlaması Dağ (1991). Dokuz belirti boyutu ile GSI, PST ve PSDI. Poliklinik taramasının geniş ölçeği.
-            </p>
-          </div>
-          <div style={{ marginTop: 'auto' }}>
-            <button
-              type="button"
-              className="btn-primary btn-full"
-              onClick={() => navigate('/testler/scl90')}
-            >
-              SCL-90-R Testini Başlat
-            </button>
-          </div>
+          </article>
+        ))}
+      </section>
+
+      <section className="assessment-history" aria-labelledby="assessment-history-title">
+        <div className="board-section-head">
+          <div><span className="board-eyebrow">DOSYA GEÇMİŞİ</span><h2 id="assessment-history-title">Tamamlanan değerlendirmeler <span className="assessment-count">{history.length}</span></h2></div>
         </div>
-
-        {/* Hızlı Tarama: GAD-7 & PHQ-9 */}
-        <div className="assessment-card">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div className="assessment-card-icon" style={{ color: 'var(--success)' }}>
-              <Icon name="activity" size={24} />
-            </div>
-            <span className="badge badge-active">Hızlı Tarama · 2 Dk</span>
-          </div>
-          <div>
-            <h3 style={{ margin: '0 0 6px', fontSize: 18 }}>PHQ-9 ve GAD-7</h3>
-            <p style={{ margin: 0, fontSize: 13, color: 'var(--soft)' }}>
-              Seans içi kısa izlem. PHQ-9 depresyon yükü, GAD-7 kaygı yükü. PHQ-9 madde 9 güvenlik uyarısı açar.
-            </p>
-          </div>
-          <div style={{ marginTop: 'auto' }}>
-            <button
-              type="button"
-              className="btn-primary btn-full"
-              onClick={() => navigate('/testler/tarama')}
-            >
-              Hızlı Taramayı Başlat
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Son Uygulanan Testler Geçmişi */}
-      <div style={{ marginTop: 24 }}>
-        <h3 style={{ fontSize: 18, marginBottom: 14 }}>Tamamlanan Son Test Kayıtları</h3>
-
-        {totalCompleted === 0 ? (
+        {history.length === 0 ? (
           <div className="empty-state-card">
-            <Icon name="clipboard" size={32} />
-            <h4>Henüz Test Kaydı Bulunmuyor</h4>
-            <p>Yukarıdaki ölçeklerden birini seçerek değerlendirme başlatabilirsiniz.</p>
+            <Icon name="clipboard" size={28} />
+            <h4>Henüz değerlendirme kaydı yok</h4>
+            <p>Yukarıdaki ölçeklerden birini seçtiğinizde tamamlanan sonuçlar burada listelenir.</p>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {/* BDI Listesi */}
-            {bdiTests.map(t => (
-              <div key={t.id} className="modern-table-card" style={{ padding: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div style={{ width: 36, height: 36, borderRadius: 8, background: 'var(--primary-tint)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Icon name="pulse" size={20} />
-                  </div>
-                  <div>
-                    <strong style={{ fontSize: 15 }}>{t.clientName} · Beck Depresyon Envanteri (BDI)</strong>
-                    <div style={{ fontSize: 12, color: 'var(--soft)' }}>
-                      Tarih: {t.testDate} · Puan: {t.totalScore}/63
-                    </div>
-                  </div>
+          <div className="assessment-history-list">
+            {history.map((item) => (
+              <article className="assessment-history-item" key={item.id}>
+                <span className="assessment-history-icon"><Icon name="fileText" size={20} /></span>
+                <div className="assessment-history-main">
+                  <strong>{item.clientName}</strong>
+                  <span>{item.title} · {item.date} · {item.score}</span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span className={`badge ${t.severity === 'Şiddetli' ? 'badge-risk-high' : t.severity === 'Orta' ? 'badge-risk-moderate' : 'badge-active'}`}>
-                    {t.severity} Depresyon
-                  </span>
-                  {t.suicideRisk && (
-                    <span className="badge badge-risk-high">İntihar Uyarısı!</span>
-                  )}
-                  {t.clientId && (
-                    <button
-                      type="button"
-                      className="btn-secondary btn-sm"
-                      onClick={() => navigate(`/danisanlar/${t.clientId}`)}
-                    >
-                      Dosyaya Git
-                    </button>
-                  )}
+                <div className="assessment-history-actions">
+                  <span className={`badge ${item.tone === 'danger' ? 'badge-risk-high' : item.tone === 'warning' ? 'badge-risk-moderate' : 'badge-active'}`}>{item.severity}</span>
+                  {item.safetyFlag && <span className="badge badge-risk-high">Güvenlik uyarısı</span>}
+                  {item.clientId && <button type="button" className="btn-secondary btn-sm" onClick={() => navigate(`/danisanlar/${item.clientId}`)}>Dosyaya git</button>}
                 </div>
-              </div>
-            ))}
-
-            {/* BAI Listesi */}
-            {baiTests.map(t => (
-              <div key={t.id} className="modern-table-card" style={{ padding: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div style={{ width: 36, height: 36, borderRadius: 8, background: 'var(--warning-tint)', color: 'var(--warning)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Icon name="activity" size={20} />
-                  </div>
-                  <div>
-                    <strong style={{ fontSize: 15 }}>{t.clientName} · Beck Anksiyete Envanteri (BAI)</strong>
-                    <div style={{ fontSize: 12, color: 'var(--soft)' }}>
-                      Tarih: {t.testDate} · Puan: {t.totalScore}/63
-                    </div>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span className={`badge ${t.severity === 'Şiddetli' ? 'badge-risk-high' : t.severity === 'Orta' ? 'badge-risk-moderate' : 'badge-active'}`}>
-                    {t.severity} Anksiyete
-                  </span>
-                  {t.clientId && (
-                    <button
-                      type="button"
-                      className="btn-secondary btn-sm"
-                      onClick={() => navigate(`/danisanlar/${t.clientId}`)}
-                    >
-                      Dosyaya Git
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-
-            {/* SCL-90 Listesi */}
-            {scl90Tests.map(t => (
-              <div key={t.id} className="modern-table-card" style={{ padding: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div style={{ width: 36, height: 36, borderRadius: 8, background: 'var(--bg-soft)', color: 'var(--text)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Icon name="layers" size={20} />
-                  </div>
-                  <div>
-                    <strong style={{ fontSize: 15 }}>{t.clientName} · SCL-90-R Belirti Tarama Listesi</strong>
-                    <div style={{ fontSize: 12, color: 'var(--soft)' }}>
-                      Tarih: {t.testDate} · GSI: {t.gsi} · PST: {t.pst}
-                    </div>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span className={`badge ${t.gsi >= 1.0 ? 'badge-risk-moderate' : 'badge-active'}`}>
-                    {t.gsi >= 1.0 ? 'Klinik Eşik Üzerinde' : 'Normal Sınırlar'}
-                  </span>
-                  {t.clientId && (
-                    <button
-                      type="button"
-                      className="btn-secondary btn-sm"
-                      onClick={() => navigate(`/danisanlar/${t.clientId}`)}
-                    >
-                      Dosyaya Git
-                    </button>
-                  )}
-                </div>
-              </div>
+              </article>
             ))}
           </div>
         )}
-      </div>
+      </section>
     </div>
   );
 }

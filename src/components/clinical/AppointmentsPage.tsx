@@ -9,6 +9,7 @@ import {
 } from '../../clinical/clinicalStore';
 import { getSettings } from '../../clinical/practiceStore';
 import { clinicToday } from '../../clinical/recordRules';
+import { ClinicalDialog } from './ClinicalDialog';
 import { Icon } from '../Icon';
 import { navigate } from '../../router';
 
@@ -117,7 +118,7 @@ export function AppointmentsPage() {
     setModalOpen(false);
   }
 
-  function startSessionFromAppointment(a: Appointment) {
+  function completeAppointmentAndOpenFile(a: Appointment) {
     saveAppointment({ ...a, status: 'completed' });
     navigate(`/danisanlar/${a.clientId}`);
   }
@@ -148,6 +149,7 @@ export function AppointmentsPage() {
           <input
             type="date"
             className="filter-select"
+            aria-label="Tarihe göre filtrele"
             value={dateFilter}
             onChange={e => setDateFilter(e.target.value)}
           />
@@ -176,18 +178,22 @@ export function AppointmentsPage() {
       </div>
 
       {/* Randevu Tablosu / Listesi */}
-      <div className="client-table-wrap">
+      <div className="client-table-wrap mobile-card-table">
         {filteredAppointments.length === 0 ? (
-          <div className="empty-state-card" style={{ padding: 48 }}>
-            <Icon name="calendar" size={36} />
-            <h4>Randevu Bulunamadı</h4>
-            <p>Seçilen filtrelerde kayıtlı bir randevu bulunmamaktadır.</p>
-            <button type="button" className="btn-primary btn-sm" onClick={openNewModal}>
-              Randevu Ekle
-            </button>
+          <div className="empty-state-card">
+            <Icon name="calendar" size={30} />
+            <h4>{appointments.length > 0 ? 'Filtreye uygun randevu yok' : 'Takvim henüz boş'}</h4>
+            <p>{appointments.length > 0 ? 'Başka bir tarih veya durum seçin.' : 'Görüşme saatlerini burada planlayın ve seans öncesi hazırlığı tek yerden görün.'}</p>
+            {appointments.length > 0 ? (
+              <button type="button" className="btn-secondary btn-sm" onClick={() => { setDateFilter(''); setStatusFilter('all'); }}>Filtreleri temizle</button>
+            ) : clients.length === 0 ? (
+              <button type="button" className="btn-primary btn-sm" onClick={() => navigate('/danisanlar?yeni=1')}>Önce danışan ekle</button>
+            ) : (
+              <button type="button" className="btn-primary btn-sm" onClick={openNewModal}>Randevu ekle</button>
+            )}
           </div>
         ) : (
-          <table className="client-table">
+          <table className="client-table" data-mobile-cards>
             <thead>
               <tr>
                 <th>Tarih &amp; Saat</th>
@@ -202,7 +208,7 @@ export function AppointmentsPage() {
             <tbody>
               {filteredAppointments.map(app => (
                 <tr key={app.id}>
-                  <td>
+                  <td data-label="Tarih ve saat">
                     <div>
                       <strong style={{ fontSize: 13.5 }}>{app.date}</strong>
                       <div style={{ color: 'var(--soft)', fontSize: 12 }}>
@@ -210,21 +216,21 @@ export function AppointmentsPage() {
                       </div>
                     </div>
                   </td>
-                  <td>
+                  <td data-label="Danışan">
                     <div className="client-avatar-cell">
                       <div className="client-mini-avatar">
                         {app.clientName.charAt(0)}
                       </div>
-                      <strong style={{ fontSize: 14 }}>{app.clientName}</strong>
+                      <button type="button" className="client-name-button" onClick={() => navigate(`/danisanlar/${app.clientId}`)}>{app.clientName}</button>
                     </div>
                   </td>
-                  <td>
+                  <td data-label="Seans türü">
                     <span style={{ fontSize: 13 }}>{app.sessionType}</span>
                   </td>
-                  <td>
+                  <td data-label="Görüşme yeri">
                     <span style={{ fontSize: 12.5, color: 'var(--soft)' }}>{app.location}</span>
                   </td>
-                  <td>
+                  <td data-label="Durum">
                     <span
                       className={`badge ${
                         app.status === 'completed'
@@ -242,28 +248,29 @@ export function AppointmentsPage() {
                       {app.status === 'noshow' && 'Gelmedi'}
                     </span>
                   </td>
-                  <td>
-                    <span style={{ fontSize: 12, color: 'var(--soft)', maxWidth: 200, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <td data-label="Notlar">
+                    <span className="appointment-note">
                       {app.notes || '—'}
                     </span>
                   </td>
-                  <td style={{ textAlign: 'right' }}>
-                    <div style={{ display: 'inline-flex', gap: 6 }}>
+                  <td data-label="İşlemler" style={{ textAlign: 'right' }}>
+                    <div className="client-row-actions">
                       {app.status === 'scheduled' && (
                         <button
                           type="button"
                           className="btn-primary btn-sm"
-                          title="Seansı Başlat ve SOAP Notuna Git"
-                          onClick={() => startSessionFromAppointment(app)}
+                          title="Randevuyu tamamlandı olarak işaretle ve danışan dosyasını aç"
+                          onClick={() => completeAppointmentAndOpenFile(app)}
                         >
-                          <Icon name="sparkles" size={13} />
-                          <span>Seansı Başlat</span>
+                          <Icon name="checkCircle" size={13} />
+                          <span>Görüşmeyi tamamla</span>
                         </button>
                       )}
                       <button
                         type="button"
                         className="btn-secondary btn-sm"
-                        title="Randevuyu Düzenle"
+                        title="Randevuyu düzenle"
+                        aria-label={`${app.clientName} randevusunu düzenle`}
                         onClick={() => openEditModal(app)}
                       >
                         <Icon name="edit" size={13} />
@@ -272,7 +279,8 @@ export function AppointmentsPage() {
                         type="button"
                         className="btn-secondary btn-sm"
                         style={{ color: 'var(--danger)' }}
-                        title="Randevuyu Sil"
+                        title="Randevuyu sil"
+                        aria-label={`${app.clientName} randevusunu sil`}
                         onClick={() => handleDelete(app.id)}
                       >
                         <Icon name="trash" size={13} />
@@ -288,11 +296,10 @@ export function AppointmentsPage() {
 
       {/* Modal */}
       {modalOpen && (
-        <div className="clinical-modal-backdrop" onClick={() => setModalOpen(false)}>
-          <div className="clinical-modal" onClick={e => e.stopPropagation()}>
+        <ClinicalDialog titleId="appointment-dialog-title" onClose={() => setModalOpen(false)}>
             <div className="clinical-modal-head">
-              <h3>{editingApp ? 'Randevuyu Düzenle' : 'Yeni Randevu Planla'}</h3>
-              <button type="button" className="btn-icon" onClick={() => setModalOpen(false)}>
+              <h3 id="appointment-dialog-title">{editingApp ? 'Randevuyu Düzenle' : 'Yeni Randevu Planla'}</h3>
+              <button type="button" className="btn-icon" aria-label="Pencereyi kapat" onClick={() => setModalOpen(false)}>
                 <Icon name="close" size={20} />
               </button>
             </div>
@@ -416,8 +423,7 @@ export function AppointmentsPage() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </ClinicalDialog>
       )}
     </div>
   );

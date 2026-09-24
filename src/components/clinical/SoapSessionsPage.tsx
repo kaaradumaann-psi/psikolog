@@ -9,6 +9,7 @@ import {
 } from '../../clinical/clinicalStore';
 import { getSettings } from '../../clinical/practiceStore';
 import { clinicToday } from '../../clinical/recordRules';
+import { ClinicalDialog } from './ClinicalDialog';
 import { Icon } from '../Icon';
 import { SessionSummaryButton } from '../practice/SessionSummaryButton';
 import { navigate } from '../../router';
@@ -297,11 +298,10 @@ export function SoapSessionsPage() {
 
       {/* Modal */}
       {modalOpen && (
-        <div className="clinical-modal-backdrop" onClick={() => setModalOpen(false)}>
-          <div className="clinical-modal" style={{ maxWidth: 780 }} onClick={e => e.stopPropagation()}>
+        <ClinicalDialog titleId="session-dialog-title" onClose={() => setModalOpen(false)} wide>
             <div className="clinical-modal-head">
-              <h3>{editingSession ? 'Seans Notunu Düzenle' : 'Yeni SOAP Seans Notu'}</h3>
-              <button type="button" className="btn-icon" onClick={() => setModalOpen(false)}>
+              <h3 id="session-dialog-title">{editingSession ? 'Seans Notunu Düzenle' : 'Yeni SOAP Seans Notu'}</h3>
+              <button type="button" className="btn-icon" aria-label="Pencereyi kapat" onClick={() => setModalOpen(false)}>
                 <Icon name="close" size={20} />
               </button>
             </div>
@@ -465,8 +465,7 @@ export function SoapSessionsPage() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </ClinicalDialog>
       )}
     </div>
   );

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { clearAllClinicalData, exportClinicalBackup, importClinicalBackup } from '../../clinical/clinicalStore';
 import { exportPracticeData, importPracticeData } from '../../clinical/practiceStore';
 import { MAX_BACKUP_BYTES, clinicToday } from '../../clinical/recordRules';
+import { ClinicalDialog } from './ClinicalDialog';
 import { Icon } from '../Icon';
 
 export function DataManagementModal({ onClose }: { onClose: () => void }) {
@@ -62,11 +63,10 @@ export function DataManagementModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="clinical-modal-backdrop" onClick={onClose}>
-      <div className="clinical-modal" onClick={(event) => event.stopPropagation()}>
+    <ClinicalDialog titleId="data-dialog-title" onClose={onClose}>
         <div className="clinical-modal-head">
-          <h3>Yedek ve silme</h3>
-          <button type="button" className="btn-icon" onClick={onClose}>
+          <h3 id="data-dialog-title">Yedek ve silme</h3>
+          <button type="button" className="btn-icon" aria-label="Pencereyi kapat" onClick={onClose}>
             <Icon name="close" size={20} />
           </button>
         </div>
@@ -104,7 +104,6 @@ export function DataManagementModal({ onClose }: { onClose: () => void }) {
         <div className="clinical-modal-foot">
           <button type="button" className="btn-primary" onClick={onClose}>Kapat</button>
         </div>
-      </div>
-    </div>
+    </ClinicalDialog>
   );
 }

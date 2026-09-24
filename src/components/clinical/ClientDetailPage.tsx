@@ -25,6 +25,7 @@ import { readingsForClient, measurementNote, safetyPlanIsEmpty } from '../../cli
 import type { RapidScreeningResult } from '../../clinical/rapidScreening';
 import { getSafetyPlan, getScreenings, getSettings, subscribePracticeStore } from '../../clinical/practiceStore';
 import { clinicToday, maskTc } from '../../clinical/recordRules';
+import { ClinicalDialog } from './ClinicalDialog';
 import { Icon } from '../Icon';
 import { FormulationPanel } from './FormulationPanel';
 import { ScoreChips } from './ScoreChips';
@@ -713,11 +714,10 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
 
       {/* SOAP Modal */}
       {soapModalOpen && (
-        <div className="clinical-modal-backdrop" onClick={() => setSoapModalOpen(false)}>
-          <div className="clinical-modal" style={{ maxWidth: 780 }} onClick={e => e.stopPropagation()}>
+        <ClinicalDialog titleId="client-session-dialog-title" onClose={() => setSoapModalOpen(false)} wide>
             <div className="clinical-modal-head">
-              <h3>{editingSession ? 'SOAP Seans Notunu Düzenle' : `Yeni Seans Notu (SOAP) — ${client.firstName} ${client.lastName}`}</h3>
-              <button type="button" className="btn-icon" onClick={() => setSoapModalOpen(false)}>
+              <h3 id="client-session-dialog-title">{editingSession ? 'SOAP Seans Notunu Düzenle' : `Yeni Seans Notu (SOAP) — ${client.firstName} ${client.lastName}`}</h3>
+              <button type="button" className="btn-icon" aria-label="Pencereyi kapat" onClick={() => setSoapModalOpen(false)}>
                 <Icon name="close" size={20} />
               </button>
             </div>
@@ -865,8 +865,7 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </ClinicalDialog>
       )}
     </div>
   );

@@ -1,7 +1,7 @@
 /* ==========================================================================
    Responsive Foundation — viewport fit, navigation shell, touch ergonomics
    --------------------------------------------------------------------------
-   main.tsx imports this file LAST, after mobile.css and reports.css, so it can
+   main.tsx imports this file LAST, after workspace.css, so it can
    refine every screen layer without fighting the cascade. It owns the shared
    foundation only; screen-specific layout stays in the files that already own
    it (workspace.css, reports.css, scanner.css, …).
@@ -16,7 +16,7 @@
      08 · ≤720px — reports, charts and paper previews
      08b/08c · sources entries + coarse-pointer touch band
      09 · ≤720px — scanner / camera surfaces
-     10 · every width — compact navigation panel (hamburger), ≤900px header row
+     10 · compact navigation panel on smaller screens, ≤900px header row
      11 · PaperViewport — A4 paper keeps the desktop composition everywhere
      12 · ≤720px — data tables become cards (actions visible without scroll)
      13 · ≤720px — OMR / scanner text-fit fixes
@@ -30,7 +30,7 @@
        (form.css / print.css / @media print blocks) never receives a single
        declaration from this file.
      • No `!important`, no new component, no rewritten design: foundation only.
-     • Desktop (>1100px) is intentionally untouched.
+     • The workspace design layer provides the desktop sidebar above 1050px.
    ========================================================================== */
 
 /* --------------------------------------------------------------------------
@@ -771,7 +771,10 @@
    bağlantısı) ve değerli dikey alanı yiyordu. Bu yüzden sekme şeridi, kullanıcı
    özeti ve çıkış düğmesi başlıktan çıkar; sağ üstteki tek düğme menüyü açar.
 
-   Menü eskiden ekranın tamamını kaplayan beyaz bir katmandı; 13 bağantalık
+   Masaüstünde workspace.css kalıcı bir yan menü sunar. Dar ekranda buradaki
+   panel görünür; arka plan kaplaması ve klavye odağı yönetilir.
+
+   Menü eskiden ekranın tamamını kaplayan beyaz bir katmandı; 13 bağlantılık
    liste küçük telefonlarda ekranı aşıyordu. Artık menü, başlığın hemen altına
    yaslanan yüzen bir paneldir: arka plan hafifçe karartılır ama sayfa görünür
    kalır, panelin yüksekliği ekranı asla aşmaz, uzun liste panel içinde kayar
@@ -1039,6 +1042,8 @@
     font-size: 13.5px;
   }
 }
+
+/* --------------------------------------------------------------------------
    11 · PaperViewport — A4 kâğıdı her ekranda masaüstü düzeniyle
    --------------------------------------------------------------------------
    Kâğıt (TAM RAPOR / şablon önizleme / canlı önizleme) 760px masaüstü

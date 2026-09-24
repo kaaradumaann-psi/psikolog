@@ -26,8 +26,8 @@ type MobileNavProps = {
 /**
  * Başlığın altında açılan kompakt gezinme paneli.
  *
- * Sekmeler başlıkta yan yana durmaz; sağ üstteki düğme menüyü açar. Panel,
- * ekranın tamamını kaplayan eski tam ekran katmanın yerine geçti: başlığın
+ * Geniş ekranda kalıcı yan gezinme vardır. Dar ekranda sağ üstteki düğme
+ * menüyü açar. Panel, ekranın tamamını kaplayan katmanın yerine geçti: başlığın
  * hemen altına yaslanan, kenarlarından sayfanın görünür kaldığı yüzen bir
  * menüdür. Yüksekliği ekranı asla aşmaz; uzun liste panel içinde kayar,
  * kullanıcı + çıkış şeridi panelin altında yapışık kalır.
@@ -192,8 +192,8 @@ export function MobileNav({ items, user, onLogout, showLogout = true }: MobileNa
                   </div>
                   <div className="user-info-text">
                     <strong className="user-full-name">{displayName(user)}</strong>
-                    <span className={`user-role-badge ${user.role === 'ADMIN' ? 'badge-admin' : 'badge-psy'}`}>
-                      {user.role === 'ADMIN' ? 'Yönetici' : 'Psikolog'}
+                    <span className={`user-role-badge ${user.role === 'ADMIN' || user.role === 'ORG_ADMIN' ? 'badge-admin' : 'badge-psy'}`}>
+                      {!showLogout ? 'Yerel çalışma alanı' : user.role === 'ADMIN' || user.role === 'ORG_ADMIN' ? 'Yönetici' : 'Uzman psikolog'}
                     </span>
                   </div>
                 </div>

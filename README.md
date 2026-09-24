@@ -39,11 +39,11 @@ Login → Dashboard → Danışanlar → Danışan Dosyası → Anamnez → Gör
 
 - PHASE-00: Mevcut proje analizi — DONE (docs/architecture/*)
 - PHASE-01: İskelet + Auth + DB — DONE
-- PHASE-02: Danışanlar + Dosya — DONE (bu faz, CRUD + file tabs + file_number auto + search/pagination + RLS)
-- PHASE-03: Anamnez + Görüşmeler — NEXT
-- PHASE-04: Değerlendirmeler + Test Sonuçları (external mmpi link, no scoring copy)
-- PHASE-05: Raporlar + Şablonlar (templateEngine block model MMPI reuse)
-- PHASE-06: PDF + Belgeler (browser print + @react-pdf, private bucket)
+- PHASE-02: Danışanlar + Dosya — DONE (CRUD + file tabs + file_number auto + search/pagination + RLS)
+- PHASE-03: Anamnez + Görüşmeler — DONE (anamneses 1-1 upsert, sessions date Istanbul validation, audit, RLS, RHF+Zod)
+- PHASE-04: Değerlendirmeler + Test Sonuçları — DONE (assessments, test_definitions system+org seed MMPI harici, test_administrations external_source mmpi, test_results jsonb summary only, no scoring copy)
+- PHASE-05: Raporlar + Şablonlar — DONE (report_templates system+org, reports block model, source_snapshot, revision/version_number, prepare_report trigger autosave 10min versioning, version_report security definer, report_versions immutable, psychologist_settings letterhead, templateEngine safe placeholders, reportDataAdapter, autosave 1.4s, ReportEditor + ReportPreview + PDF print, optimistic concurrency)
+- PHASE-06: Belgeler (PRIVATE BUCKET signed URL) + Notlar + Geçmiş — NEXT
 - PHASE-07: Randevular+Görevler+Ayarlar+Yönetim+Audit Log
 - PHASE-08: Güvenlik+Test+Responsive Audit + E2E Playwright critical path
 - PHASE-09: Polish + Deploy psikolog.halilkaraduman.com.tr

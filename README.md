@@ -1,1 +1,38 @@
-# psikolog
+# Psikolog Platformu
+
+Uzman psikoloğun günü için çalışma alanı: bugünkü seans hazırlığı, danışan dosyası, formülasyon, güvenlik planı, SOAP, ölçüm izlemi ve rapor.
+
+## Günlük akış
+
+1. Ana sayfa bugünkü randevuyu son seans, ev ödevi, ölçek değişimi ve güvenlik uyarısıyla açar.
+2. Dosyada 4P formülasyon, tedavi hedefi ve güvenlik planı durur.
+3. Seans SOAP notu olarak yazılır.
+4. BDI, BAI, SCL-90-R, GAD-7 ve PHQ-9 sonuçları aynı dosyada karşılaştırılır.
+5. İlerleme raporu bu kayıtlardan doldurulur. Metin tanı koymaz.
+
+Randevu, görev, not, belge, antet ve JSON yedek aynı alanda. Supabase yoksa uygulama boş yerel çalışma alanı olarak açılır. Örnek danışan yüklenmez.
+
+## Çalıştırma
+
+Node 22+.
+
+```sh
+npm install
+npm run dev
+```
+
+```sh
+npm run typecheck
+npm test
+npm run build
+```
+
+Bulut kurulumu: `.env.example` dosyasını `.env` yapın. Yalnızca publishable/anon anahtarı yazın.
+
+## Üretim
+
+Kayıtlar tarayıcıda kalır ve şifrelenmez. Sayfa üçüncü taraf yazı tipi sunucusuna istek atmaz. Üretim başlıkları `public/_headers` içindedir: çerçeveleme kapalı, betik yalnızca kendi kaynaktan, bağlantı kendi kaynak ve Supabase. Supabase yoksa giriş duvarı yoktur; cihazı paylaşmayın. Bulut hesabı yalnızca `.env` ile açılır, service role anahtarı tarayıcıya konmaz.
+
+## Sınır
+
+Ölçek bantları taramadır. BDI ve PHQ-9 madde 9, SCL-90-R madde 15 bir güvenlik uyarısıdır; risk görüşmesinin yerine geçmez. Klinik karar uygulayıcıya aittir.

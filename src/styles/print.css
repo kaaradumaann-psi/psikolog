@@ -1,0 +1,100 @@
+
+@media print {
+  /* Ekran-only gizle */
+  .nav,
+  .sidebar,
+  .mobile-nav,
+  .site-footer,
+  .connectivity-banner,
+  .toast-stack,
+  .btn,
+  .btn-primary,
+  .btn-ghost,
+  .btn-full,
+  .no-print {
+    display: none !important;
+  }
+
+  /* Print-only göster */
+  .print-only {
+    display: block !important;
+  }
+
+  /* Sayfa */
+  @page {
+    size: A4;
+    margin: 20mm 18mm 20mm 18mm;
+  }
+
+  html,
+  body {
+    background: white !important;
+    color: black !important;
+    font-size: 12pt;
+    line-height: 1.5;
+  }
+
+  /* Rapor */
+  .psych-report {
+    font-family: ui-sans-serif, "Segoe UI", Helvetica, Arial, sans-serif;
+    color: black;
+    background: white;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    box-shadow: none;
+    border: none;
+  }
+
+  .psych-report h1,
+  .psych-report h2,
+  .psych-report h3 {
+    font-family: Georgia, "Palatino Linotype", serif;
+    page-break-after: avoid;
+  }
+
+  .psych-report table {
+    width: 100%;
+    border-collapse: collapse;
+    page-break-inside: auto;
+  }
+
+  .psych-report tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+
+  .psych-report .report-header {
+    border-bottom: 2px solid black;
+    padding-bottom: 12px;
+    margin-bottom: 16px;
+  }
+
+  .psych-report .report-footer {
+    border-top: 1px solid #ccc;
+    padding-top: 8px;
+    margin-top: 16px;
+    font-size: 9pt;
+    color: #666;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  /* Bağlantılar */
+  a {
+    color: black !important;
+    text-decoration: none !important;
+  }
+  a[href^="http"]::after {
+    content: " (" attr(href) ")";
+    font-size: 9pt;
+    color: #666;
+  }
+}
+
+/* Ekran-only */
+@media screen {
+  .print-only {
+    display: none;
+  }
+}

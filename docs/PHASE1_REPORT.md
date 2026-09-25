@@ -4,7 +4,22 @@ Kapsam: yalnızca PHASE 1. Kuyruk, tamamlanma callback’i, rapor senkronu ve MM
 
 ## PHASE 1 STATUS: BLOCKED
 
-Kod bu depoda ve `integration/mmpi/` paketinde duruyor; birim testleri, RLS PGlite, MMPI skor motoru ve gerçek tarayıcı SSO (yerel protokol sunucusu + gerçek frontend’ler) geçti. **PASS değil:** canlı Edge Function / `generateLink` / HMAC sırları bu ortamda yok; Repo123 GitHub’a uygulanmadı; üretim `psikolog.halilkaraduman.com.tr` → `mmpi.halilkaraduman.com.tr` turu çalıştırılmadı.
+Kod bu depoda ve `integration/mmpi/` paketinde duruyor; birim testleri, RLS PGlite, MMPI skor motoru ve gerçek tarayıcı SSO (yerel protokol sunucusu + gerçek frontend’ler) geçti. **PASS değil.** 2026-09-25 üretim doğrulaması:
+
+| Kontrol | Sonuç | Kanıt |
+| --- | --- | --- |
+| `psikolog.halilkaraduman.com.tr` DNS | **yok (NXDOMAIN)** | A/AAAA/CNAME kaydı yok; Cloudflare NS zone’u var |
+| Psychology `project_id` | **eksik** | `supabase/config.toml` doldurulmamış |
+| `SUPABASE_ACCESS_TOKEN` / DB şifresi | **eksik** | sandbox env’de yok; `supabase login` yapılamadı |
+| `sso-issue` / `sso-redeem` Psychology | **deploy edilemedi** | hedef proje bilinmiyor + token yok |
+| MMPI proje | `lgtahyruhyfozhueawft` | `admin-users` canlı (JWT bekliyor) |
+| `sso-consume` MMPI production | **NOT_FOUND** | `https://lgtahyruhyfozhueawft.supabase.co/functions/v1/sso-consume` |
+| HMAC / Edge secrets | **eksik** | `SSO_HMAC_SECRET`, `MMPI_SSO_ORIGIN`, `PSYCHOLOGY_SSO_REDEEM_URL` yok |
+| Repo123 push | **403** | `arena-ai-coding-agent[bot]` yazamaz |
+| Wrangler / Cloudflare | **unauthenticated** | frontend deploy yok |
+| Test hesapları | **eksik** | production e-posta/şifre yok |
+
+Mock ile PASS gösterilmedi. `db push` / `functions deploy` / `secrets set` çalıştırılmadı.
 
 ## Dosyalar (Psychology)
 
@@ -78,12 +93,17 @@ Tarayıcı (`sso-live`, Chromium): mutlu yol (AuthGate hydrate), URL yalnızca c
 | MMPI `tsc --noEmit` (yamalı `/tmp/mmpi`) | geçti |
 | MMPI `npm test` | 722/722 (skor/OMR dahil) |
 
-## Kalan
+## Kalan (üretim — tam liste)
 
-1. Psychology: `db push` + `sso-issue`/`sso-redeem` deploy + `SSO_HMAC_SECRET` / `MMPI_SSO_ORIGIN`
-2. Repo123: `integration/mmpi` + PATCHES, `sso-consume` deploy, aynı HMAC, `PSYCHOLOGY_SSO_REDEEM_URL`
-3. Üretim tarayıcı turu (GoTrue `generateLink` dahil)
-4. ClientDetail Ölçekler sekmesinde “MMPI’ye git” planlı `test_administrations` satırı yazar, kuyruk UI’si yok — kuyruk PHASE 2
-5. Bu sandbox’ta resmi Playwright tarayıcısı indirilemedi; E2E `/tmp/chromium` + `CHROMIUM_PATH` ile koştu
+1. Cloudflare DNS: `psikolog.halilkaraduman.com.tr` A/CNAME (şu an NXDOMAIN)
+2. Psychology Supabase `project_id` + `SUPABASE_ACCESS_TOKEN` (veya `supabase login`)
+3. `supabase db push` (migration `20260925100000_phase1_sso_identity_clients.sql`)
+4. `supabase functions deploy sso-issue` ve `sso-redeem`
+5. Secrets (asla `VITE_` değil): `SSO_HMAC_SECRET` (≥32), `MMPI_SSO_ORIGIN=https://mmpi.halilkaraduman.com.tr`, `ALLOWED_ORIGINS=https://psikolog.halilkaraduman.com.tr`
+6. Repo123 yazma izni; `integration/mmpi` + `phase1-repo123.patch`
+7. MMPI `sso-consume` deploy + aynı HMAC + `PSYCHOLOGY_SSO_REDEEM_URL` + `ALLOWED_ORIGINS=https://mmpi.halilkaraduman.com.tr`
+8. Wrangler token: Psychology frontend (SSO butonu) ve MMPI frontend (`/sso`) production build
+9. Her iki Auth’ta eşleşen test kullanıcısı (aynı e-posta) + MMPI’siz yetkisiz hesap
+10. Canlı tarayıcı turu: login → kod → MMPI session; replay; expired; 403; URL’de token yok
 
 PHASE 2 başlatılmadı.

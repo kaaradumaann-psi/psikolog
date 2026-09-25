@@ -133,7 +133,7 @@ test('live seed — eşleşmeyen e-posta sessizce geçmez', async () => {
   const db = await createClinicalDb();
   await db.query(`insert into auth.users(id, email) values ($1,'baska-kullanici@example.com')`, [USER_OTHER]);
 
-  await assert.rejects(() => db.exec(SEED_SQL), /Test kullanıcısı bulunamadı/);
+  await assert.rejects(() => db.exec(SEED_SQL), /EŞLEŞME YOK/);
 
   const orgs = await orgRows(db);
   assert.equal(orgs.length, 0, 'istisna sonrası yarım kalmış kurum oluşmamalı');
@@ -159,4 +159,100 @@ test('live seed — admin kullanıcısı yoksa diğer atamalar yapılır ve uyar
     profiles.every((p) => p.organization_id !== null),
     'A/B kurum ataması admin olmadan da yapılmalı',
   );
+});
+
+/* ------------------------------------------------------------------ emit-seed */
+
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync as readFile, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+const EMITTER = 'scripts/live-validation/emit-seed.mjs';
+
+function runEmitter(args: string[], env: Record<string, string>) {
+  return execFileSync(process.execPath, [EMITTER, ...args], {
+    encoding: 'utf8',
+    env: { ...process.env, ...env },
+  });
+}
+
+test('emit-seed — şablon placeholder e-postaları içerir ve hepsi doldurulur', () => {
+  for (const placeholder of [EMAIL_A, EMAIL_B, EMAIL_ADMIN]) {
+    const occurrences = SEED_SQL.split(placeholder).length - 1;
+    assert.ok(occurrences >= 1, `${placeholder} şablonda bulunmalı (emit-seed buna bağlı)`);
+  }
+
+  // renderSeed tüm kopyaları değiştirmeli: şablonda kalan tek bir placeholder bile
+  // SQL Editor'a yapıştırıldığında yanlış (eşleşmeyen) e-posta anlamına gelir.
+  const rendered = SEED_SQL.split(EMAIL_A).join('a@ornek.test').split(EMAIL_B).join('b@ornek.test').split(EMAIL_ADMIN).join('c@ornek.test');
+  for (const placeholder of [EMAIL_A, EMAIL_B, EMAIL_ADMIN]) {
+    assert.ok(!rendered.includes(placeholder), `doldurulmamış placeholder kaldı: ${placeholder}`);
+  }
+  assert.equal(rendered.split('a@ornek.test').length - 1, SEED_SQL.split(EMAIL_A).length - 1);
+});
+
+test('emit-seed — e-postaları doldurur, parola yazmaz, çıktı SQL olarak çalışır', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'phase7-seed-'));
+  const out = join(dir, 'seed.sql');
+  try {
+    const stdout = runEmitter(['--out', out], {
+      LIVE_PSY_A_EMAIL: 'a-test@ornek.test',
+      LIVE_PSY_B_EMAIL: 'b-test@ornek.test',
+      LIVE_ADMIN_EMAIL: 'admin-test@ornek.test',
+      LIVE_PSY_A_PASSWORD: 'gizli-parola-a',
+      LIVE_PSY_B_PASSWORD: 'gizli-parola-b',
+      LIVE_ADMIN_PASSWORD: 'gizli-parola-c',
+    });
+
+    const sql = readFile(out, 'utf8');
+    assert.ok(!sql.includes(EMAIL_A) && !sql.includes(EMAIL_B) && !sql.includes(EMAIL_ADMIN), 'placeholder kalmamalı');
+    assert.ok(sql.includes('a-test@ornek.test') && sql.includes('b-test@ornek.test'), 'e-postalar yerleşmeli');
+    assert.ok(sql.includes('admin-test@ornek.test'), 'admin e-postası yerleşmeli');
+
+    for (const secret of ['gizli-parola-a', 'gizli-parola-b', 'gizli-parola-c']) {
+      assert.ok(!sql.includes(secret), 'parola çıktıya yazılmamalı');
+      assert.ok(!stdout.includes(secret), 'parola ekrana basılmamalı');
+    }
+    assert.ok(!stdout.includes('a-test@ornek.test'), 'ekranda e-posta maskelenmeli');
+
+    // Üretilen dosya, gerçek PostgreSQL üzerinde hatasız çalışmalı ve atamayı yapmalı
+    const db = await createClinicalDb();
+    await db.query(`insert into auth.users(id, email) values ($1,$2), ($3,$4), ($5,$6)`, [
+      USER_A,
+      'a-test@ornek.test',
+      USER_B,
+      'b-test@ornek.test',
+      USER_ADMIN,
+      'admin-test@ornek.test',
+    ]);
+    await db.exec(sql);
+    const profiles = await profileRows(db);
+    assert.equal(profiles.length, 3);
+    assert.ok(
+      profiles.every((p) => p.organization_id !== null),
+      'A/B/admin hepsi kurumlu olmalı',
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('emit-seed — eksik ortam değişkeninde 2 ile çıkar ve dosya üretmez', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'phase7-seed-'));
+  const out = join(dir, 'seed.sql');
+  try {
+    assert.throws(
+      () =>
+        runEmitter(['--out', out], {
+          LIVE_PSY_A_EMAIL: '',
+          LIVE_PSY_B_EMAIL: '',
+          LIVE_ADMIN_EMAIL: '',
+        }),
+      /Command failed/,
+    );
+    assert.throws(() => readFile(out, 'utf8'), /ENOENT/, 'eksik env durumunda çıktı dosyası yazılmamalı');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

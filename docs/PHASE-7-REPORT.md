@@ -34,21 +34,36 @@ mimarisi kapatılmak üzere çalışıldı. Bu fazda:
   Storage'a yüklenir, metadata satırı (`file_path/mime_type/size_bytes/created_by/org/client`)
   yazılır, A→B nesne okuma/güncelleme/silme reddedilir.
 - **P0-8 (Regresyon/üretim doğrulaması)** kısmen yapıldı: tam test paketi, typecheck ve production
-  build yeşil; **canlı koşu kullanıcı makinesinde yapıldı → 6 PASS / 3 FAIL** (anon kontrolleri
-  `[object Object]` nedeniyle teşhis edilemedi, kurum ataması yok). Teşhis düzeltmesi uygulandı
-  (gerçek HTTP/kod raporlama, SEMA ön kontrolü, güçlendirilmiş anon matrisi); yeniden koşu bekliyor.
-  **Gerçek tarayıcı ve production validation hâlâ BLOCKED / NOT VERIFIED**.
+  build yeşil. Canlı koşular kullanıcı makinesinde:
+  **koşu #1** 6 PASS / 3 FAIL (anon `[object Object]`, kurum ataması yok) →
+  teşhis düzeltmesi (gerçek HTTP/kod raporlama, SEMA ön kontrolü, güçlendirilmiş anon matrisi) →
+  **koşu #2** **15 PASS / 2 DENY / 1 FAIL**: `anon → clients SELECT/INSERT = DENY`
+  (`HTTP 401`, `code=42501`, `permission denied for table clients`), SEMA 9/9 PASS
+  (canlı şemada PHASE 7 nesneleri var), kalan tek FAIL **kurum ataması (seed uygulanmadı)**.
+  **koşu #3** aynı tablo (15 PASS / 2 DENY / 1 FAIL); tek fark admin profilinin `rol=ADMIN`
+  olması (kurum yine yok → rol elle değiştirilmiş; seed çalışmamış). Seed kolaylığı için
+  `emit-seed.mjs` eklendi ve artık **koşucu `live-seed.local.sql` dosyasını kendisi üretiyor**
+  (e-postalar koşunun giriş yaptığı gerçek hesaplardan gelir; parola yazılmaz).
+  **Gerçek tarayıcı ve production validation hâlâ BLOCKED / NOT VERIFIED.**
 
 Doğrulama özeti (bu raporda kanıtlarıyla):
-`npm test` → **142/142 PASS**, `tsc --noEmit` → **PASS**, `vite build` → **PASS**.
-Canlı Supabase → **FAILED (kısmi koşu: 6 PASS / 3 FAIL)**, gerçek tarayıcı → **NOT RUN/BLOCKED**,
+`npm test` → **145/145 PASS**, `tsc --noEmit` → **PASS**, `vite build` → **PASS**.
+Canlı Supabase → **FAILED (kısmi koşu #2: 15 PASS / 2 DENY / 1 FAIL)**, gerçek tarayıcı → **NOT RUN**,
 üretim doğrulaması → **NOT VERIFIED**.
 
-> **P0-8 canlı doğrulama turları (2026-09-25):** (1) sandbox'tan koşu **yapılamadı** (CLI oturumu/link yok,
-> `*.supabase.co` / `api.supabase.com` TLS engelli); (2) **kullanıcı makinesinden koşuldu**:
-> AUTH 6/6 PASS ancak RLS 0/3 — anon kontrolleri `[object Object]` (hata serileştirme hatası) ve
-> `kurum ataması` FAIL (seed çalıştırılmamış). Teşhis + düzeltme yapıldı, yeniden koşu bekleniyor;
-> **PHASE 7 COMPLETE DEĞİLDİR**. Ayrıntı: `docs/PHASE-7-LIVE-VALIDATION.md`.
+> **P0-8 canlı doğrulama turları (2026-09-25):**
+> (1) sandbox'tan koşu **yapılamadı** (CLI oturumu/link yok, `*.supabase.co` TLS engelli);
+> (2) kullanıcı makinesi **koşu #1**: AUTH 6/6 PASS, anon `[object Object]`, `kurum ataması` FAIL;
+> (3) teşhis düzeltmesi (PostgREST hata nesnesi → gerçek HTTP/kod) + SEMA ön kontrolü +
+> güçlendirilmiş anon matrisi + `emit-seed.mjs`;
+> (4) kullanıcı makinesi **koşu #2**: AUTH 6 PASS, **SEMA 9 PASS**, **anon 2 DENY** (401/42501 kanıtlı),
+> kalan tek FAIL = kurum ataması (seed);
+> (5) kullanıcı makinesi **koşu #3**: aynı sonuç tablosu — admin profili bu kez `rol=ADMIN` (org yok,
+> yani rol elle değiştirilmiş; seed yine uygulanmamış) → koşucu artık seed SQL'ini otomatik üretir.
+> Kurum ataması **tasarım gereği** istemciden yapılamaz
+> (`profiles_insert_self` → `organization_id is null`; `authenticated` rolünde `profiles` UPDATE yok);
+> SQL Editor'da çalıştırılır.
+> **PHASE 7 COMPLETE DEĞİLDİR.** Ayrıntı: `docs/PHASE-7-LIVE-VALIDATION.md`.
 
 ---
 
@@ -252,13 +267,13 @@ Kaynak-of-truth testi: localStorage temizlenip yeniden yüklenince veri Supabase
 | PGlite / SQL davranışı | **PASS** | `tests/phase7LockChain.test.ts` (11), `phase7SessionChain.test.ts` (10) |
 | RLS/IDOR matrisi | **PASS** | `tests/phase7RlsMatrix.test.ts` (14), `security*` (23) |
 | Canlı doğrulama kiti — hata biçimlendirme/sınıflandırma | **PASS** | `run.mjs --selftest` → **8/8** (ağ yok) |
-| Canlı doğrulama seed SQL'i | **PASS** | `tests/liveValidationSeed.test.ts` (4 kontrol: atama, idempotency, sessiz geçmeme, admin yokluğu) |
+| Canlı doğrulama seed SQL'i + emit-seed | **PASS** | `tests/liveValidationSeed.test.ts` (7 kontrol: atama, idempotency, sessiz geçmeme, admin yokluğu, placeholder tekilliği, e-posta doldurma + parola yazmama, eksik env'de çıkış kodu 2) |
 | Canlı şema/verify SQL'i | **PASS** | `tests/liveValidationVerifySql.test.ts` (1 kontrol: 25+ nesne + 11 migration) |
-| Canlı Supabase kiti (`scripts/live-validation/run.mjs`) | **FAILED (kısmi)** | Kullanıcı makinesi: AUTH 6 PASS, RLS 3 FAIL; sandbox'ta koşu yapılamıyor |
+| Canlı Supabase kiti (`scripts/live-validation/run.mjs`) | **FAILED (kısmi)** | Koşu #3 (kullanıcı makinesi): AUTH 6 PASS · SEMA 9 PASS · anon 2 DENY · kurum ataması 1 FAIL |
 | Tarayıcı (Playwright, gerçek Chromium) | **NOT RUN / BLOCKED** | Chromium ikili dosyası yok (`~/.cache/ms-playwright` boş); kullanıcı makinesinde koşulmadı |
 | Üretim (canlı Supabase + dağıtım) | **NOT VERIFIED** | Production bundle + dağıtım ortamı doğrulaması yapılmadı |
 
-Toplam: `npm test` → **142 test, 142 PASS, 0 FAIL** (~69.1 s). `npx tsc --noEmit` → **PASS**.
+Toplam: `npm test` → **145 test, 145 PASS, 0 FAIL**. `npx tsc --noEmit` → **PASS**.
 `npm run build` → **PASS** (vite 7.3.6, `dist/assets/index-*.js` 498.67 kB / gzip 139.37 kB).
 
 ---
@@ -274,9 +289,15 @@ Toplam: `npm test` → **142 test, 142 PASS, 0 FAIL** (~69.1 s). `npx tsc --noEm
    Ayrıntılı ölçümler ve gerekli komutlar: `docs/PHASE-7-LIVE-VALIDATION.md`.
    Migration'lar yalnız **PGlite (PostgreSQL uyumlu motor)** üzerinde doğrulandı; gerçek Supabase
    RLS/JWT davranışı, Storage yükleme/indirme ve Edge Function entegrasyonu **NOT VERIFIED**.
-   **Güncelleme:** kullanıcı kendi makinesinden koştu → AUTH 6/6 PASS, RLS 0/3 (anon `[object Object]`,
-   `kurum ataması` FAIL). Teşhis düzeltmesi sonrası **yeniden koşu bekleniyor**; sonuç gelene kadar
-   LIVE SUPABASE durumu **FAILED** olarak kalır (PASS yazılmaz).
+   **Güncelleme (koşu #1 → koşu #2):** kullanıcı makinesinde koşu #1 AUTH 6 PASS / anon `[object Object]`
+   / `kurum ataması` FAIL verdi. Teşhis düzeltmesinden sonra koşu #2: **anon → clients SELECT/INSERT
+   = DENY** (`HTTP 401`, `code=42501`, `permission denied for table clients`) ve **SEMA 9/9 PASS**
+   (canlı şemada `clients.owner_user_id`, `sessions.appointment_id/status/locked_at`, `appointments.fee`,
+   `formulations`, `safety_plans`, `reports.locked_at`, `anamneses`, `documents.file_path`,
+   `client-documents` bucket mevcut). Kalan tek FAIL **kurum ataması**: seed SQL Editor'da
+   çalıştırılmadı; bu adım istemciden yapılamaz (§13 gerekçesi). RLS sahiplik matrisi, klinik zincir,
+   imza/kilit/revizyon, Storage ve çıkış izolasyonu kontrolleri kurum kapısı açılmadan koşulmaz →
+   **LIVE SUPABASE FAILED** olarak kalır (PASS yazılmaz).
 2. **Gerçek tarayıcı doğrulaması — NOT RUN (sandbox'ta BLOCKED).** Playwright 1.63.0 kurulu ancak tarayıcı ikilisi yok
    (`~/.cache/ms-playwright` boş; sistemde `chromium`/`google-chrome` yok) ve indirme adımı başarısız
    ("Failed to download Chrome for Testing"). Bu yüzden responsive/erişilebilirlik ve uçtan uca
@@ -333,8 +354,14 @@ $ git show --stat --oneline 8355031   # tur 2 (P0-8 teşhis düzeltmesi)
  tests/liveValidationVerifySql.test.ts         | YENİ (1 kontrol)
  8 files changed, 1157 insertions(+), 296 deletions(-)
 
-$ git status --short
-(temiz — çalışma ağacı commit'lendi ve origin/arena/01a0d937-psikolog'a gönderildi)
+$ git status --short            # koşu #2 sonrası eklenenler
+ M .gitignore                                   (live-seed.local.sql)
+ M scripts/live-validation/run.mjs              (grant-deny ayrımı, "SIRADAKİ ADIM" rehberi)
+ M scripts/live-validation/README.md            (emit-seed adımı, belirti tablosu)
+ M tests/liveValidationSeed.test.ts             (+3 emit-seed kontrolü)
+?? scripts/live-validation/emit-seed.mjs        (yeni)
+ M docs/PHASE-7-LIVE-VALIDATION.md              (koşu #2 sonuçları)
+ M docs/PHASE-7-REPORT.md                       (bu güncelleme)
 ```
 
 - Tur 1 (P0-8 kiti + raporlar) `b20ede9` commit'i ile dala işlendi ve `origin`'a gönderildi
@@ -402,12 +429,22 @@ Not: `supabase/.temp/` (CLI yerel durumu), `.env.live` ve `live-validation-resul
   (semptom kararı + `supabase_migrations.schema_migrations` karşılaştırması), `README.md` (koşu sırası + kanıt kuralları),
   `tests/liveValidationSeed.test.ts`, `tests/liveValidationVerifySql.test.ts`, `docs/PHASE-7-LIVE-VALIDATION.md`
 - TESTS: `npm test` **142/142** · TYPECHECK: PASS · BUILD: PASS · `run.mjs --selftest` **8/8**
-- LIVE SUPABASE: **FAILED** — kullanıcı makinesindeki koşu: AUTH 6 PASS, RLS 3 FAIL
-  (anon `[object Object]` + `kurum ataması`). Kök neden: PostgREST hatası düz nesne; `String(error)` → `[object Object]`.
-  RLS politikalarında **değişiklik yok**; yalnız koşucu hata raporlama/sınıflandırma düzeltildi.
+- LIVE SUPABASE: **FAILED (kısmi)** — koşu #3: AUTH 6 PASS · **SEMA 9 PASS** · **anon 2 DENY**
+  (`HTTP 401` / `code=42501` / `permission denied for table clients`) · kurum ataması 1 FAIL (seed).
+  Koşu #1'deki `[object Object]` kök nedeni: PostgREST hatası düz nesne (`String(error)` → `[object Object]`).
+  RLS politikalarında **değişiklik yok**; yalnız koşucu hata raporlama/sınıflandırma düzeltildi
+  (`grant-deny` / `rls-deny` / `missing-object` / `auth` / `network`).
 - REAL BROWSER: **NOT RUN** (sandbox'ta BLOCKED — Chromium ikilisi yok) · PRODUCTION: **NOT VERIFIED**
-- SIRADAKİ: (1) `supabase db push --include-all` + `verify-migrations.sql` (semptom + 11 migration),
-  (2) SQL Editor'da seed (3 e-posta düzenlenir; beklenen: 3× `HAZIR`), (3) `node scripts/live-validation/run.mjs`
+- YENİ DOSYA: `scripts/live-validation/emit-seed.mjs` (seed SQL'ini `.env.live` e-postalarıyla doldurur;
+  parola okumaz/yazmaz) + `.gitignore` (`live-seed.local.sql`) + `run.mjs` "SIRADAKİ ADIM" rehberi
+- OTOMATİKLEŞTİRME: `run.mjs`, `kurum ataması` kapısı düştüğünde `live-seed.local.sql` dosyasını
+  kendisi üretir (e-postalar giriş yapılan gerçek hesaplardan); seed SQL'i tek `do $$` bloğuna
+  indirildi (geçici tablo yok), eşleşme yoksa mevcut auth e-postalarını NOTICE ile listeler ve
+  atamayı kendi içinde doğrular
+- SIRADAKİ: (1) `node scripts/live-validation/run.mjs` çalıştır → `live-seed.local.sql` üretilir,
+  (2) o dosyayı Supabase SQL Editor'da çalıştır (beklenen: `SEED TAMAM` NOTICE + A/B/ADMIN `HAZIR`),
+  (3) `node scripts/live-validation/run.mjs` tekrar → RLS matrisi + klinik zincir + imza/kilit +
+  Storage + logout izolasyonu kontrolleri de koşar
 - **PHASE 7 COMPLETE DEĞİL** (canlı doğrulama FAILED; PASS yazılmaz)
 
 ---

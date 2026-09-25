@@ -15,13 +15,24 @@ imza/kilit/revizyon, Storage, çıkış izolasyonu) tek komutla çalıştırır.
 4. `verify-migrations.sql` ile şema doğrulanır (§2 sonu).
 5. `run.mjs` koşulur (§4).
 
-Sıra atlanırsa tipik belirtiler (ilk canlı koşuda görüldü):
+Sıra atlanırsa tipik belirtiler (canlı koşularda görüldü):
 
 | Belirti | Anlamı | Çözüm |
 |---|---|---|
-| `kurum ataması → FAIL` (profil `org=YOK`, admin `rol=PSYCHOLOG`) | Seed çalıştırılmadı ya da e-postalar eşleşmedi | §3 (seed) — e-postaları düzeltip tekrar çalıştırın |
+| `kurum ataması → FAIL` (profil `org=YOK`, admin `rol=PSYCHOLOG`) | Seed çalıştırılmadı ya da e-postalar eşleşmedi | §3 — **`node scripts/live-validation/emit-seed.mjs`** ile SQL üretip SQL Editor'da çalıştırın |
 | `SEMA` grubunda `missing-object` / `PGRST205` | Canlı şemada PHASE 7 nesneleri yok | §2 (`supabase db push --include-all`) |
 | `anon → clients ... → FAIL` + `[object Object]` | **(düzeltildi)** eski koşucu PostgREST hata nesnesini string'e çeviriyordu | Bu sürüm gerçek `HTTP status · code · message · details · hint` yazar |
+| `anon → clients ... → DENY` + `code=42501` (HTTP 401) | **Beklenen**: `anon` rolünün `public.*` tablolarında hiç yetkisi yok (GRANT katmanı reddi) | Yok — bu bir kanıttır |
+
+### Koşucunun kendi yapamadığı tek şey: kurum ataması
+
+`kurum ataması → FAIL` mesajını görürseniz bu bir hata değil, **tasarımın sonucudur**:
+
+- `profiles_insert_self` politikası INSERT için `organization_id is null` şartı arar,
+- `authenticated` rolünün `public.profiles` üzerinde `update` yetkisi yoktur.
+
+Bu yüzden kurum/rol ataması **yönetici bağlamında** (SQL Editor) yapılır; koşucu bunu kendi başına
+yapamaz ve yapmamalıdır. Koşu bu kapıda durur ve yalnız AUTH + SEMA + anon kontrollerini raporlar.
 
 ## 0) Gerekli bilgiler (paylaşılmasına gerek yok)
 
@@ -82,9 +93,25 @@ RLS matrisini koşmadan önce `db push` adımını tamamlayın.
 
 1. Supabase Dashboard → Authentication → Users: üç kullanıcı oluşturun (A psikolog, B psikolog, admin).
    **Public sign-up kapalı kalmalı**; kullanıcılar Dashboard'dan açılır.
-2. `scripts/live-validation/seed-live-test-orgs.sql` dosyasını **SQL Editor'da** çalıştırın
-   (alternatif: `psql "$DATABASE_URL" -f scripts/live-validation/seed-live-test-orgs.sql`).
-   Düzenlenecek tek yer dosyanın başındaki `live_test_slots` INSERT'idir (üç e-posta).
+2. Seed'i **SQL Editor'da** çalıştırın (alternatif: `psql "$DATABASE_URL" -f …`).
+
+   **Kolay yol — e-postaları elle düzenlemeden (önerilen):**
+
+   ```bash
+   node scripts/live-validation/run.mjs        # kurum ataması yoksa live-seed.local.sql ÜRETİR
+   # (isteğe bağlı, ayrı komut) node scripts/live-validation/emit-seed.mjs
+   # → dosya içeriğini Supabase Dashboard → SQL Editor'a yapıştırıp çalıştırın
+   ```
+
+   Üretilen dosyada e-postalar **koşunun giriş yaptığı gerçek hesaplardan** gelir; parola okunmaz/yazılmaz
+   ve ekranda e-postalar maskelenir. Dosya `.gitignore` içindedir (`live-seed.local.sql`).
+
+   **Tanı (salt-okur):** SQL Editor'da `verify-migrations.sql` §13, her auth kullanıcısı için
+   `profil_var / rol / kurum / durum` tablosunu ve tanımlı kurumları listeler — seed'in neden
+   çalışmadığını buradan görürsünüz.
+
+   **Elle yol:** `scripts/live-validation/seed-live-test-orgs.sql` içindeki üç e-posta sabitini
+   (`email_a`, `email_b`, `email_admin`) kendi test kullanıcılarınızla değiştirin.
 
 Bu SQL:
 
@@ -95,8 +122,13 @@ Bu SQL:
 - eşleşmeyen e-posta varsa **istisna fırlatır** (sessizce geçmez) ve mevcut auth kullanıcılarını listeler,
 - sonunda `HAZIR / KURUM ATANMAMIŞ / KULLANICI YOK` satırlarıyla durumu tablo hâlinde yazdırır.
 
-Seed SQL'i gerçek PostgreSQL üzerinde test edilir: `npx tsx --test tests/liveValidationSeed.test.ts`
-(4 kontrol: atama, idempotency, sessiz geçmeme, admin eksikliği).
+Seed ve emit-seed davranışı gerçek PostgreSQL üzerinde test edilir:
+`npx tsx --test tests/liveValidationSeed.test.ts` — **7 kontrol**: kurum/rol ataması, idempotency,
+sessiz geçmeme (`EŞLEŞME YOK` istisnası), admin eksikliği, placeholder doldurma, e-posta doldurma +
+parola yazmama, eksik ortam değişkeninde çıkış kodu 2.
+
+Seed SQL'i tek `do $$` bloğudur (geçici tablo yok) ve sonunda **atamanın gerçekten yapıldığını
+kendisi doğrular**: kurum atanamazsa `SEED TAMAM` bildirimi yerine istisna görürsünüz.
 
 ## 4) Doğrulamayı koş
 

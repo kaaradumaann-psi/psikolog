@@ -1,52 +1,33 @@
 -- ===========================================================================
 -- PHASE 7 / P0-8 — Canlı doğrulama için test kurumları + rol ataması (SEED)
 --
--- NEREDE ÇALIŞTIRILIR (ikisinden biri):
---   1) Supabase Dashboard → SQL Editor  (önerilen; tablo sahibi bağlamında çalışır,
---      bu yüzden RLS engellemez)
---   2) psql "$DATABASE_URL" -f scripts/live-validation/seed-live-test-orgs.sql
---      (DATABASE_URL yalnızca kendi makinenizde tutulur; bu repoya/rapora YAZILMAZ)
+-- NEREDE ÇALIŞTIRILIR: Supabase Dashboard → SQL Editor  (önerilen; tablo sahibi
+-- bağlamında çalışır, bu yüzden RLS/GRANT engellemez).
+--   Alternatif: psql "$DATABASE_URL" -f scripts/live-validation/seed-live-test-orgs.sql
 --
 -- Parola/anahtar istemez, sır içermez. service_role anahtarı GEREKMEZ.
--- Yıkıcı mı? HAYIR: yalnızca INSERT + UPDATE (auth.users ve klinik tablolara dokunmaz).
--- Idempotent mi? EVET: aynı betik tekrar çalıştırılabilir.
+-- Yıkıcı mı? HAYIR: yalnızca INSERT + UPDATE. Hiçbir satır silinmez.
+-- Idempotent mi? EVET: aynı betik istendiği kadar tekrar çalıştırılabilir.
 --
--- DÜZENLENECEK TEK YER: aşağıdaki live_test_slots INSERT'i (üç test e-postası).
--- Eşleşme bulunamazsa betik sessizce geçmez; hangi e-postanın bulunamadığını ve
--- mevcut auth kullanıcılarını RAISE EXCEPTION ile bildirir.
+-- DÜZENLENECEK TEK YER: aşağıdaki üç e-posta sabiti (email_a / email_b / email_admin).
+--   E-posta otomatik doldurulsun istiyorsanız elle düzenlemeyin; bunun yerine:
+--     node scripts/live-validation/emit-seed.mjs
+--   komutu bu dosyadan `live-seed.local.sql` üretir (e-postalar .env.live'dan gelir;
+--   parola okunmaz/yazılmaz, ekranda e-postalar maskelenir).
 --
 -- Neden gerekli: PSYCHOLOG/ADMIN kullanıcıları kayıt sırasında kurumsuz
--- (organization_id = null) ve varsayılan rol PSYCHOLOG ile oluşur; RLS
--- politikaları sahiplik + kurum kapsamına dayandığı için canlı RLS matrisi
--- ancak bu atama yapıldıktan sonra koşulabilir.
+-- (organization_id = null) ve varsayılan rol PSYCHOLOG ile oluşur. RLS politikaları
+-- sahiplik + kurum kapsamına dayanır; canlı RLS matrisi ancak bu atama yapıldıktan
+-- sonra koşulabilir. Atama bilinçli olarak istemciden YAPILAMAZ:
+--   - profiles_insert_self politikası INSERT'te organization_id is null şartı arar,
+--   - authenticated rolünün public.profiles üzerinde update yetkisi yoktur.
 -- ===========================================================================
 
--- ---------------------------------------------------------------------------
--- 0) Düzenleme noktası: beklenen test kullanıcıları (Dashboard → Authentication → Users)
--- ---------------------------------------------------------------------------
-create temp table if not exists live_test_slots (
-  slot text primary key,
-  email text not null,
-  beklenen_rol text not null
-);
-
-delete from live_test_slots;
-
-insert into live_test_slots (slot, email, beklenen_rol) values
-  ('A',     'test-psikolog-a@example.com', 'PSYCHOLOG'),   -- <-- DÜZENLE
-  ('B',     'test-psikolog-b@example.com', 'PSYCHOLOG'),   -- <-- DÜZENLE
-  ('ADMIN', 'test-admin@example.com',      'ADMIN');       -- <-- DÜZENLE
-
-select slot, email, beklenen_rol from live_test_slots order by slot;
-
--- ---------------------------------------------------------------------------
--- 1) Kurum oluştur + profillere rol/kurum ata
--- ---------------------------------------------------------------------------
 do $$
 declare
-  email_a text := (select email from live_test_slots where slot = 'A');
-  email_b text := (select email from live_test_slots where slot = 'B');
-  email_admin text := (select email from live_test_slots where slot = 'ADMIN');
+  email_a text := 'test-psikolog-a@example.com';   -- <-- DÜZENLE
+  email_b text := 'test-psikolog-b@example.com';   -- <-- DÜZENLE
+  email_admin text := 'test-admin@example.com';    -- <-- DÜZENLE
 
   org_a uuid;
   org_b uuid;
@@ -54,32 +35,28 @@ declare
   user_b uuid;
   user_admin uuid;
 
+  profil_a uuid;
+  profil_b uuid;
   existing_users text;
 begin
   select id into user_a from auth.users where lower(email) = lower(email_a) limit 1;
   select id into user_b from auth.users where lower(email) = lower(email_b) limit 1;
   select id into user_admin from auth.users where lower(email) = lower(email_admin) limit 1;
 
-  -- Teşhis: mevcut auth kullanıcıları (kendi projeniz, kendi oturumunuz)
-  -- Not: created_at'e bağımlı değiliz (test/PGlite şeması ile uyum için).
+  -- Teşhis: eşleşme olmazsa hangi e-postaların mevcut olduğunu göster
   select string_agg(coalesce(email, '(e-posta yok)'), ', ' order by email)
     into existing_users
-  from (select email from auth.users order by email limit 10) u;
+  from (select email from auth.users order by email limit 15) u;
 
-  raise notice 'auth.users içinde % kullanıcı var. İlk 10: %',
+  raise notice 'auth.users içinde % kullanıcı var. İlk 15: %',
     (select count(*) from auth.users), coalesce(existing_users, '(yok)');
 
-  if user_a is null then
-    raise exception 'Test kullanıcısı bulunamadı: % — live_test_slots içindeki A satırını Authentication → Users listesindeki e-posta ile değiştirin.', email_a;
-  end if;
-  if user_b is null then
-    raise exception 'Test kullanıcısı bulunamadı: % — live_test_slots içindeki B satırını Authentication → Users listesindeki e-posta ile değiştirin.', email_b;
-  end if;
-  if user_admin is null then
-    raise notice 'Admin kullanıcısı bulunamadı (%). Admin kapsam testi SKIP olarak raporlanır.', email_admin;
+  if user_a is null or user_b is null then
+    raise exception 'EŞLEŞME YOK → A: % (%), B: % (%). Yukarıdaki NOTICE listesindeki gerçek e-postalarla üç sabiti güncelleyin.',
+      email_a, coalesce(user_a::text, 'bulunamadı'), email_b, coalesce(user_b::text, 'bulunamadı');
   end if;
 
-  -- 1a) Kurumlar (idempotent: aynı ad birden fazla oluşturulmaz)
+  -- 1) Kurumlar (idempotent: aynı ad ikinci kez oluşturulmaz)
   select id into org_a from public.organizations where name = 'LIVE-TEST A' order by created_at limit 1;
   if org_a is null then
     insert into public.organizations (name) values ('LIVE-TEST A') returning id into org_a;
@@ -90,13 +67,18 @@ begin
     insert into public.organizations (name) values ('LIVE-TEST B') returning id into org_b;
   end if;
 
-  -- 1b) Profiller (yoksa oluştur; varsa yalnız kurum/rol/aktif güncellenir)
+  -- 2) Profiller: yoksa oluştur, varsa kurum/rol/aktif alanlarını ata.
+  --    (profiles satırının auth kullanıcı kimliğiyle birebir eşleşmesi garanti edilir.)
   insert into public.profiles (id, email, first_name, last_name, role, active, organization_id)
   values (user_a, email_a, 'Test', 'Psikolog A', 'PSYCHOLOG', true, org_a)
   on conflict (id) do update
     set organization_id = excluded.organization_id,
         role = 'PSYCHOLOG',
         active = true;
+  select id into profil_a from public.profiles where id = user_a;
+  if profil_a is null then
+    raise exception 'A profili yazılamadı (auth user %) — profiles tablosunun FK/trigger durumunu kontrol edin.', user_a;
+  end if;
 
   insert into public.profiles (id, email, first_name, last_name, role, active, organization_id)
   values (user_b, email_b, 'Test', 'Psikolog B', 'PSYCHOLOG', true, org_b)
@@ -104,62 +86,96 @@ begin
     set organization_id = excluded.organization_id,
         role = 'PSYCHOLOG',
         active = true;
+  select id into profil_b from public.profiles where id = user_b;
+  if profil_b is null then
+    raise exception 'B profili yazılamadı (auth user %) — profiles tablosunun FK/trigger durumunu kontrol edin.', user_b;
+  end if;
 
-  if user_admin is not null then
-    if user_admin = user_a or user_admin = user_b then
-      raise notice 'UYARI: admin e-postası A veya B ile aynı; bu kullanıcının rolü ADMIN yapıldı.';
-    end if;
+  -- 3) Admin: rol ADMIN + A kurumu (admin kapsam testi bu kurum üzerinde koşar).
+  if user_admin is null then
+    raise notice 'Admin kullanıcısı bulunamadı (%). Admin kapsam testi SKIP olarak raporlanır.', email_admin;
+  else
     insert into public.profiles (id, email, first_name, last_name, role, active, organization_id)
     values (user_admin, email_admin, 'Test', 'Admin', 'ADMIN', true, org_a)
     on conflict (id) do update
       set role = 'ADMIN',
           active = true,
-          organization_id = coalesce(profiles.organization_id, excluded.organization_id);
+          organization_id = coalesce(public.profiles.organization_id, excluded.organization_id);
   end if;
 
-  raise notice 'SEED TAMAM. A: % (org %), B: % (org %)', user_a, org_a, user_b, org_b;
+  -- 4) Canlı doğrulama için kurumların gerçekten atandığını doğrula (yoksa hata ver)
+  if not exists (
+    select 1 from public.profiles where id = user_a and organization_id = org_a
+  ) or not exists (
+    select 1 from public.profiles where id = user_b and organization_id = org_b
+  ) then
+    raise exception 'Atama doğrulanamadı: A/B profillerinde organization_id beklenen kuruma eşit değil.';
+  end if;
+
+  raise notice 'SEED TAMAM → A: % (org %), B: % (org %)', user_a, org_a, user_b, org_b;
+  raise notice 'Beklenen: A/B kurum sahibi (PSYCHOLOG), admin rol=ADMIN ve bir kuruma bağlı.';
 end $$;
 
--- ---------------------------------------------------------------------------
--- 2) DOĞRULAMA — beklenen satırlar (eşleşmeyen e-posta 'KULLANICI YOK' görünür)
--- ---------------------------------------------------------------------------
-select s.slot,
-       s.email,
+-- ===========================================================================
+-- DOĞRULAMA 1 — beklenen üç e-posta için atama durumu
+-- (seed ile aynı üç e-postayı kullanır; e-posta otomatik doldurulmuşsa burada da günceldir)
+-- ===========================================================================
+with expected(slot, email, beklenen_rol) as (
+  values
+    ('A',     'test-psikolog-a@example.com', 'PSYCHOLOG'),
+    ('B',     'test-psikolog-b@example.com', 'PSYCHOLOG'),
+    ('ADMIN', 'test-admin@example.com',      'ADMIN')
+)
+select e.slot,
+       e.email,
        case when u.id is null then 'KULLANICI YOK' else 'var' end as auth_kullanici,
        case when p.id is null then 'PROFİL YOK' else 'var' end as profil,
        p.role::text as rol,
        p.active as aktif,
        o.name as kurum,
        case
-         when u.id is null then 'E-postayı live_test_slots içinde düzeltin'
+         when u.id is null then 'E-postayı bu dosyada (veya emit-seed ile) düzeltin'
          when p.organization_id is null then 'KURUM ATANMAMIŞ — seed tekrar çalıştırılmalı'
-         when s.slot = 'ADMIN' and p.role::text <> 'ADMIN' then 'ROL ADMIN DEĞİL — seed tekrar çalıştırılmalı'
+         when e.slot = 'ADMIN' and p.role::text <> 'ADMIN' then 'ROL ADMIN DEĞİL — seed tekrar çalıştırılmalı'
          else 'HAZIR'
        end as durum
-from live_test_slots s
-left join auth.users u on lower(u.email) = lower(s.email)
+from expected e
+left join auth.users u on lower(u.email) = lower(e.email)
 left join public.profiles p on p.id = u.id
 left join public.organizations o on o.id = p.organization_id
-order by s.slot;
+order by e.slot;
 
--- ---------------------------------------------------------------------------
--- 3) DOĞRULAMA — özet (0 eşleşme sessizce geçmesin)
--- ---------------------------------------------------------------------------
+-- ===========================================================================
+-- DOĞRULAMA 2 — özet karar (A ve B kurum ataması yapıldı mı?)
+-- ===========================================================================
 select
-  (select count(*) from live_test_slots s
-     join auth.users u on lower(u.email) = lower(s.email)
-     join public.profiles p on p.id = u.id
-    where p.organization_id is not null) as kurumlu_test_profili,
-  (select count(*) from live_test_slots) as beklenen_kayit,
+  (select count(*) from public.profiles p
+    where p.id in (
+      select u.id from auth.users u
+       where lower(u.email) in (
+         select lower(v.email) from (values
+           ('test-psikolog-a@example.com'), ('test-psikolog-b@example.com'), ('test-admin@example.com')
+         ) as v(email)
+       )
+    )
+      and p.organization_id is not null) as kurumlu_test_profili,
+  (select count(*) from public.profiles p
+    join auth.users u on u.id = p.id
+   where lower(u.email) in (
+           select lower(v.email) from (values
+             ('test-psikolog-a@example.com'), ('test-psikolog-b@example.com')
+           ) as v(email)
+         )
+     and p.organization_id is not null) as atanmis_a_b,
   case
-    when (select count(*) from live_test_slots s
-            join auth.users u on lower(u.email) = lower(s.email)
-            join public.profiles p on p.id = u.id
-           where s.slot in ('A', 'B') and p.organization_id is not null) = 2
+    when (select count(*) from public.profiles p
+            join auth.users u on u.id = p.id
+           where lower(u.email) in (
+                   select lower(v.email) from (values
+                     ('test-psikolog-a@example.com'), ('test-psikolog-b@example.com')
+                   ) as v(email)
+                 )
+             and p.organization_id is not null) = 2
     then 'A ve B kurum ataması TAMAM → sıradaki adım: node scripts/live-validation/run.mjs'
-    else 'EKSİK: A/B kurum ataması yapılmadı — e-postaları düzeltip betiği tekrar çalıştırın'
+    else 'EKSİK: A/B kurum ataması yapılmadı — yukarıdaki NOTICE/exception çıktısını okuyup e-postaları düzeltin'
   end as sonuc;
-
--- Not: SQL Editor "temp table" oluşturmayı reddederse, alternatif olarak betiği
--- psql ile çalıştırın veya yukarıdaki üç e-postayı ilgili tüm bölümlerde elle
--- aynı şekilde güncelleyin. Doğrulama bölümleri aynı e-postaları kullanmalıdır.

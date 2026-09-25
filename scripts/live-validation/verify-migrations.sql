@@ -177,3 +177,30 @@ select e.version,
 from expected e
 left join supabase_migrations.schema_migrations m on m.version = e.version
 order by e.version;
+
+-- ===========================================================================
+-- 13) KULLANICI / KURUM DURUMU (salt-okur) — seed öncesi/sonrası teşhis
+--     Amaç: "kurum ataması neden başarısız?" sorusunu tek çalıştırmada yanıtlamak.
+--     Hiçbir veri değiştirilmez.
+-- ===========================================================================
+select u.email,
+       (p.id is not null) as profil_var,
+       p.role::text as rol,
+       p.active as aktif,
+       o.name as kurum,
+       case
+         when p.id is null then 'PROFİL YOK (trigger çalışmamış)'
+         when p.organization_id is null then 'KURUM ATANMAMIŞ (seed bekliyor)'
+         else 'HAZIR'
+       end as durum
+from auth.users u
+left join public.profiles p on p.id = u.id
+left join public.organizations o on o.id = p.organization_id
+order by u.email;
+
+-- Bu projede tanımlı kurumlar (seed çalıştıysa LIVE-TEST A/B burada görünür)
+select o.name as kurum_adi,
+       o.id as kurum_id,
+       (select count(*) from public.profiles p where p.organization_id = o.id) as profil_sayisi
+from public.organizations o
+order by o.created_at;

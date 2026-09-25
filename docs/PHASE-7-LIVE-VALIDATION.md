@@ -1,19 +1,113 @@
 # PHASE 7 / P0-8 — LIVE VALIDATION Raporu
 
-Tarih: 2026-09-25 · Dal: `arena/01a0d937-psikolog` · Commit: `b20ede9`
-Durum: **LIVE SUPABASE = FAILED (ilk koşu 6 PASS / 3 FAIL) · PHASE 7 COMPLETE DEĞİL**
+Tarih: 2026-09-25 · Dal: `arena/01a0d937-psikolog`
+Durum: **LIVE SUPABASE = FAILED (son koşu #3: 15 PASS / 2 DENY / 1 FAIL) · PHASE 7 COMPLETE DEĞİL**
 
 Bu belge yalnızca **canlı doğrulama** (P0-8) katmanını raporlar ve katmanları kesin olarak ayırır:
 
 | Katman | Sonuç | Kanıt |
 |---|---|---|
-| **LOCAL / PGlite** | **PASS** | `npm test` **142/142**, `phase7RlsMatrix` 14/14, `phase7LockChain` 11/11, `liveValidationSeed` 4/4, `liveValidationVerifySql` 1/1 |
-| **LIVE SUPABASE** | **FAILED** (kısmi koşu) | Kullanıcı makinesinde koşuldu: 6 PASS / 3 FAIL (aşağıda §1) |
-| **REAL BROWSER** | **NOT RUN** | Playwright/Chromium ikilisi sandbox'ta yok; kullanıcı makinesinde bu turda koşulmadı |
+| **LOCAL / PGlite** | **PASS** | `npm test` **145/145** (142 + 3 yeni emit-seed kontrolü), `phase7RlsMatrix` 14/14, `phase7LockChain` 11/11, `liveValidationSeed` 7/7, `liveValidationVerifySql` 1/1 |
+| **LIVE SUPABASE** | **FAILED — kısmi** | Koşu #3: AUTH 6 PASS · SEMA 9 PASS · anon 2 DENY (kanıtlı) · **kurum ataması 1 FAIL (seed)** |
+| **REAL BROWSER** | **NOT RUN** | Playwright/Chromium ikilisi yok; kullanıcı makinesinde koşulmadı |
 | **PRODUCTION** | **NOT VERIFIED** | Production bundle + dağıtım ortamı doğrulaması yapılmadı |
 
 > `PGlite PASS — Production NOT VERIFIED` **ile** `LIVE SUPABASE VERIFIED` aynı şey değildir.
 > PHASE 7 bu nedenle **COMPLETE değildir**.
+
+---
+
+## 0. Koşu #3 — son koşu (kullanıcı makinesi)
+
+| Grup | PASS | DENY | FAIL | SKIP |
+|---|---|---|---|---|
+| AUTH | 6 | 0 | 0 | 0 |
+| SEMA | 9 | 0 | 0 | 0 |
+| RLS | 0 | 2 | 1 | 0 |
+| **Toplam** | **15** | **2** | **1** | **0** |
+
+Değişen tek satır: `admin profil` artık **`rol=ADMIN`** (org hâlâ `YOK`).
+Diğer her şey koşu #2 ile aynı: A/B profilleri `org=YOK`, anon iki kontrol **DENY**
+(`HTTP 401` · `code=42501` · `permission denied for table clients`), SEMA 9/9 PASS.
+
+### 0.1 admin `rol=ADMIN` ama `org=YOK` — ne anlama geliyor?
+
+- **Seed çalışmamıştır.** Bu depodaki hiçbir seed sürümü yalnız rolü değiştirip kurumu boş bırakmaz;
+  ayrıca A/B profilleri de kurumsuz kalmıştır ve seed eşleşme bulamazsa **istisna fırlatıp hiçbir
+  şeyi değiştirmez** (tek `do $$` bloğu, tek transaction).
+- Rol değişikliği büyük olasılıkla **elle** yapılmıştır (Dashboard → Table Editor → `profiles.role`).
+  Bu, tanıyı değiştirmez: kurum ataması yoksa RLS sahiplik matrisi koşulamaz.
+- Emin olmak için: SQL Editor'da `scripts/live-validation/verify-migrations.sql` **§13** bölümü
+  çalıştırılır — her auth kullanıcısı için `profil_var / rol / kurum / durum` tablosunu ve tanımlı
+  kurumları listeler (salt-okur). `LIVE-TEST A/B` satırları yoksa seed hiç çalışmamıştır.
+
+### 0.2 Bu turda eklenen kolaylık: koşucu seed SQL'ini kendisi üretir
+
+`kurum ataması` kapısı düştüğünde `run.mjs` artık **`live-seed.local.sql`** dosyasını üretir:
+
+- e-postalar `.env.live` / ortam değişkenlerinden **koşunun giriş yaptığı gerçek hesaplardan** gelir
+  (yani eşleşmeme riski yoktur),
+- parola okunmaz/yazılmaz; ekranda e-postalar maskelenir (`a*****@ornek.com`),
+- dosya `.gitignore` içindedir (repoya girmez).
+
+Ayrıca `seed-live-test-orgs.sql` sadeleştirildi: geçici tablo yok, tek `do $$` bloğu; eşleşme
+bulunamazsa `EŞLEŞME YOK` istisnası fırlatır ve **mevcut auth kullanıcılarının e-postalarını
+NOTICE olarak listeler**; sonunda atamayı kendisi doğrular (`SEED TAMAM` / istisna).
+
+---
+
+## 0.3 Koşu #2 — gerçek sonuçlar (kullanıcı makinesi, 2026-09-25T17:38:05Z)
+
+Proje: `afvqznjqlrcoxoalkczd.supabase.co` · Komut: `node scripts/live-validation/run.mjs`
+
+| Grup | PASS | DENY | FAIL | SKIP |
+|---|---|---|---|---|
+| AUTH | 6 | 0 | 0 | 0 |
+| SEMA (canlı şema) | 9 | 0 | 0 | 0 |
+| RLS | 0 | 2 | 1 | 0 |
+| **Toplam** | **15** | **2** | **1** | **0** |
+
+### 0.1 anon kontrolleri — DENY, kanıtla (isteğin karşılandığı yer)
+
+| Kontrol | Sonuç | Gerçek kanıt (koşudan) |
+|---|---|---|
+| `anon → clients SELECT` | **DENY** | `HTTP 401 Unauthorized` · `code=42501` · `message="permission denied for table clients"` |
+| `anon → clients INSERT` | **DENY** | `HTTP 401 Unauthorized` · `code=42501` · `message="permission denied for table clients"` |
+
+Ek kanıt: PostgREST yanıtının kendi `hint` alanı da bunu doğruluyor —
+`"Grant the required privileges to the current role with: GRANT SELECT ON public.clients TO anon;"`
+Yani red **GRANT katmanında** (rol `anon` için `public.clients` üzerinde hiç yetki yok); RLS
+politikasına ulaşılamıyor. Bu beklenen ve istenen sonuçtur: `anon` hiçbir klinik veri okuyamaz/yazamaz.
+Koşucu bu durumu `kind = grant-deny` olarak sınıflar ve DENY sayar (§2.1'deki düzeltme sayesinde;
+eski koşucu aynı yanıtı `[object Object]` olarak raporluyordu).
+
+### 0.2 SEMA grubu — canlı şema PHASE 7 nesnelerini içeriyor
+
+`clients.owner_user_id` · `sessions(appointment_id, status, locked_at)` · `appointments.fee` ·
+`formulations(status, content, revision, created_by, updated_by)` · `safety_plans(…)` ·
+`reports.locked_at` · `anamneses` · `documents.file_path` · `client-documents` bucket
+→ **9/9 PASS** (`HTTP 200`; `0 satır` normaldir, çünkü oturumun kapsamında satır yok).
+Bu, 4 PHASE 7 migration'ının canlıya uygulandığının **REST düzeyinde** kanıtıdır; CLI kaydı için
+`verify-migrations.sql` §12 bölümü çalıştırılmalıdır.
+
+### 0.3 Kalan tek engel: kurum ataması (seed)
+
+| Kullanıcı | Rol | `organization_id` |
+|---|---|---|
+| psikolog A | `PSYCHOLOG` | **yok** |
+| psikolog B | `PSYCHOLOG` | **yok** |
+| admin | `PSYCHOLOG` | **yok** |
+
+**Neden koşucu bunu kendi yapamaz (tasarım gereği):** P0-2 ile kapatılan yetki yükseltme açığının
+doğrudan sonucu —
+
+- `profiles_insert_self` politikası INSERT için `organization_id is null` şartı arar
+  (`supabase/migrations/20260925100000_phase07_ownership_rls.sql` §11),
+- `authenticated` rolünün `public.profiles` üzerinde yalnız `select, insert` yetkisi vardır;
+  **`update` yetkisi yoktur** (`20260924000006_fix_profiles_rls.sql`).
+
+Yani kurum ataması bir **yönetici işlemidir** ve SQL Editor (tablo sahibi bağlamı) üzerinden
+yapılmalıdır. Bu bir eksiklik değil, istenen güvenlik sınırıdır.
 
 ---
 
@@ -49,6 +143,9 @@ gerçek Supabase Auth üzerinden giriş yapabildi ve `profiles` satırları RLS 
 
 **Kanıtlanmayan:** anon RLS davranışı ve kurum kapsamlı RLS matrisi (koşu `kurum ataması`
 kapısında durdu; matris hiç koşulmadı).
+
+> **Koşu #2 ile kapanış:** anon kontrolleri artık **DENY** olarak kanıtlandı (§0.1) ve SEMA grubu
+> canlı şemayı doğruladı (§0.2). Bu bölümdeki `[object Object]` sorunu §2.1'deki düzeltmeyle giderildi.
 
 ---
 
@@ -164,7 +261,8 @@ RLS politikalarında **hiçbir değişiklik yapılmadı**.
 | `scripts/live-validation/README.md` | koşu sırası, belirti→neden→çözüm tablosu, DENY kanıt kuralları, hata raporlama bölümü |
 | `tests/liveValidationSeed.test.ts` | **YENİ** — seed SQL davranış testi (4 kontrol) |
 | `tests/liveValidationVerifySql.test.ts` | **YENİ** — verify SQL + migration geçmişi testi (1 kontrol) |
-| `docs/PHASE-7-LIVE-VALIDATION.md` | bu belge |
+| `scripts/live-validation/emit-seed.mjs` | **YENİ** — `.env.live` içindeki e-posta değerlerini seed şablonuna yerleştirip `live-seed.local.sql` üretir (parola okumaz/yazmaz, ekranda e-posta maskelenir) |
+| `docs/PHASE-7-LIVE-VALIDATION.md` | bu belge (koşu #2 sonuçları, anon kanıtları, seed gerekçesi) |
 
 **Dokunulmayanlar:** RLS politikaları, migration dosyaları, uygulama kodu (feature/UI değişikliği yok),
 `src/**`, `supabase/migrations/**`.
@@ -186,9 +284,11 @@ npx supabase db push --include-all          # 11 dosya, tamamı non-destructive
 #    Beklenen: 25+ nesne kontrolü OK, semptom = "PHASE 7 ŞEMASI CANLIDA GÖRÜNÜYOR",
 #              11 migration "uygulanmis = true"
 
-# 3) Seed (SQL Editor): scripts/live-validation/seed-live-test-orgs.sql
-#    Önce dosyanın başındaki 3 e-postayı kendi test kullanıcılarınızla değiştirin.
-#    Beklenen: 3 satır "HAZIR" + sonuç satırı "A ve B kurum ataması TAMAM"
+# 3) Seed — (a) koşucu zaten üretir; (b) elle üretmek isterseniz:
+#    a) node scripts/live-validation/run.mjs   → live-seed.local.sql dosyasını üretir
+#    b) node scripts/live-validation/emit-seed.mjs   → aynı dosyayı ayrıca üretir
+#    Sonra: Supabase Dashboard → SQL Editor → dosya içeriğini yapıştır → çalıştır
+#    Beklenen: NOTICE "SEED TAMAM" + 3 satır "HAZIR" + sonuç "A ve B kurum ataması TAMAM"
 
 # 4) Koşu
 node scripts/live-validation/run.mjs --selftest   # 8/8 sınıflandırma (ağ yok)
@@ -216,7 +316,14 @@ Beklenen RLS davranışı (kanıt kodlarıyla):
 2. `live-validation-result.json` gerçek kodlarla birlikte üretilir,
 3. sonuç bu belgeye ve `docs/PHASE-7-REPORT.md` §52-P0-8 bloğuna işlenir.
 
-Bu tamamlanana kadar: `LIVE SUPABASE: FAILED/BLOCKED` (asla PASS),
+Koşu #2 sonrası **hâlâ koşulmamış** kontroller (kurum kapısı açılmadan çalışmazlar):
+
+RLS matrisi (A→A SELECT/INSERT/UPDATE/DELETE, A→B, B→A, admin kapsamı), CLINICAL DATA zinciri
+(Client→Appointment→Session→Note→Anamnesis→Formulation→Safety Plan→Test Result→Report),
+PERSISTENCE, SIGN/LOCK/REVISION, STORAGE (A upload/read, B read/update/delete DENY), LOGOUT izolasyonu,
+CLEANUP.
+
+Bu tamamlanana kadar: `LIVE SUPABASE: FAILED` (asla PASS),
 `REAL BROWSER: NOT RUN`, `PRODUCTION: NOT VERIFIED` ve **PHASE 7 COMPLETE DEĞİLDİR**.
 
 ---

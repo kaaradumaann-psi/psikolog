@@ -34,6 +34,7 @@
  */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
+import { renderSeed, maskEmail } from './emit-seed.mjs';
 
 const BUCKET = 'client-documents';
 const RESULTS = [];
@@ -101,6 +102,10 @@ function classifyError(error) {
   if (/schema cache|could not find the table|does not exist|unknown relation/i.test(text)) {
     return { kind: 'missing-object', facts };
   }
+  if (/permission denied for (table|schema|relation|function|sequence)/i.test(text)) {
+    // GRANT katmanı: rol (anon/authenticated) tabloda hiç yetkili değil → RLS politikasına ulaşılamaz.
+    return { kind: 'grant-deny', facts };
+  }
   if (facts.code === '42501' || /row-level security|permission denied/i.test(text)) {
     return { kind: 'rls-deny', facts };
   }
@@ -115,7 +120,8 @@ function classifyError(error) {
 
 const KIND_HINTS = {
   'missing-object': 'canlı şemada nesne bulunamadı → migration uygulanmamış ya da şema adı farklı',
-  'rls-deny': 'RLS/GRANT reddi — DENY bekleyen kontroller için bu bir KANITTIR',
+  'grant-deny': 'GRANT katmanı reddi (rol tabloda yetkisiz) — DENY bekleyen kontroller için KANIT',
+  'rls-deny': 'RLS politikası reddi — DENY bekleyen kontroller için KANIT',
   auth: 'anahtar/oturum reddi',
   network: 'ağ hatası (DNS/TLS/proxy)',
 };
@@ -208,7 +214,7 @@ async function probe(group, name, fn, expect) {
     return { denied, value, ok: status !== 'FAIL' };
   } catch (error) {
     const { kind, facts, text } = describeError(error);
-    const denied = kind === 'rls-deny';
+    const denied = kind === 'rls-deny' || kind === 'grant-deny';
     const status = expect === 'PASS' ? 'FAIL' : denied ? 'DENY' : 'FAIL';
     record(group, name, status, text, { httpStatus: facts.status, code: facts.code, kind });
     return { denied, error, kind, ok: status !== 'FAIL' };
@@ -263,8 +269,14 @@ async function schemaPreflight(client) {
       () => unwrap(client.from('sessions').select('id, appointment_id, status, locked_at').limit(1)),
     ],
     ['tablo/kolon: appointments.fee', () => unwrap(client.from('appointments').select('id, fee').limit(1))],
-    ['tablo: formulations', () => unwrap(client.from('formulations').select('id').limit(1))],
-    ['tablo: safety_plans', () => unwrap(client.from('safety_plans').select('id').limit(1))],
+    [
+      'tablo/kolon: formulations(status, content, revision, created_by)',
+      () => unwrap(client.from('formulations').select('id, status, content, revision, created_by, updated_by').limit(1)),
+    ],
+    [
+      'tablo/kolon: safety_plans(status, content, revision, created_by)',
+      () => unwrap(client.from('safety_plans').select('id, status, content, revision, created_by, updated_by').limit(1)),
+    ],
     ['kolon: reports.locked_at', () => unwrap(client.from('reports').select('id, locked_at').limit(1))],
     ['tablo: anamneses', () => unwrap(client.from('anamneses').select('id').limit(1))],
     ['tablo/kolon: documents.file_path', () => unwrap(client.from('documents').select('id, file_path').limit(1))],
@@ -277,6 +289,26 @@ async function schemaPreflight(client) {
 
 const today = () => new Date().toISOString().slice(0, 10);
 const stamp = () => Date.now().toString(36);
+
+/**
+ * Kurum ataması yoksa SQL Editor'a yapıştırılmaya hazır seed dosyasını ÜRETİR.
+ * E-postalar `.env.live`/ortam değişkenlerinden gelir; parola okunmaz/yazılmaz.
+ * Çıktı: live-seed.local.sql (gitignore'da).
+ */
+function writeLocalSeed(profileA, profileB, profileAdmin) {
+  const emails = {
+    A: process.env.LIVE_PSY_A_EMAIL || profileA?.email,
+    B: process.env.LIVE_PSY_B_EMAIL || profileB?.email,
+    ADMIN: process.env.LIVE_ADMIN_EMAIL || profileAdmin?.email,
+  };
+  if (!emails.A || !emails.B || !emails.ADMIN) return null;
+
+  const template = readFileSync('scripts/live-validation/seed-live-test-orgs.sql', 'utf8');
+  const { sql, applied } = renderSeed(template, emails);
+  const out = 'live-seed.local.sql';
+  writeFileSync(out, sql, 'utf8');
+  return { out, applied };
+}
 
 async function buildClinicalChain(a, orgId, clientId, label) {
   const sb = a.client;
@@ -622,8 +654,24 @@ async function main() {
       'RLS',
       'kurum ataması',
       'FAIL',
-      'A/B profillerinde organization_id yok — Supabase SQL Editor → scripts/live-validation/seed-live-test-orgs.sql (dosyanın başındaki 3 test e-postasını düzenleyin)',
+      'A/B profillerinde organization_id yok — seed uygulanmamış (aşağıdaki "SIRADAKİ ADIM" bloğuna bakın)',
     );
+
+    // Kurum/rol ataması istemciden yapılamaz (profiles INSERT: organization_id is null şartı;
+    // authenticated rolünde profiles UPDATE yetkisi yok). Bu yüzden koşucu, yönetici bağlamında
+    // (SQL Editor) çalıştırılacak SQL'i hazırlar.
+    try {
+      const seed = writeLocalSeed(profileA, profileB, null);
+      if (seed) {
+        console.log(`\n  ↳ SQL Editor için hazır seed yazıldı: ${seed.out}`);
+        console.log(`    A=${maskEmail(seed.applied.A)} · B=${maskEmail(seed.applied.B)} · ADMIN=${maskEmail(seed.applied.ADMIN)}`);
+      } else {
+        console.log('\n  ↳ Seed üretilemedi: LIVE_PSY_A/B/ADMIN_EMAIL değerleri okunamadı.');
+      }
+    } catch (error) {
+      console.log(`\n  ↳ Seed üretilemedi: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
     return finish();
   }
 
@@ -893,6 +941,17 @@ async function selfTest() {
       'Forbidden',
     ],
     [
+      'GRANT katmanı reddi (anon)',
+      {
+        message: 'permission denied for table clients',
+        details: null,
+        hint: 'Grant the required privileges to the current role with: GRANT SELECT ON public.clients TO anon;',
+        code: '42501',
+      },
+      401,
+      'Unauthorized',
+    ],
+    [
       'PostgREST tablo yok',
       {
         message: "Could not find the table 'public.clients' in the schema cache",
@@ -927,6 +986,15 @@ async function selfTest() {
     [
       'RLS reddi + DENY beklentisi',
       () => Promise.reject(new DbError({ code: '42501', message: 'new row violates row-level security policy' }, 403, 'Forbidden')),
+      'DENY',
+      'DENY',
+    ],
+    [
+      'GRANT reddi (anon) + DENY beklentisi',
+      () =>
+        Promise.reject(
+          new DbError({ code: '42501', message: 'permission denied for table clients' }, 401, 'Unauthorized'),
+        ),
       'DENY',
       'DENY',
     ],
@@ -984,6 +1052,21 @@ function finish() {
     }
     console.log('\n--- FAIL nedenleri (gerçek HTTP durumu / PostgREST kodu) ---');
     for (const [key, count] of seen) console.log(`  ${count}x ${key}`);
+  }
+
+  if (RESULTS.some((item) => item.status === 'FAIL' && item.name === 'kurum ataması')) {
+    console.log('\n--- SIRADAKİ ADIM (kurum ataması yok) ---');
+    console.log('  1) Bu koşu, SQL Editor için hazır `live-seed.local.sql` dosyasını üretir');
+    console.log('     (e-postalar .env.live içinden gelir; parola okunmaz/yazılmaz).');
+    console.log('     Dosya üretilmediyse: node scripts/live-validation/emit-seed.mjs');
+    console.log('  2) Supabase Dashboard → SQL Editor → `live-seed.local.sql` içeriğini yapıştırıp çalıştırın');
+    console.log('     Beklenen çıktı: A/B/ADMIN satırları HAZIR + "A ve B kurum ataması TAMAM"');
+    console.log('     (SQL Editor çıktısında NOTICE satırlarını da okuyun; eşleşme yoksa mevcut e-postaları listeler)');
+    console.log('  3) node scripts/live-validation/run.mjs');
+    console.log('  Not: kurum ataması istemciden YAPILAMAZ — profiles_insert_self politikası');
+    console.log('       organization_id is null şartı ister ve authenticated rolünün profiles UPDATE');
+    console.log('       yetkisi yoktur (P0-2 ile kapatılan yetki yükseltme açığı). Bu yüzden seed');
+    console.log('       yönetici bağlamında (SQL Editor) çalıştırılır.');
   }
 
   console.log('\n--- sonuç etiketleri ---');

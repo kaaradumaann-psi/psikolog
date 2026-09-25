@@ -12,7 +12,13 @@ Copy onto the MMPI tree:
 - `src/components/SsoConsumePage.tsx`
 - `src/auth/ssoConsume.ts`
 
-Then apply the small router/App/config edits in `PATCHES.md`.
+Then apply the small router/App/config edits:
+
+```sh
+git apply integration/mmpi/phase1-repo123.patch
+```
+
+Manual notes are in `PATCHES.md`.
 
 Edge secrets (never `VITE_`):
 

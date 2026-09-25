@@ -86,6 +86,31 @@ test('browser SSO: unmatched MMPI user is 403 and AuthGate is not bypassed', asy
   await expect(page.getByRole('link', { name: 'İşlem' })).toHaveCount(0);
 });
 
+test('browser SSO: expired code is rejected', async ({ page }) => {
+  await signInPsychology(page, PSY_USER.email);
+  await page.goto(`${live.psychologyOrigin}/ayarlar`);
+  await page.route('**/functions/v1/sso-consume', (route) => route.abort());
+  const target = await clickSsoAndCaptureUrl(page);
+  live.expireCodes();
+  await page.unroute('**/functions/v1/sso-consume');
+  await page.goto(target.toString());
+  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Giriş ekranı' })).toBeVisible();
+  expect(page.url()).not.toMatch(/access_token|refresh_token/);
+});
+
+test('browser SSO: tampered code is rejected', async ({ page }) => {
+  await signInPsychology(page, PSY_USER.email);
+  await page.goto(`${live.psychologyOrigin}/ayarlar`);
+  await page.route('**/functions/v1/sso-consume', (route) => route.abort());
+  const target = await clickSsoAndCaptureUrl(page);
+  target.searchParams.set('code', 'tampered-sso-code-value32');
+  await page.unroute('**/functions/v1/sso-consume');
+  await page.goto(target.toString());
+  await expect(page.getByRole('alert')).toBeVisible();
+  expect(page.url()).not.toMatch(/access_token|refresh_token/);
+});
+
 test('browser SSO: missing code stays on /sso without a session', async ({ page }) => {
   await page.goto(`${live.mmpiOrigin}/sso`);
   await expect(page.getByText('SSO kodu eksik veya süresi doldu.')).toBeVisible();

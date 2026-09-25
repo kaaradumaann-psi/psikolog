@@ -63,7 +63,7 @@ Sırlar: `SSO_HMAC_SECRET`, `MMPI_SSO_ORIGIN`, `PSYCHOLOGY_SSO_REDEEM_URL` — E
 
 Birim (`ssoPolicy`): issue/redeem, expired, replay, yanlış kullanıcı, yanlış audience, bozulmuş HMAC, HMAC replay/expired, yasak redirect, URL’de token yok.
 
-Tarayıcı (`sso-live`, Chromium): mutlu yol (AuthGate hydrate), URL yalnızca code/state, replay, MMPI’siz kullanıcı 403, eksik kod. Expired tarayıcıda birim testine bırakıldı.
+Tarayıcı (`sso-live`, Chromium): mutlu yol (AuthGate hydrate), URL yalnızca code/state, replay, MMPI’siz kullanıcı 403, süresi dolmuş kod, bozulmuş kod, eksik kod.
 
 `secretsGuard`: frontend kaynak/bundle’da `SSO_HMAC_SECRET=` ve `SERVICE_ROLE_KEY` yok.
 
@@ -72,9 +72,9 @@ Tarayıcı (`sso-live`, Chromium): mutlu yol (AuthGate hydrate), URL yalnızca c
 | Sürü | Sonuç |
 | --- | --- |
 | Psychology `tsc --noEmit` | geçti |
-| Psychology `npm test` | 119/119 |
+| Psychology `npm test` | 120/120 |
 | Psychology `playwright` chromium (critical + yerel SSO) | 8/8 |
-| Psychology SSO live browser | 5/5 |
+| Psychology SSO live browser | 7/7 |
 | MMPI `tsc --noEmit` (yamalı `/tmp/mmpi`) | geçti |
 | MMPI `npm test` | 722/722 (skor/OMR dahil) |
 
@@ -83,7 +83,7 @@ Tarayıcı (`sso-live`, Chromium): mutlu yol (AuthGate hydrate), URL yalnızca c
 1. Psychology: `db push` + `sso-issue`/`sso-redeem` deploy + `SSO_HMAC_SECRET` / `MMPI_SSO_ORIGIN`
 2. Repo123: `integration/mmpi` + PATCHES, `sso-consume` deploy, aynı HMAC, `PSYCHOLOGY_SSO_REDEEM_URL`
 3. Üretim tarayıcı turu (GoTrue `generateLink` dahil)
-4. ClientDetail “MMPI İste” ve kuyruk — PHASE 2
+4. ClientDetail Ölçekler sekmesinde “MMPI’ye git” planlı `test_administrations` satırı yazar, kuyruk UI’si yok — kuyruk PHASE 2
 5. Bu sandbox’ta resmi Playwright tarayıcısı indirilemedi; E2E `/tmp/chromium` + `CHROMIUM_PATH` ile koştu
 
 PHASE 2 başlatılmadı.

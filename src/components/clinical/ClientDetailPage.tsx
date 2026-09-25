@@ -21,7 +21,15 @@ import {
   getClinicalReports,
   subscribeClinicalStore,
 } from '../../clinical/clinicalStore';
+import { startMmpiSso } from '../../auth/sso';
+import { supabaseConfig } from '../../auth/supabaseClient';
 import { readingsForClient, measurementNote, safetyPlanIsEmpty } from '../../clinical/casework';
+import {
+  canCreateMmpiAdministration,
+  createPlannedMmpiAdministration,
+  listMmpiAdministrations,
+  type MmpiAdministration,
+} from '../../clinical/mmpiAdministration';
 import type { RapidScreeningResult } from '../../clinical/rapidScreening';
 import { getSafetyPlan, getScreenings, getSettings, subscribePracticeStore } from '../../clinical/practiceStore';
 import { clinicToday, maskTc } from '../../clinical/recordRules';
@@ -62,6 +70,9 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
   const [scl90Tests, setScl90Tests] = useState<Scl90Result[]>([]);
   const [reports, setReports] = useState<ClinicalReport[]>([]);
   const [screenings, setScreenings] = useState<RapidScreeningResult[]>([]);
+  const [mmpiRows, setMmpiRows] = useState<MmpiAdministration[]>([]);
+  const [mmpiBusy, setMmpiBusy] = useState(false);
+  const [mmpiError, setMmpiError] = useState<string | null>(null);
 
   // SOAP modal state
   const [soapModalOpen, setSoapModalOpen] = useState(false);
@@ -98,6 +109,9 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
     }
     refreshData();
     refreshPractice();
+    if (supabaseConfig.configured) {
+      void listMmpiAdministrations(clientId).then(setMmpiRows);
+    }
     const unsub = subscribeClinicalStore(refreshData);
     const unsubPractice = subscribePracticeStore(refreshPractice);
     return () => {
@@ -434,8 +448,39 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
               >
                 + GAD-7 / PHQ-9
               </button>
+              {supabaseConfig.configured && (
+                <button
+                  type="button"
+                  className="btn-secondary btn-sm"
+                  disabled={mmpiBusy}
+                  onClick={() => {
+                    setMmpiError(null);
+                    setMmpiBusy(true);
+                    void (async () => {
+                      try {
+                        if (canCreateMmpiAdministration(clientId)) {
+                          const row = await createPlannedMmpiAdministration(clientId);
+                          setMmpiRows((current) => [row, ...current.filter((item) => item.id !== row.id)]);
+                        }
+                        await startMmpiSso();
+                      } catch (reason) {
+                        setMmpiBusy(false);
+                        setMmpiError(reason instanceof Error ? reason.message : 'MMPI oturumu başlatılamadı.');
+                      }
+                    })();
+                  }}
+                >
+                  MMPI’ye git
+                </button>
+              )}
             </div>
           </div>
+          {mmpiError && <p role="alert" style={{ color: 'var(--danger-ink)' }}>{mmpiError}</p>}
+          {mmpiRows.length > 0 && (
+            <p style={{ color: 'var(--soft)', fontSize: 13 }}>
+              MMPI kayıtları (Psychology): {mmpiRows.map((row) => row.status).join(', ')}
+            </p>
+          )}
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* Beck Depresyon Kayıtları */}

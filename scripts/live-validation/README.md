@@ -29,7 +29,8 @@ Sıra atlanırsa tipik belirtiler (canlı koşularda görüldü):
 | `CLEANUP` grubunda `DENY` + `SKIP` | **Beklenen**: zincirde kilitli (LOCKED) klinik kayıt var; DB trigger'ı danışan silinmesini (cascade dahil) engelliyor | İsteğe bağlı: `cleanup-live-test-data.sql` §3 (arşivle) veya §4 (tam silme, uyarılı) |
 | **REAL BROWSER:** kayıt detayda görünüyor, listede 30 sn sonra YOK (`element(s) not found`) | **(düzeltildi, koşu #2)** bulut aktivasyonu tamamlanmadan yapılan yazım kuyruğa alınmıyordu ve hidrasyon yerel önbelleği sunucu anlık görüntüsüyle değiştiriyordu → sessiz veri kaybı | Güncel commit ile koşun: uygulama artık `[data-cloud-gate="loading"]` kapısı kalkmadan klinik içerik göstermez; yazım hiçbir durumda düşürülmez |
 | **REAL BROWSER:** `strict mode violation: getByRole('button', …) resolved to N elements` | **(düzeltildi, koşu #3)** satırda aynı adı taşıyan 3 düğme var (ad + düzenle/sil `aria-label`) | Güncel spec: satır `ownRow` (benzersiz protokol no), ad `nameButton` (`exact: true`) |
-| **REAL BROWSER:** `kayıt sunucuya yazılmadı (2xx yazım yanıtı yok)` | Yerel önbellekte görünmek yetmez: kayıt Supabase'e yazılmadı | Test çıktısındaki anotasyonlara bakın: `bulut yazımı` (HTTP durumu + gövde), `senkronizasyon şeridi`, `yerel depo` (kapsamlı/kapsamsız anahtar), `başarısız istekler` |
+| **REAL BROWSER:** `kayıt sunucuya yazılmadı (POST /rest/v1/clients → 2xx yok)` | Yerel önbellekte görünmek yetmez: kayıt Supabase'e yazılmadı | Test çıktısındaki anotasyonlara bakın: `bulut kaydı` (POST durumu + gövde), `senkronizasyon şeridi`, `yerel depo` (kapsamlı/kapsamsız anahtar), `başarısız istekler` |
+| **REAL BROWSER (çevrimdışı suite):** `Bugünün tahtası` / `Danışan Dosyaları` / `Psikolojik Değerlendirme Araçları` bulunamıyor | **Mod uyuşmazlığı**: `e2e/critical.spec.ts` çevrimdışı (yerel) mod sözleşmesidir; Supabase env verildiğinde uygulama bulut modunda **giriş kapısı** gösterir (uygulama hatası değil) | Env'siz koşun: `npm run test:e2e:local`. Güncel suite bu durumda SKIP eder (gerekçesiyle) |
 
 ### Koşucunun kendi yapamadığı tek şey: kurum ataması
 
@@ -210,7 +211,8 @@ gerçek HTTP/kod alanları; sır yok).
   LIVE_PSY_A_EMAIL=… LIVE_PSY_A_PASSWORD=… LIVE_PSY_B_EMAIL=… LIVE_PSY_B_PASSWORD=… \
   npx playwright test e2e/live-multi-user.spec.ts --project=chromium
   ```
-- **PRODUCTION:** production bundle + dağıtım ortamı doğrulaması gerekir.
+- **PRODUCTION:** production bundle + dağıtım ortamı doğrulaması gerekir. **Yalnız canlı spec koşulur**
+  (spec yolu zorunlu):
 
   ```bash
   VITE_SUPABASE_URL=… VITE_SUPABASE_ANON_KEY=… npm run build
@@ -218,8 +220,13 @@ gerçek HTTP/kod alanları; sır yok).
   E2E_BASE_URL=http://localhost:4173 \
   VITE_SUPABASE_URL=… VITE_SUPABASE_ANON_KEY=… \
   LIVE_PSY_A_EMAIL=… LIVE_PSY_A_PASSWORD=… LIVE_PSY_B_EMAIL=… LIVE_PSY_B_PASSWORD=… \
-  npx playwright test --project=chromium
+  npx playwright test e2e/live-multi-user.spec.ts --project=chromium
   ```
+
+  > ⚠️ `npx playwright test --project=chromium` (spec yolu olmadan) **iki katmanı karıştırır**:
+  > `e2e/critical.spec.ts` çevrimdışı mod için yazılmıştır ve Supabase env'i verilmiş bir koşuda
+  > uygulama giriş kapısı gösterdiği için düşer (gerçek tarayıcı koşusu #5). Katman komutları:
+  > `npm run test:e2e:local` (env'siz) · `npm run test:e2e:live` (env + kimlikler).
 
   `E2E_BASE_URL` verildiğinde dev sunucusu başlatılmaz; testler doğrudan o adrese koşar.
   Statik kaynak incelemesi PRODUCTION PASS yerine geçmez.

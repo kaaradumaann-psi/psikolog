@@ -1,4 +1,36 @@
+/**
+ * ÇEVRİMDIŞI (YEREL) MOD — UI SÖZLEŞMESİ (6 test).
+ *
+ * ÖN KOŞUL: `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` **verilmemelidir**.
+ * Yerel modda uygulama doğrudan çalışma alanını açar; tüm testler bu varsayımla yazılmıştır
+ * (tahta, kenar çubuğu, boş durumlar: "Henüz danışan dosyası yok", "İlk danışanı ekle").
+ *
+ * Supabase env'i verilirse uygulama **bulut moduna** geçer ve tasarım gereği **giriş kapısı**
+ * gösterir (`src/App.tsx` → `CloudGate`); çalışma alanı yalnız oturum açıldıktan sonra
+ * render edilir. Bu durumda bu suite anlamsızdır → **SKIP** (asla PASS/FAIL sayılmaz).
+ * Gerçek tarayıcı koşusu #5'te bu karışıklık yaşandı: env dolu olduğu için 5 test
+ * "element not found" ile düştü; oysa uygulama doğru davranıyordu (mod uyuşmazlığı).
+ *
+ * Doğru koşular (katmanlar karıştırılmaz):
+ *   yerel mod :  npm run test:e2e:local   (VITE_SUPABASE_* OLMADAN)
+ *   bulut/live:  npm run test:e2e:live    (env + LIVE_PSY_A/B kimlikleri)
+ *
+ * Not: Playwright `webServer`'ı (`npm run dev`) kabuk ortamını devralır; `VITE_SUPABASE_*`
+ * env'i verildiği sürece uygulama bulut modundadır.
+ */
 import { test, expect } from '@playwright/test';
+
+const cloudEnv = Boolean(
+  process.env.VITE_SUPABASE_URL?.trim() && process.env.VITE_SUPABASE_ANON_KEY?.trim(),
+);
+
+test.skip(
+  cloudEnv,
+  'Bu suite ÇEVRİMDIŞI (yerel) mod sözleşmesidir. Supabase env verildiği için uygulama bulut ' +
+    'modunda açılır ve tasarım gereği giriş kapısı gösterir (auth gate) → çalışma alanı render edilmez. ' +
+    'Yerel modda koşun: npm run test:e2e:local (VITE_SUPABASE_* env değişkenleri olmadan); ' +
+    'bulut/live katmanı için: npm run test:e2e:live.',
+);
 
 test('workspace opens without a public registration form', async ({ page }) => {
   await page.goto('/');

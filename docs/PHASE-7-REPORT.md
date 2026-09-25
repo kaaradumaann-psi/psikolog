@@ -291,7 +291,8 @@ Kaynak-of-truth testi: localStorage temizlenip yeniden yüklenince veri Supabase
 | Canlı şema/verify SQL'i | **PASS** | `tests/liveValidationVerifySql.test.ts` (1 kontrol: 25+ nesne + 11 migration) |
 | Canlı Supabase kiti (`scripts/live-validation/run.mjs`) | **Kısmi — güvenlik kanıtları yeşil, CLEANUP raporlaması bekliyor** | Koşu #5 (kullanıcı makinesi, tam matris): **64 PASS · 17 DENY · 2 FAIL** (2 FAIL = kilitli kaydın cascade silmeyi engellemesi; tasarım gereği) |
 | Tarayıcı (Playwright, gerçek Chromium) | **PASS (koşu #4)** | Kullanıcı makinesi, gerçek Chromium, 13,5 sn, tam matris. Ağ kanıtı: `POST /rest/v1/clients → 201`; `localStorage.clear()` + sayfa yenilemesi sonrasında kayıt **sunucudan geri geldi**; B göremedi (`toHaveCount(0)`), A yeniden gördü; arayüzden silme + çıkış PASS; başarısız istek/konsol hatası yok; kuyruk (outbox) yok. Yol: #1 spec varsayımı → #2 **uygulama veri kaybı yarışı** (aktivasyon öncesi yazım sessizce düşürülüyordu; bulut hazır kapısı + kuyruk devri ile düzeltildi) → #3 spec belirsiz locator → #4 PASS. Ayrıntı: `docs/PHASE-7-LIVE-VALIDATION.md` §6.5 |
-| Üretim (canlı Supabase + dağıtım) | **NOT VERIFIED** | Production bundle + dağıtım ortamı doğrulaması yapılmadı |
+| Tarayıcı — çevrimdışı UI sözleşmesi (6 test, `e2e/critical.spec.ts`) | **NOT RUN** (hedeflenen modda) | Koşu #5: `npx playwright test --project=chromium` (spec yolu yok) Supabase env'i verilmiş bir koşuda bu suite'i de çalıştırdı; uygulama bulut modunda **giriş kapısı** gösterdiği için 5 test "element not found" ile düştü — **uygulama hatası değil, mod uyuşmazlığı**. Suite artık ön koşulunu beyan eder (`env varsa SKIP`); katman komutları ayrıldı (`test:e2e:local` / `test:e2e:live`) ve §6.6 production komutuna spec yolu eklendi. Yerel modda koşulmayı bekliyor |
+| Üretim (canlı Supabase + dağıtım) | **NOT VERIFIED** | Production bundle + dağıtım ortamı doğrulaması yapılmadı; komut §6.6 (yalnız `e2e/live-multi-user.spec.ts`) |
 
 Toplam: `npm test` → **149 test, 149 PASS, 0 FAIL**. `npx tsc --noEmit` → **PASS**.
 `npm run build` → **PASS** (vite 7.3.6, `dist/assets/index-*.js` 499.68 kB / gzip 139.69 kB).
@@ -514,10 +515,16 @@ Not: `supabase/.temp/` (CLI yerel durumu), `.env.live` ve `live-validation-resul
   sessizce düşürülüyordu + hidrasyon yerel önbelleği sunucu anlık görüntüsüyle değiştiriyordu; gerçek kodla yerelde
   yeniden üretildi ve düzeltildi) · #3 spec belirsiz locator (satırda 3 düğme eşleşiyordu; `exact`/satır bazlı locator'a geçildi).
   Ayrıntılı kök neden + düzeltme tabloları: `docs/PHASE-7-LIVE-VALIDATION.md` §6.5.
+- GERÇEK TARAYICI KOŞUSU #5 (karışık koşu): 5 FAIL — **mod uyuşmazlığı** (uygulama hatası değil):
+  Supabase env'i verildiği için uygulama bulut modunda giriş kapısı gösterdi; çevrimdışı UI sözleşmesi
+  suite'i (`e2e/critical.spec.ts`, 6 test) doğrudan çalışma alanını bekliyordu. Düzeltme: suite ön
+  koşulunu beyan eder (env varsa SKIP) + `test:e2e:local` / `test:e2e:live` komutları ayrıldı +
+  §6.6 production komutuna spec yolu eklendi. Çevrimdışı UI sözleşmesi katmanı hâlâ koşulmayı bekliyor.
 - PRODUCTION: **NOT VERIFIED** — production bundle + dağıtım ortamı koşusu yapılmadı (§6.6 runbook hazır).
 - SIRADAKİ: (1) **PRODUCTION koşusu** — `VITE_SUPABASE_URL=… VITE_SUPABASE_ANON_KEY=… npm run build` →
-  `npm run preview` → `E2E_BASE_URL=http://localhost:4173 … npx playwright test --project=chromium`
-  (aynı spec, production bundle üzerinden; tek açık katman);
+  `npm run preview` → `E2E_BASE_URL=http://localhost:4173 … npx playwright test e2e/live-multi-user.spec.ts --project=chromium`
+  (**spec yolu ZORUNLU**: yolsuz koşu, ön koşulu env'sizlik olan çevrimdışı suite'i de çalıştırır ve
+  mod uyuşmazlığıyla düşer — gerçek tarayıcı koşusu #5'te yaşandı);
   (2) isteğe bağlı artık bakımı: `cleanup-live-test-data.sql` §3 (arşivle) / §4 (uyarılı tam silme,
   yalnız `LIVE-%`/`E2E-%`; koşu #4 `E2E-` artıklarının tamamını arayüzden temizledi).
 - **PHASE 7 COMPLETE DEĞİL** — LIVE SUPABASE **VERIFIED** ve REAL BROWSER **PASS** olsa da

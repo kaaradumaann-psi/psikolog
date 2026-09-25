@@ -12,7 +12,8 @@ Bu belge yalnızca **canlı doğrulama** (P0-8) katmanını raporlar ve katmanla
 | **LOCAL / PGlite** | **PASS** | `npm test` **149/149** (145 + 3 bulut aktivasyon yarışı + 1 render kapısı testi), `phase7RlsMatrix` 14/14, `phase7LockChain` 11/11, `liveValidationSeed` 7/7, `liveValidationVerifySql` 1/1 |
 | **LIVE SUPABASE** | **VERIFIED** (REST/Auth/Storage düzeyinde) | **Koşu #6: 65 PASS · 18 DENY · 0 FAIL · 1 SKIP** — `liveSupabase: "VERIFIED"` (§0) |
 | **REAL BROWSER** | **PASS** (koşu #4) | Kullanıcı makinesi, gerçek Chromium, 13,5 sn, tam matris: kayıt → detay → liste → `localStorage.clear()` + yenileme sonrası kayıt **sunucudan** geri geldi → B göremedi → A yeniden gördü → arayüzden silindi. Ağ: `POST /rest/v1/clients → 201`, başarısız istek **yok** (§6.5) |
-| **PRODUCTION** | **NOT VERIFIED** | Production bundle + dağıtım ortamı koşusu yapılmadı; `E2E_BASE_URL` ile koşulabilir (§6.6) |
+| **REAL BROWSER — çevrimdışı UI sözleşmesi** (6 test, `e2e/critical.spec.ts`) | **NOT RUN** (yerel modda) | Koşu #5'te env verildiği için mod uyuşmazlığıyla düştü → suite ön koşulunu beyan eder hâle getirildi; `npm run test:e2e:local` ile env'siz koşulur (§6.6 notu) |
+| **PRODUCTION** | **NOT VERIFIED** | Production bundle + dağıtım ortamı koşusu yapılmadı; komut §6.6'da (yalnız `e2e/live-multi-user.spec.ts`) |
 
 > `PGlite PASS — Production NOT VERIFIED` **ile** `LIVE SUPABASE VERIFIED` aynı şey değildir.
 > PHASE 7 bu nedenle **COMPLETE değildir**.
@@ -452,6 +453,8 @@ RLS politikalarında **hiçbir değişiklik yapılmadı**.
 | `e2e/live-multi-user.spec.ts` | **YENİ** — REAL BROWSER çok kullanıcılı oturum testi (kimlik yoksa SKIP); koşu #1: modal kapanışı + `alert` yakalama + form geçerlilik kontrolü + detay doğrulaması + `E2E-` artık temizliği; koşu #3: `ownRow`/`nameButton(exact)` (belirsiz locator kaldırıldı); koşu #4: kanıt **yalnız `POST /rest/v1/clients`** + yanıt gövdesinde dosya numarası + kaydetmeden önce `awaitBackendIdle` |
 | `scripts/live-validation/cleanup-live-test-data.sql` | `E2E-%` öneki de kapsama alındı (tarayıcı testinin ürettiği kayıtlar) |
 | `playwright.config.ts` | `E2E_BASE_URL` desteği: production/preview bundle'a karşı koşu (dev sunucusu kapanır) |
+| `e2e/critical.spec.ts` (koşu #5 düzeltmesi) | **çevrimdışı mod UI sözleşmesi**: ön koşulunu beyan eder — Supabase env varsa `test.skip` (bulut modunda çalışma alanı giriş kapısı arkasındadır) |
+| `package.json` (koşu #5 düzeltmesi) | `test:e2e:local` (env'siz çevrimdışı suite) · `test:e2e:live` (canlı çok kullanıcılı spec) |
 | `docs/PHASE-7-LIVE-VALIDATION.md` | bu belge (koşu #4 tam matrisi, 4 FAIL'in kök nedeni, artık veri notu) |
 | `src/App.tsx` (koşu #2 düzeltmesi) | **bulut hazır kapısı**: sunucu anlık görüntüsü yüklenene kadar klinik içerik render edilmez (`data-cloud-gate="loading"`) |
 | `src/clinical/cloud/sync.ts` (koşu #2 düzeltmesi) | aktivasyon öncesi yazım kuyruğa alınır (sessiz veri kaybı yok) + `adoptBaseOutbox()` |
@@ -679,6 +682,37 @@ Error: strict mode violation: getByRole('button', { name: 'E2E Tarayici muhappu7
 
 **Durum:** ilk üç koşu FAILED (biri spec, ikisi uygulama/spec) → düzeltmelerden sonra
 **koşu #4 PASS** (13,5 sn, tam matris). REAL BROWSER katmanı kapandı; sıradaki adım PRODUCTION (§6.6).
+
+#### Gerçek tarayıcı koşusu #5 (2026-09-25, kullanıcı makinesi) — 5 FAIL: **mod uyuşmazlığı** (uygulama hatası değil)
+
+`npx playwright test --project=chromium` (spec yolu verilmeden, §6.6'nın eski komutu) 7 test koştu:
+6 çevrimdışı UI sözleşmesi + 1 canlı çok kullanıcılı test. Supabase env'i verildiği için uygulama
+**bulut modunda** açıldı ve tasarım gereği **giriş kapısı** gösterdi; çevrimdışı suite ise
+doğrudan çalışma alanının açılmasını bekliyordu:
+
+| # | Test | Beklediği | Neden bulunamadı |
+|---|---|---|---|
+| 1 | workspace opens… | `Bugünün tahtası` | Bulut modu → giriş ekranı |
+| 2 | desktop sidebar… | `navigation "Çalışma alanı"` + `aria-current` | Kenar çubuğu oturum sonrası render edilir |
+| 3 | assessment hub… | `Psikolojik Değerlendirme Araçları` | Aynı (giriş kapısı) |
+| 4 | client file and tasks… | `Danışan Dosyaları` / `Görevler` | Aynı |
+| 5 | SCL-90-R narrow screen | `.question-item-card` | Aynı |
+
+**Kök neden:** `VITE_SUPABASE_URL`/`ANON_KEY` derleme anında okunur (`src/auth/supabaseClient.ts`
+→ `supabaseConfig.configured`); env doluysa `src/App.tsx` `CloudGate`e düşer ve çalışma alanı yalnız
+oturum sonrası render edilir. Yani **uygulama doğru davrandı**; suite'in ön koşulu karşılanmadı
+(koşul: env yok) ve komut iki farklı katmanı tek koşuda karıştırdı.
+
+**Düzeltmeler:**
+
+| # | Düzeltme | Dosya |
+|---|---|---|
+| 1 | Çevrimdışı suite artık ön koşulunu **beyan eder**: env varsa `test.skip` + açıklayıcı gerekçe (asla FAIL/PASS sayılmaz) | `e2e/critical.spec.ts` |
+| 2 | Katman komutları ayrıldı: `npm run test:e2e:local` (env'siz) · `npm run test:e2e:live` (env + kimlikler) | `package.json` |
+| 3 | §6.6 production komutuna **spec yolu** eklendi (yalnız canlı spec) + uyarı kutusu | bu belge |
+
+Not: çevrimdışı UI sözleşmesi (6 test) hâlâ **yerel modda koşulmadı**; bu katman ayrı raporlanır
+(`npm run test:e2e:local`, env değişkenleri olmadan).
 Koşu #3 test kaydı (`E2E-MUHAPPU7`) strict mode adımında düştüğü için arayüzden silinemedi; sunucuda
 kalmış olabilir. Yeni spec başlangıçtaki self-healing adımıyla `E2E-` önekli tüm artıkları siler;
 alternatif olarak `cleanup-live-test-data.sql` (§3 arşivle / §4 uyarılı tam silme) kapsamı `E2E-%`
@@ -721,19 +755,33 @@ ve sayfa yenilemesinde sunucudan geri geldi — bulut yazımında hata yok.
 ### 6.6 PRODUCTION runbook (kendi makinenizde)
 
 Production **bundle**'ı gerçek env ile derleyip önizleme sunucusuna karşı koşun
-(`playwright.config.ts` artık `E2E_BASE_URL` verilirse dev sunucusunu kapatır):
+(`playwright.config.ts` `E2E_BASE_URL` verilirse dev sunucusunu kapatır). **Yalnız canlı spec koşulur:**
 
 ```bash
-VITE_SUPABASE_URL=… VITE_SUPABASE_ANON_KEY=… npm run build   # production bundle
+VITE_SUPABASE_URL=… VITE_SUPABASE_ANON_KEY=… npm run build   # production bundle (bulut modu)
 npm run preview                                              # :4173 (dist)
 E2E_BASE_URL=http://localhost:4173 \
 VITE_SUPABASE_URL=… VITE_SUPABASE_ANON_KEY=… \
 LIVE_PSY_A_EMAIL=… LIVE_PSY_A_PASSWORD=… LIVE_PSY_B_EMAIL=… LIVE_PSY_B_PASSWORD=… \
-npx playwright test --project=chromium
+npx playwright test e2e/live-multi-user.spec.ts --project=chromium   # ← PRODUCTION kanıtı
 ```
+
+> ⚠️ **Spec yolu vermeyin.** `npx playwright test --project=chromium` (yolsuz) hem çevrimdışı UI
+> sözleşmesini (`e2e/critical.spec.ts`, 6 test) hem canlı spec'i koşar. Çevrimdışı suite'in ön koşulu
+> "Supabase env YOK"tur; production+bulut koşusunda bu tanım gereği ihlal edilir ve 5 test
+> "element not found" ile düşer (gerçek tarayıcı koşusu #5'te yaşandı — bkz. §6.5).
 
 Dağıtılmış ortam için: `E2E_BASE_URL=https://<production-host>` ile aynı komut.
 **Statik kaynak incelemesi PRODUCTION PASS sayılmaz**; yalnız gerçek bundle + gerçek tarayıcı koşusu sayılır.
+
+İsteğe bağlı **ayrı katman** — çevrimdışı UI sözleşmesini production bundle'da koşmak isterseniz
+(env'siz ayrı bir build gerekir, `dist/` üzerine yazar; PHASE 7 PRODUCTION kanıtı **sayılmaz**):
+
+```bash
+npm run build                                   # VITE_SUPABASE_* OLMADAN
+npm run preview
+E2E_BASE_URL=http://localhost:4173 npm run test:e2e:local
+```
 
 ### 6.7 İsteğe bağlı bakım
 

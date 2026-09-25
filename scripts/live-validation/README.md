@@ -196,9 +196,12 @@ gerçek HTTP/kod alanları; sır yok).
 ### Kapsam dışı (ayrı raporlanır)
 
 - **REAL BROWSER:** gerçek Chromium koşusu gerekir. Bu kit için hazır spec:
-  `e2e/live-multi-user.spec.ts` (A ekler → **kaydın sunucuya yazıldığı 2xx yanıtıyla doğrulanır** →
+  `e2e/live-multi-user.spec.ts` — **koşu #4 ile PASS** (13,5 sn: `POST /rest/v1/clients → 201`,
+  `localStorage.clear()` + yenileme sonrası kayıt sunucudan geri geldi, B göremedi, A yeniden gördü,
+  arayüzden silindi). Akış: A ekler → **kaydın sunucuya yazıldığı `POST → 2xx` ve yanıt gövdesindeki
+  dosya numarası ile doğrulanır** →
   yerel depo temizlenir + sayfa yenilir → kayıt yine görünür → çıkış → B göremez → A yeniden görür →
-  arayüzden siler). Uygulama, sunucu anlık görüntüsü yüklenene kadar klinik içerik göstermez
+  arayüzden siler. Uygulama, sunucu anlık görüntüsü yüklenene kadar klinik içerik göstermez
   (`[data-cloud-gate="loading"]`); spec bu kapının kalkmasını bekler.
 
   ```bash

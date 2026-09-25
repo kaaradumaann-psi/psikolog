@@ -2,7 +2,8 @@
 
 Tarih: 2026-09-25 · Dal: `arena/01a0d937-psikolog`
 Durum: **LIVE SUPABASE = VERIFIED (koşu #6: 65 PASS · 18 DENY · 0 FAIL · 1 SKIP) ·
-PHASE 7 hâlâ COMPLETE DEĞİL — REAL BROWSER ve PRODUCTION katmanları açık**
+REAL BROWSER = PASS (koşu #4: tam matris, 13,5 sn) ·
+PHASE 7 hâlâ COMPLETE DEĞİL — yalnız PRODUCTION katmanı açık**
 
 Bu belge yalnızca **canlı doğrulama** (P0-8) katmanını raporlar ve katmanları kesin olarak ayırır:
 
@@ -10,7 +11,7 @@ Bu belge yalnızca **canlı doğrulama** (P0-8) katmanını raporlar ve katmanla
 |---|---|---|
 | **LOCAL / PGlite** | **PASS** | `npm test` **149/149** (145 + 3 bulut aktivasyon yarışı + 1 render kapısı testi), `phase7RlsMatrix` 14/14, `phase7LockChain` 11/11, `liveValidationSeed` 7/7, `liveValidationVerifySql` 1/1 |
 | **LIVE SUPABASE** | **VERIFIED** (REST/Auth/Storage düzeyinde) | **Koşu #6: 65 PASS · 18 DENY · 0 FAIL · 1 SKIP** — `liveSupabase: "VERIFIED"` (§0) |
-| **REAL BROWSER** | **NOT RUN** | 3 başarısız koşu (#1 spec varsayımı · #2 **uygulama veri kaybı yarışı** · #3 spec belirsiz locator); ikisi de düzeltildi, yeni koşu bekliyor (§6.5) |
+| **REAL BROWSER** | **PASS** (koşu #4) | Kullanıcı makinesi, gerçek Chromium, 13,5 sn, tam matris: kayıt → detay → liste → `localStorage.clear()` + yenileme sonrası kayıt **sunucudan** geri geldi → B göremedi → A yeniden gördü → arayüzden silindi. Ağ: `POST /rest/v1/clients → 201`, başarısız istek **yok** (§6.5) |
 | **PRODUCTION** | **NOT VERIFIED** | Production bundle + dağıtım ortamı koşusu yapılmadı; `E2E_BASE_URL` ile koşulabilir (§6.6) |
 
 > `PGlite PASS — Production NOT VERIFIED` **ile** `LIVE SUPABASE VERIFIED` aynı şey değildir.
@@ -61,8 +62,8 @@ bucket), klinik veri zinciri (Client→Appointment→Session→Note→Anamnesis�
 TestResult→Report), sunucu kalıcılığı, RLS sahiplik matrisi (A→A PASS · B→A DENY · admin kapsam ·
 anon DENY), imza/kilit/revizyon + `superseded_by`, Storage RLS, çıkış izolasyonu, temizlik davranışı.
 
-**Kapsamıyor:** tarayıcı düzeyi davranış (REAL BROWSER), production bundle/dağıtım ortamı
-(PRODUCTION), KVKK/hukuki beyan, yük/performans testleri.
+**Kapsamıyor:** tarayıcı düzeyi davranış (bu koşucu kapsamaz; ayrı Playwright koşusu — koşu #4 **PASS**),
+production bundle/dağıtım ortamı (PRODUCTION — hâlâ açık), KVKK/hukuki beyan, yük/performans testleri.
 
 ---
 
@@ -314,8 +315,8 @@ Satır satır:
 | RLS | anon → clients INSERT | FAIL | `[object Object]` (teşhis edilemedi — bkz. §2.1) |
 | RLS | kurum ataması | FAIL | A/B profillerinde `organization_id` yok (bkz. §2.2) |
 
-Koşu etiketleri (koşucunun yazdırdığı): `LIVE SUPABASE: FAILED (3 başarısız kontrol)`,
-`REAL BROWSER: NOT RUN`, `PRODUCTION: NOT VERIFIED`.
+Koşu etiketleri (koşucunun yazdırdığı — **tarihsel kayıt**: o gün REAL BROWSER henüz koşulmamıştı):
+`LIVE SUPABASE: FAILED (3 başarısız kontrol)`, `REAL BROWSER: NOT RUN`, `PRODUCTION: NOT VERIFIED`.
 
 **Kanıtlanan olumlu sonuç:** gerçek projeye bağlantı kurulabildi; üç test kullanıcısı
 gerçek Supabase Auth üzerinden giriş yapabildi ve `profiles` satırları RLS altında okunabildi
@@ -448,7 +449,7 @@ RLS politikalarında **hiçbir değişiklik yapılmadı**.
 | `scripts/live-validation/cleanup-live-test-data.sql` | **YENİ** — sentetik artık temizliği: önizleme (kilitli kayıt sayısı), **arşivle** (önerilen), uyarılı tam silme (trigger'lar işlem süresince kapalı, yalnız `LIVE-%` hedefi), trigger durumu doğrulaması |
 | `scripts/live-validation/run.mjs` (koşu #5 turu) | CLEANUP artık kilit korumasını tanır: kilitli kayıt → `DENY` + `Yerinde` `PASS` + `Temizlik` `SKIP` |
 | `scripts/live-validation/run.mjs` (kapanış turu) | CLEANUP `DENY` satırı da JSON kanıt alanlarını (`httpStatus`, `code`, `kind`) taşır |
-| `e2e/live-multi-user.spec.ts` | **YENİ** — REAL BROWSER çok kullanıcılı oturum testi (kimlik yoksa SKIP); koşu #1 sonrası: modal kapanışı + `alert` yakalama + form geçerlilik kontrolü + detay sayfası doğrulaması + `E2E-` artık temizliği |
+| `e2e/live-multi-user.spec.ts` | **YENİ** — REAL BROWSER çok kullanıcılı oturum testi (kimlik yoksa SKIP); koşu #1: modal kapanışı + `alert` yakalama + form geçerlilik kontrolü + detay doğrulaması + `E2E-` artık temizliği; koşu #3: `ownRow`/`nameButton(exact)` (belirsiz locator kaldırıldı); koşu #4: kanıt **yalnız `POST /rest/v1/clients`** + yanıt gövdesinde dosya numarası + kaydetmeden önce `awaitBackendIdle` |
 | `scripts/live-validation/cleanup-live-test-data.sql` | `E2E-%` öneki de kapsama alındı (tarayıcı testinin ürettiği kayıtlar) |
 | `playwright.config.ts` | `E2E_BASE_URL` desteği: production/preview bundle'a karşı koşu (dev sunucusu kapanır) |
 | `docs/PHASE-7-LIVE-VALIDATION.md` | bu belge (koşu #4 tam matrisi, 4 FAIL'in kök nedeni, artık veri notu) |
@@ -537,9 +538,10 @@ göre kapatıldı. Yeni bir canlı koşu, kod/migration değişikliğinden sonra
 
 ### 6.3 Kapsam dışı kalan katmanlar
 
-- **REAL BROWSER: NOT RUN** — gerekçe: sandbox'ta Chromium indirilemiyor
+- **REAL BROWSER: PASS (koşu #4)** — sandbox'ta Chromium indirilemiyor
   (`npx playwright install chromium` → `Failed to download Chrome for Testing … ECONNRESET`,
-  `cdn.playwright.dev:443` engelli). Tarayıcı spec'i hazır: `e2e/live-multi-user.spec.ts` (§6.5).
+  `cdn.playwright.dev:443` engelli), bu yüzden koşular kullanıcı makinesinde yapılır.
+  Dördüncü koşu tam matrisiyle geçti; kanıt ve ölçüm düzeltmesi §6.5'te.
 - **PRODUCTION: NOT VERIFIED** — production bundle + dağıtım ortamı koşusu yapılmadı; runbook §6.6.
   Statik kaynak incelemesi E2E PASS sayılmaz.
 
@@ -675,11 +677,46 @@ Error: strict mode violation: getByRole('button', { name: 'E2E Tarayici muhappu7
    arada kullanıcı tarafından temizlendi (cleanup SQL); kesin olan, koşu #2'nin kaydının listede hiç
    görünmediğidir (madde 2'deki yarış ile tutarlı).
 
-**Durum:** üç koşu da FAILED · REAL BROWSER hâlâ **NOT RUN** · düzeltmelerden sonra yeniden koşu bekliyor.
+**Durum:** ilk üç koşu FAILED (biri spec, ikisi uygulama/spec) → düzeltmelerden sonra
+**koşu #4 PASS** (13,5 sn, tam matris). REAL BROWSER katmanı kapandı; sıradaki adım PRODUCTION (§6.6).
 Koşu #3 test kaydı (`E2E-MUHAPPU7`) strict mode adımında düştüğü için arayüzden silinemedi; sunucuda
 kalmış olabilir. Yeni spec başlangıçtaki self-healing adımıyla `E2E-` önekli tüm artıkları siler;
 alternatif olarak `cleanup-live-test-data.sql` (§3 arşivle / §4 uyarılı tam silme) kapsamı `E2E-%`
 önekini de içerir.
+
+#### Gerçek tarayıcı koşusu #4 (2026-09-25, kullanıcı makinesi) — **PASS** ✅
+
+Chromium · serial · **13,5 sn** · `E2E_BASE_URL` yok (dev sunucusu) · hata bloğu yok, tüm adımlar sonuna kadar koştu.
+
+| Adım | Sonuç |
+|---|---|
+| A girişi (`psya@gmail.com`) | PASS (3,9 sn'de oturum) |
+| Artık temizliği (self-healing) | **8 eski `E2E-` kaydı** arayüzden silindi → `DELETE → 204` ×8 |
+| Kayıt oluşturma (`E2E-MUHAY8PE`) | modal kapandı, `alert` yok, form geçerli |
+| **Sunucuya yazım** | **`POST /rest/v1/clients → 201`** (ağ özeti) |
+| Detay sayfası | URL `/danisanlar/<id>` + `h1` adı doğrulandı |
+| Liste satırı | görünür (benzersiz protokol no ile) |
+| **Yerel depo temizliği + yenileme** | `localStorage` 17 → 14 anahtar; **kayıt sunucudan geri geldi** (bulut kalıcılığı kanıtı) |
+| B (`psyb@gmail.com`) girişi | kayıt **görünmez** (RLS izolasyonu, `toHaveCount(0)`) |
+| A yeniden girişi | kayıt **geri geldi** |
+| Arayüzden silme + çıkış | PASS |
+| Başarısız istek / konsol hatası | **yok** (anotasyon yok = hata yok) |
+
+**Gerçek tarayıcı kanıtı bu koşuyla tamamlandı:** kayıt yalnız yerel önbellekte değil, sunucuda —
+`localStorage` tamamen silinip sayfa yenilendiğinde kayıt Supabase'den geri geldi; aynı tarayıcıda
+ikinci kullanıcı göremedi, sahibi yeniden gördü.
+
+**Koşuda görülen ölçüm kusuru (spec tarafı, düzeltildi):** artık temizliğinden uçuşta kalan
+`DELETE` istekleri, "kaydetten sonraki ilk 2xx yazım" olarak yakalandı ve anotasyon
+`bulut yazımı: DELETE → 204` yazdı (yanıltıcı). Kaydın gerçek kanıtı `POST → 201` ve
+yenileme sonrası geri gelmesiydi. Spec artık: (a) kaydetmeden önce bekleyen `/rest/v1`
+isteklerinin bitmesini bekler (`awaitBackendIdle`), (b) kanıt olarak **yalnız POST** kabul eder,
+(c) yanıt gövdesinde dosya numarasını (`E2E-…`) arar — böylece temizlik `DELETE`'leri veya
+güncellemeler kanıt yerine geçemez.
+
+Bu koşu ayrıca PHASE 7'nin bulut yazma yolunu uçtan uca doğruladı: kayıt sahibine
+(`organization_id`/`owner_user_id`) bağlı yazıldı, aynı tarayıcıdaki başka kullanıcıya görünmedi
+ve sayfa yenilemesinde sunucudan geri geldi — bulut yazımında hata yok.
 
 ### 6.6 PRODUCTION runbook (kendi makinenizde)
 

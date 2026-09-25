@@ -33,6 +33,12 @@
  *          Uygulama düzeltmesi: (a) sunucu anlık görüntüsü yüklenene kadar klinik içerik render
  *          edilmez (`[data-cloud-gate="loading"]`), (b) aktivasyon öncesi yazımlar kuyruğa alınır
  *          ve aktivasyonda kapsamlı kuyruğa taşınıp gönderilir.
+ * koşu #4 PASSED (13,5 sn) — tam matris uçtan uca: kayıt → detay → liste → localStorage temizliği +
+ *          yenileme (kayıt sunucudan geri geldi) → B göremedi → A yeniden gördü → arayüzden silme.
+ *          Ağ özeti: POST /rest/v1/clients → 201 (kayıt sunucuya yazıldı), başarısız istek yok.
+ *          Koşuda ölçüm kusuru görüldü: artık temizliğinden uçuşta kalan DELETE'ler "ilk 2xx yazım"
+ *          sanıldı. Bu yüzden kanıt artık **yalnız POST** ile ve yanıt gövdesinde dosya numarası
+ *          aranarak ölçülür; kaydetmeden önce bekleyen isteklerin bitmesi beklenir.
  * koşu #3 FAILED — kayıt bu kez listede GÖRÜNDÜ, ama satır 3 düğme ile eşleştiği için Playwright
  *          "strict mode violation" verdi (ad düğmesi + "… bilgilerini düzenle" + "… kaydını sil").
  *          Spec düzeltmesi: satır artık benzersiz protokol numarasıyla (`ownRow`), ad doğrulaması
@@ -80,15 +86,23 @@ type RestCall = { method: string; url: string; status: number; ok: boolean; body
 function watchBackend(page: Page) {
   const calls: RestCall[] = [];
   const inFlight = new Map<Request, RestCall>();
+  const pending = new Set<Request>();
   const failed: string[] = [];
   const consoleErrors: string[] = [];
 
+  const settle = (request: Request) => {
+    pending.delete(request);
+  };
+
   page.on('request', (request) => {
     const url = request.url();
+    if (!url.includes('/rest/v1/')) return;
+    pending.add(request);
     if (!url.includes('/rest/v1/clients')) return;
     inFlight.set(request, { method: request.method(), url, status: 0, ok: false, body: '' });
   });
   page.on('response', (response) => {
+    settle(response.request());
     const call = inFlight.get(response.request());
     if (!call) return;
     call.status = response.status();
@@ -105,6 +119,7 @@ function watchBackend(page: Page) {
       });
   });
   page.on('requestfailed', (request) => {
+    settle(request);
     if (!request.url().includes('/rest/v1/')) return;
     failed.push(`${request.method()} ${request.url()} → ${request.failure()?.errorText ?? 'bilinmeyen hata'}`);
   });
@@ -114,17 +129,37 @@ function watchBackend(page: Page) {
   });
 
   const writes = () => calls.filter((call) => call.method !== 'GET');
+  /** Yalnız yeni kayıt yazımı — temizlik DELETE'leri veya güncellemeler kanıt yerine geçmez. */
+  const posts = () => calls.filter((call) => call.method === 'POST');
   return {
     calls,
     writes,
+    posts,
     failed,
     consoleErrors,
+    pendingCount: () => pending.size,
     hydrations: () => calls.filter((call) => call.method === 'GET').length,
     summary: () =>
       `REST(clients): ${calls.map((call) => `${call.method}→${call.status}`).join(', ') || 'istek yok'}` +
       ` | hidrasyon okuması: ${calls.filter((call) => call.method === 'GET').length}` +
+      ` | POST→${calls.filter((call) => call.method === 'POST').map((call) => call.status).join(',') || 'yok'}` +
+      ` | bekleyen istek: ${pending.size}` +
       ` | başarısız istek: ${failed.join(' | ') || '—'}`,
   };
+}
+
+/**
+ * Bekleyen `/rest/v1` istekleri bitene kadar bekler.
+ * Koşu #4 dersi: artık temizliğinden kalan DELETE'ler uçuşta kalırsa, kaydetme
+ * sonrası "ilk 2xx yazım" yanlışlıkla bir DELETE olabilir; kanıt ölçümü kayar.
+ */
+async function awaitBackendIdle(backend: { pendingCount: () => number }) {
+  await expect
+    .poll(() => backend.pendingCount(), {
+      timeout: 20_000,
+      message: 'bekleyen /rest/v1 istekleri bitmedi (ağ kanıtı ölçülemez)',
+    })
+    .toBe(0);
 }
 
 /** Uygulamanın kendi "bulut hazır" kapısı: sunucu anlık görüntüsü gelene kadar içerik render edilmez. */
@@ -231,6 +266,8 @@ test.describe('REAL BROWSER — canlı Supabase çok kullanıcılı oturum', () 
     await openClients(page);
     test.info().annotations.push({ type: 'hidrasyon', description: backend.summary() });
     await deleteLeftovers(page);
+    // Artık silmelerinin yanıtları otursun: kaydetme kanıtı yalnız POST ile ölçülecek.
+    await awaitBackendIdle(backend);
 
     // ---------------------------------------------------------------- 3) A kayıt oluşturur
     await page.getByRole('button', { name: 'Yeni Danışan Kaydı' }).click();
@@ -249,7 +286,7 @@ test.describe('REAL BROWSER — canlı Supabase çok kullanıcılı oturum', () 
     );
     expect(invalidFields, `formda geçersiz zorunlu alanlar: ${invalidFields.join(', ')}`).toEqual([]);
 
-    const writeCursor = backend.writes().length;
+    const postCursor = backend.posts().length;
     await page.getByRole('button', { name: 'Danışanı Kaydet' }).click();
 
     // Kaydetme başarısızsa uygulama native alert verir; sessizce beklemek yerine burada düşelim.
@@ -257,28 +294,37 @@ test.describe('REAL BROWSER — canlı Supabase çok kullanıcılı oturum', () 
     expect(alerts, `kaydet sırasında uyarı çıktı: ${alerts.join(' | ')}`).toEqual([]);
 
     // ★ Kritik kanıt: kayıt GERÇEKTEN sunucuya yazıldı mı? (yerel önbellekte görünmesi yetmez)
+    // Yalnız **POST /rest/v1/clients** kanıt sayılır: temizlikten kalan DELETE'ler 2xx olsa da
+    // yeni kaydın oluştuğunu göstermez (koşu #4'te ölçüm bu yüzden kaymıştı).
     const bannerSnapshot = await syncBannerText(page);
     const storageSnapshot = await storageReport(page);
+    const newPosts = () => backend.posts().slice(postCursor);
     await expect
-      .poll(() => backend.writes().slice(writeCursor).filter((call) => call.status >= 200 && call.status < 300).length, {
+      .poll(() => newPosts().filter((call) => call.status >= 200 && call.status < 300).length, {
         timeout: 20_000,
         message:
-          'kayıt sunucuya yazılmadı (2xx yazım yanıtı yok). ' +
+          'kayıt sunucuya yazılmadı (POST /rest/v1/clients → 2xx yok). ' +
           `Şerit: ${bannerSnapshot} | ${backend.summary()} | yerel depo: ${JSON.stringify(storageSnapshot)}`,
       })
       .toBeGreaterThan(0);
 
-    const written = backend.writes().slice(writeCursor).find((call) => call.status >= 200 && call.status < 300)!;
-    const failedAfterSave = backend.writes().slice(writeCursor).filter((call) => call.status >= 400);
+    const post = newPosts().find((call) => call.status >= 200 && call.status < 300)!;
+    expect(
+      post.body,
+      `sunucu yanıtı oluşturulan kaydı içermiyor (file_number=${FILE_NUMBER}): ${post.body}`,
+    ).toContain(FILE_NUMBER);
+    const failedAfterSave = newPosts().filter((call) => call.status >= 400);
     test.info().annotations.push({
-      type: 'bulut yazımı',
-      description: `${written.method} /rest/v1/clients → ${written.status}${written.body ? ` · ${written.body}` : ''}`,
+      type: 'bulut kaydı',
+      description: `POST /rest/v1/clients → ${post.status} · gövde: ${post.body}`,
     });
     test.info().annotations.push({ type: 'senkronizasyon şeridi', description: bannerSnapshot });
     test.info().annotations.push({ type: 'yerel depo', description: JSON.stringify(storageSnapshot) });
     test.info().annotations.push({
       type: 'çağrı özeti',
-      description: `yazımdan sonra: ${backend.writes().slice(writeCursor).map((call) => `${call.method}→${call.status}`).join(', ') || 'yok'}`,
+      description:
+        `kaydetten sonra clients çağrıları: ${backend.writes().slice(postCursor).map((call) => `${call.method}→${call.status}`).join(', ') || 'yok'}` +
+        ` | POST: ${newPosts().map((call) => call.status).join(',') || 'yok'}`,
     });
     if (failedAfterSave.length) {
       test.info().annotations.push({

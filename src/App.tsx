@@ -4,6 +4,7 @@ import type { AuthenticatedUser } from './auth/authTypes';
 import { displayName } from './auth/userDisplay';
 import { supabaseConfig } from './auth/supabaseClient';
 import { startClinicalCloud, stopClinicalCloud } from './clinical/cloud/bootstrap';
+import { getSyncState, subscribeSync, type SyncState } from './clinical/cloud/sync';
 import { CloudSyncBanner } from './components/CloudSyncBanner';
 import { getSession, onAuthChange, signIn, signOut, userFromSession } from './auth/supabaseAuth';
 import { AppointmentsPage } from './components/clinical/AppointmentsPage';
@@ -254,6 +255,17 @@ function WorkspaceShell({ user, onLogout, localMode }: { user: AuthenticatedUser
   const route = useRoute();
   const [storageError, setStorageError] = useState<string | null>(null);
   const [cloudError, setCloudError] = useState<string | null>(null);
+  const [syncState, setSyncState] = useState<SyncState>(() => getSyncState());
+
+  useEffect(() => subscribeSync(setSyncState), []);
+
+  /**
+   * Bulut katmanı hazır olmadan klinik yazım kabul edilmez: aktivasyon
+   * tamamlanmadan yapılan kayıt sunucuya gönderilemez (veri kaybı). Bu yüzden
+   * içerik, sunucu anlık görüntüsü yüklenene kadar yükleniyor durumunda kalır.
+   * Hata durumunda çalışma alanı açılır; hata şeridi görünür kalır (P0-3).
+   */
+  const cloudLoading = !localMode && (!syncState.cloud || syncState.phase === 'loading');
 
   // Oturum açıldığında klinik veri Supabase'den yüklenir (tek doğruluk kaynağı).
   useEffect(() => {
@@ -363,24 +375,34 @@ function WorkspaceShell({ user, onLogout, localMode }: { user: AuthenticatedUser
           </div>
         </header>
         <ConnectivityBanner />
-        {!localMode && <CloudSyncBanner />}
+        {!localMode && !cloudLoading && <CloudSyncBanner />}
         {cloudError && <p className="shell-alert" role="alert">{cloudError}</p>}
         {storageError && <p className="shell-alert" role="alert">{storageError}</p>}
         <main className="app-main" id="main" tabIndex={-1}>
-          {route.page === 'danisan' && <ClientDetailPage clientId={route.id} />}
-          {route.page === 'danisanlar' && <ClientListPage />}
-          {route.page === 'seanslar' && <SoapSessionsPage />}
-          {route.page === 'takvim' && <AppointmentsPage />}
-          {route.page === 'testler' && <AssessmentHubPage />}
-          {route.page === 'beck_depresyon' && <BeckDepressionPage />}
-          {route.page === 'beck_anksiyete' && <BeckAnxietyPage />}
-          {route.page === 'scl90' && <Scl90Page />}
-          {route.page === 'tarama' && <RapidScreeningPage />}
-          {route.page === 'raporlar' && <ClinicalReportsPage />}
-          {route.page === 'gorevler' && <TasksPage />}
-          {route.page === 'ayarlar' && <SettingsPage canAdmin={canAdmin} />}
-          {route.page === 'denetim' && <AuditPage />}
-          {route.page === 'home' && <Dashboard user={user} />}
+          {cloudLoading ? (
+            <div className="empty-state-card" role="status" data-cloud-gate="loading">
+              <Icon name="shield" size={28} />
+              <h4>Klinik kayıtlar yükleniyor</h4>
+              <p>Sunucudaki veriler hazırlanıyor. Hazır olmadan kayıt oluşturulmaz; bu sırada hiçbir veri cihazda tutulmaz.</p>
+            </div>
+          ) : (
+            <>
+              {route.page === 'danisan' && <ClientDetailPage clientId={route.id} />}
+              {route.page === 'danisanlar' && <ClientListPage />}
+              {route.page === 'seanslar' && <SoapSessionsPage />}
+              {route.page === 'takvim' && <AppointmentsPage />}
+              {route.page === 'testler' && <AssessmentHubPage />}
+              {route.page === 'beck_depresyon' && <BeckDepressionPage />}
+              {route.page === 'beck_anksiyete' && <BeckAnxietyPage />}
+              {route.page === 'scl90' && <Scl90Page />}
+              {route.page === 'tarama' && <RapidScreeningPage />}
+              {route.page === 'raporlar' && <ClinicalReportsPage />}
+              {route.page === 'gorevler' && <TasksPage />}
+              {route.page === 'ayarlar' && <SettingsPage canAdmin={canAdmin} />}
+              {route.page === 'denetim' && <AuditPage />}
+              {route.page === 'home' && <Dashboard user={user} />}
+            </>
+          )}
         </main>
         <SiteFooter onNewEntry={() => navigate('/seanslar')} />
       </div>

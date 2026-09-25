@@ -27,6 +27,9 @@ Sıra atlanırsa tipik belirtiler (canlı koşularda görüldü):
 | `B read A → DENY` + `code=NoSuchKey` | **Beklenen**: Storage nesnesi sahibi olmayana görünmüyor | Yok — bu bir kanıttır |
 | `CLEANUP → FAIL` (42501, hint `TO anon`) | Koşucu hatası: silme, oturum kapandıktan sonra denenmişti (düzeltildi) | Koşuyu güncel commit ile tekrarlayın |
 | `CLEANUP` grubunda `DENY` + `SKIP` | **Beklenen**: zincirde kilitli (LOCKED) klinik kayıt var; DB trigger'ı danışan silinmesini (cascade dahil) engelliyor | İsteğe bağlı: `cleanup-live-test-data.sql` §3 (arşivle) veya §4 (tam silme, uyarılı) |
+| **REAL BROWSER:** kayıt detayda görünüyor, listede 30 sn sonra YOK (`element(s) not found`) | **(düzeltildi, koşu #2)** bulut aktivasyonu tamamlanmadan yapılan yazım kuyruğa alınmıyordu ve hidrasyon yerel önbelleği sunucu anlık görüntüsüyle değiştiriyordu → sessiz veri kaybı | Güncel commit ile koşun: uygulama artık `[data-cloud-gate="loading"]` kapısı kalkmadan klinik içerik göstermez; yazım hiçbir durumda düşürülmez |
+| **REAL BROWSER:** `strict mode violation: getByRole('button', …) resolved to N elements` | **(düzeltildi, koşu #3)** satırda aynı adı taşıyan 3 düğme var (ad + düzenle/sil `aria-label`) | Güncel spec: satır `ownRow` (benzersiz protokol no), ad `nameButton` (`exact: true`) |
+| **REAL BROWSER:** `kayıt sunucuya yazılmadı (2xx yazım yanıtı yok)` | Yerel önbellekte görünmek yetmez: kayıt Supabase'e yazılmadı | Test çıktısındaki anotasyonlara bakın: `bulut yazımı` (HTTP durumu + gövde), `senkronizasyon şeridi`, `yerel depo` (kapsamlı/kapsamsız anahtar), `başarısız istekler` |
 
 ### Koşucunun kendi yapamadığı tek şey: kurum ataması
 
@@ -193,8 +196,10 @@ gerçek HTTP/kod alanları; sır yok).
 ### Kapsam dışı (ayrı raporlanır)
 
 - **REAL BROWSER:** gerçek Chromium koşusu gerekir. Bu kit için hazır spec:
-  `e2e/live-multi-user.spec.ts` (A ekler → yerel depo temizlenir + sayfa yenilir → kayıt yine
-  görünür → çıkış → B göremez → A yeniden görür → arayüzden siler).
+  `e2e/live-multi-user.spec.ts` (A ekler → **kaydın sunucuya yazıldığı 2xx yanıtıyla doğrulanır** →
+  yerel depo temizlenir + sayfa yenilir → kayıt yine görünür → çıkış → B göremez → A yeniden görür →
+  arayüzden siler). Uygulama, sunucu anlık görüntüsü yüklenene kadar klinik içerik göstermez
+  (`[data-cloud-gate="loading"]`); spec bu kapının kalkmasını bekler.
 
   ```bash
   npx playwright install chromium

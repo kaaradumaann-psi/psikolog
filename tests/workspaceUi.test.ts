@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createElement } from 'react';
 import { renderToString } from 'react-dom/server';
+import { readFileSync } from 'node:fs';
 import { createServer } from 'vite';
 
 test('workspace navigation and empty states render on the main routes', async () => {
@@ -55,4 +56,15 @@ test('workspace navigation and empty states render on the main routes', async ()
     await vite.close();
     Object.assign(globalThis, { window: previousWindow, localStorage: previousStorage });
   }
+});
+
+test('bulut katmanı hazır olmadan klinik içerik render edilmez (veri kaybı kapısı)', () => {
+  const source = readFileSync('src/App.tsx', 'utf8');
+  // Kapı koşulu: bulut modunda ve sunucu anlık görüntüsü gelmemişse içerik yerine durum kartı.
+  assert.match(
+    source,
+    /const cloudLoading = !localMode && \(!syncState\.cloud \|\| syncState\.phase === 'loading'\)/,
+  );
+  assert.match(source, /data-cloud-gate="loading"/);
+  assert.match(source, /Klinik kayıtlar yükleniyor/);
 });

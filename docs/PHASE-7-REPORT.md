@@ -283,11 +283,13 @@ Kaynak-of-truth testi: localStorage temizlenip yeniden yüklenince veri Supabase
 | Canlı doğrulama seed SQL'i + emit-seed | **PASS** | `tests/liveValidationSeed.test.ts` (7 kontrol: atama, idempotency, sessiz geçmeme, admin yokluğu, placeholder tekilliği, e-posta doldurma + parola yazmama, eksik env'de çıkış kodu 2) |
 | Canlı şema/verify SQL'i | **PASS** | `tests/liveValidationVerifySql.test.ts` (1 kontrol: 25+ nesne + 11 migration) |
 | Canlı Supabase kiti (`scripts/live-validation/run.mjs`) | **Kısmi — güvenlik kanıtları yeşil, CLEANUP raporlaması bekliyor** | Koşu #5 (kullanıcı makinesi, tam matris): **64 PASS · 17 DENY · 2 FAIL** (2 FAIL = kilitli kaydın cascade silmeyi engellemesi; tasarım gereği) |
-| Tarayıcı (Playwright, gerçek Chromium) | **FAILED (koşu #1) → spec düzeltildi, yeniden koşu bekliyor** | Sandbox'ta Chromium indirilemiyor (`cdn.playwright.dev` ECONNRESET). Kullanıcı makinesindeki ilk koşuda test, kayıt sonrası **liste satırını** bekledi; uygulama ise yeni danışanda `navigate('/danisanlar/<id>')` ile **detay sayfasına** gidiyor (`ClientListPage.handleSave`) → hata spec varsayımındaydı. Spec düzeltildi: modal kapanışı + `alert()` yakalama + form `checkValidity()` + detay `h1` doğrulaması + listeye dönüş + `E2E-` artık temizliği |
+| Tarayıcı (Playwright, gerçek Chromium) | **FAILED (#1 spec varsayımı · #2 uygulama veri kaybı yarışı · #3 spec belirsiz locator) → ikisi de düzeltildi, yeniden koşu bekliyor** | Sandbox'ta Chromium indirilemiyor (`cdn.playwright.dev` ECONNRESET); koşular kullanıcı makinesinde. **#1:** test kayıt sonrası liste satırını bekledi; uygulama yeni danışanda `navigate('/danisanlar/<id>')` ile detay sayfasına gidiyor (`ClientListPage.handleSave`) → spec varsayımı. **#2:** kayıt detayda görünüyor, listede 30 sn boyunca YOK → kök neden uygulamada: aktivasyon öncesi yazım `queueWrite` içinde sessizce düşürülüyordu (ne sunucuya ne kuyruğa) ve hidrasyon yerel önbelleği sunucu anlık görüntüsüyle değiştiriyordu → **sessiz veri kaybı**; gerçek kodla yerelde yeniden üretildi. Düzeltme: bulut hazır kapısı (`data-cloud-gate`) + aktivasyon öncesi yazımların kuyruğa alınması + `adoptBaseOutbox()` ile devir. **#3:** kayıt listede vardı, test strict mode ihlaliyle düştü (`getByRole('button', {name})` satırda 3 düğmeyle eşleşiyor) → spec düzeltildi (`ownRow` benzersiz protokol no + `nameButton` `exact: true`); #3 ayrıca kaybın deterministik değil **yarış** olduğunu gösterdi. Spec artık kaydın sunucuya yazıldığını `POST /rest/v1/clients → 2xx` ağ kanıtıyla zorunlu kılar |
 | Üretim (canlı Supabase + dağıtım) | **NOT VERIFIED** | Production bundle + dağıtım ortamı doğrulaması yapılmadı |
 
-Toplam: `npm test` → **145 test, 145 PASS, 0 FAIL**. `npx tsc --noEmit` → **PASS**.
-`npm run build` → **PASS** (vite 7.3.6, `dist/assets/index-*.js` 498.67 kB / gzip 139.37 kB).
+Toplam: `npm test` → **149 test, 149 PASS, 0 FAIL**. `npx tsc --noEmit` → **PASS**.
+`npm run build` → **PASS** (vite 7.3.6, `dist/assets/index-*.js` 499.68 kB / gzip 139.69 kB).
+Yeni testler: `P0-2: aktivasyon öncesi kayıt kuyruğa alınır` · `P0-2: aktivasyon tamamlanınca kuyruk sunucuya gider` ·
+`P0-2: bulutsuz modda davranış değişmez` · `bulut katmanı hazır olmadan klinik içerik render edilmez`.
 
 ---
 
@@ -322,7 +324,12 @@ Toplam: `npm test` → **145 test, 145 PASS, 0 FAIL**. `npx tsc --noEmit` → **
    Storage A PASS / B DENY (`NoSuchKey`, `AccessDenied`, 0 satır) · çıkış izolasyonu DENY ·
    CLEANUP `DENY` (immutability) + `PASS` (kayıt yerinde) + `SKIP` (bakım).
    Bu katman kapandı; **REAL BROWSER ve PRODUCTION katmanları hâlâ açık** (aşağıda 2 ve 3).
-2. **Gerçek tarayıcı doğrulaması — koşu #1 FAILED (spec varsayımı), düzeltildi; yeniden koşu bekliyor.**
+2. **Gerçek tarayıcı doğrulaması — #1 (spec varsayımı) · #2 (uygulama veri kaybı yarışı, düzeltildi) · #3 (spec belirsiz locator, düzeltildi); yeniden koşu bekliyor.**
+   #2'nin kök nedeni uygulama tarafındaydı ve gerçek kodla yerelde üretildi: aktivasyon tamamlanmadan
+   yapılan yazım `queueWrite` içinde sessizce düşürülüyordu (kuyruk yok) ve hidrasyon yerel önbelleği
+   sunucu anlık görüntüsüyle değiştiriyordu. Düzeltme: `src/App.tsx` bulut hazır kapısı,
+   `src/clinical/cloud/sync.ts` kuyruk + `adoptBaseOutbox()`, `bootstrap.ts` devir/tazeleme;
+   +4 test (149/149). RLS politikaları ve migration'lar değiştirilmedi.
    Kullanıcı makinesindeki ilk koşuda test, kaydı oluşturduktan sonra **liste satırını** bekledi ve
    bulamadı; kök neden uygulamada değil spec'te: `ClientListPage.handleSave` yeni danışanda
    `navigate('/danisanlar/<id>')` yapar, yani kayıt sonrası **detay sayfası** açılır. Spec artık
@@ -463,43 +470,38 @@ Not: `supabase/.temp/` (CLI yerel durumu), `.env.live` ve `live-validation-resul
 - TESTS: `phase7CloudSync` (belge), `phase7RlsMatrix` (storage DENY) · TYPECHECK: PASS · BUILD: PASS
 - BLOCKED: canlı Storage'a gerçek yükleme/indirme ve imzalı URL akışı
 
-### P0-8 — Regresyon / Canlı Doğrulama (FAILED — teşhis düzeltmesi yapıldı, yeniden koşu bekliyor)
+### P0-8 — Regresyon / Canlı Doğrulama (LIVE SUPABASE VERIFIED · REAL BROWSER açık · PRODUCTION açık)
 - CHANGED FILES (tur 1): `scripts/live-validation/{run.mjs,README.md,seed-live-test-orgs.sql,verify-migrations.sql}`, `docs/PHASE-7-LIVE-VALIDATION.md`
 - CHANGED FILES (tur 2 — teşhis): `run.mjs` (DbError/describeError/classifyError/unwrap, yeni `probe()` sınıflandırması,
   `SEMA` ön kontrolü, güçlendirilmiş anon matrisi, `--selftest`, FAIL nedenleri özeti, JSON `httpStatus/code/kind`),
   `seed-live-test-orgs.sql` (tek düzenleme noktası + uç durum teşhisi), `verify-migrations.sql`
   (semptom kararı + `supabase_migrations.schema_migrations` karşılaştırması), `README.md` (koşu sırası + kanıt kuralları),
   `tests/liveValidationSeed.test.ts`, `tests/liveValidationVerifySql.test.ts`, `docs/PHASE-7-LIVE-VALIDATION.md`
-- TESTS: `npm test` **142/142** · TYPECHECK: PASS · BUILD: PASS · `run.mjs --selftest` **8/8**
-- LIVE SUPABASE: **FAILED (kısmi — güvenlik kanıtları yeşil)** — koşu #5 (tam matris):
-  **64 PASS · 17 DENY · 2 FAIL**. Kanıtlar: anon 5/5 DENY (401/42501), B→A okuma/güncelleme/silme
-  DENY (0 satır) + B→A INSERT 403/42501, admin kapsam PASS, klinik zincir 27/27 + kalıcılık +
-  `session.appointment_id` + imza/kilit/revizyon + `superseded_by=rev2`, **kilitli UPDATE/DELETE
-  trigger reddi (400/P0001)**, Storage A PASS / B DENY (`NoSuchKey`, `AccessDenied`, 0 satır),
-  çıkış izolasyonu DENY. Kalan 2 FAIL = CLEANUP (kilitli kayıt cascade silmeyi engelliyor —
-  istenen immutability); koşucu bunu `DENY`+`SKIP` raporlayacak şekilde güncellendi.
-  Koşu #1'deki `[object Object]` kök nedeni: PostgREST hatası düz nesne (`String(error)` → `[object Object]`).
-  RLS politikalarında **değişiklik yok**; yalnız koşucu hata raporlama/sınıflandırma düzeltildi
-  (`grant-deny` / `rls-deny` / `missing-object` / `auth` / `network`).
-- REAL BROWSER: **NOT RUN** (sandbox'ta BLOCKED — Chromium ikilisi yok) · PRODUCTION: **NOT VERIFIED**
-- YENİ DOSYA: `scripts/live-validation/emit-seed.mjs` (seed SQL'ini `.env.live` e-postalarıyla doldurur;
-  parola okumaz/yazmaz) + `.gitignore` (`live-seed.local.sql`) + `run.mjs` "SIRADAKİ ADIM" rehberi
-- OTOMATİKLEŞTİRME: `run.mjs`, `kurum ataması` kapısı düştüğünde `live-seed.local.sql` dosyasını
-  kendisi üretir (e-postalar giriş yapılan gerçek hesaplardan); seed SQL'i tek `do $$` bloğuna
-  indirildi (geçici tablo yok), eşleşme yoksa mevcut auth e-postalarını NOTICE ile listeler ve
-  atamayı kendi içinde doğrular
-- KOŞU #4 DÜZELTMELERİ: `lock-deny` (P0001 + kilit metni) ve `not-found-deny` (storage `NoSuchKey`)
-  DENY kanıtı olarak sınıflandırılır; ilgisiz `P0001` hâlâ FAIL; CLEANUP oturum açıkken çalışır ve
-  silindiği ayrıca doğrulanır; `cleanup-live-test-data.sql` eski artıklar için eklendi
-- KOŞU #5 DÜZELTMESİ: CLEANUP akışı kilit korumasını tanır → kilitli kayıt varsa
-  `Kilitli klinik kayıt danışan silinmesini engelledi` **DENY** + `Kilitli kayıt hâlâ yerinde` **PASS**
-  + `Sentetik zincir temizliği` **SKIP** (bakım adımı); `cleanup-live-test-data.sql` yenilendi
-  (önizleme + arşivle + uyarılı tam silme + trigger durumu doğrulaması)
-- SIRADAKİ: (1) `node scripts/live-validation/run.mjs` (tekrar) → beklenti **FAIL 0**;
-  (2) isteğe bağlı artık bakımı: `cleanup-live-test-data.sql` §3 (arşivle);
-  (3) REAL BROWSER: `npm run test:e2e` (Chromium ikilisi gerekir) · PRODUCTION: dağıtım ortamı koşusu
-- **PHASE 7 COMPLETE DEĞİL** — LIVE SUPABASE için PASS yalnız `FAIL 0` koşusundan sonra yazılır
-- **PHASE 7 COMPLETE DEĞİL** (canlı doğrulama FAILED; PASS yazılmaz)
+- CHANGED FILES (kapanış — koşu #6): `scripts/live-validation/run.mjs` (CLEANUP `DENY` satırına `httpStatus`/`code`/`kind`
+  kanıt alanları), `docs/PHASE-7-LIVE-VALIDATION.md`, `docs/PHASE-7-REPORT.md`, `scripts/live-validation/README.md`
+  (REAL BROWSER + PRODUCTION runbook), `e2e/live-multi-user.spec.ts` (**YENİ** — REAL BROWSER kiti), `playwright.config.ts` (`E2E_BASE_URL`)
+- CHANGED FILES (tarayıcı koşusu #2/#3 düzeltmesi): `src/App.tsx` (bulut hazır kapısı: `data-cloud-gate="loading"`),
+  `src/clinical/cloud/sync.ts` (aktivasyon öncesi yazım kuyruğa alınır + `adoptBaseOutbox()`),
+  `src/clinical/cloud/bootstrap.ts` (kuyruk devri + gönderim sonrası anlık görüntü tazeleme),
+  `e2e/live-multi-user.spec.ts` (belirsiz locator → `ownRow` + `nameButton(exact)`, kaydın sunucuya yazıldığı
+  `POST /rest/v1/clients → 2xx` ağ kanıtıyla zorunlu), `tests/phase7CloudSync.test.ts` (+3), `tests/workspaceUi.test.ts` (+1),
+  `docs/PHASE-7-LIVE-VALIDATION.md`, `docs/PHASE-7-REPORT.md`, `scripts/live-validation/README.md`
+- TESTS: `npm test` **149/149** · TYPECHECK: PASS · BUILD: PASS (499.68 kB / gzip 139.69 kB) · `run.mjs --selftest` **13/13 + 5/5**
+- LIVE SUPABASE: **VERIFIED** — koşu #6 (kapanış): **65 PASS · 18 DENY · 0 FAIL · 1 SKIP**. Kanıtlar: AUTH 9 PASS, SEMA 9 PASS,
+  klinik zincir 29 PASS + kalıcılık, RLS 6 PASS / 11 DENY (anon `401/42501`, B→A okuma/güncelleme/silme DENY, B→A INSERT 403),
+  imza/kilit 5 PASS / 2 DENY (**kilitli UPDATE/DELETE `400/P0001`**), Storage 3 PASS / 3 DENY (`NoSuchKey`, `AccessDenied`, 0 satır),
+  çıkış izolasyonu 2 PASS / 1 DENY, CLEANUP `DENY` (kilit cascade'i engelledi) + `PASS` (kayıt yerinde) + `SKIP` (bakım adımı).
+  RLS politikalarında **hiç değişiklik yok**; mutabakat, kilit trigger'ları ve DENY sınıflandırması canlıda doğrulandı.
+- REAL BROWSER: **NOT RUN** — 3 başarısız koşu:
+  #1 spec varsayımı (yeni danışan detay sayfasına yönlenir) · #2 **uygulama veri kaybı yarışı** (aktivasyon öncesi yazım
+  sessizce düşürülüyordu + hidrasyon yerel önbelleği sunucu anlık görüntüsüyle değiştiriyordu; gerçek kodla yerelde
+  yeniden üretildi ve düzeltildi) · #3 spec belirsiz locator (satırda 3 düğme eşleşiyordu; `exact`/satır bazlı locator'a geçildi).
+  Ayrıntılı kök neden + düzeltme tabloları: `docs/PHASE-7-LIVE-VALIDATION.md` §6.5.
+- PRODUCTION: **NOT VERIFIED** — production bundle + dağıtım ortamı koşusu yapılmadı (§6.6 runbook hazır).
+- SIRADAKİ: (1) düzeltilmiş spec ile gerçek tarayıcı koşusu (`npx playwright test e2e/live-multi-user.spec.ts --project=chromium`);
+  (2) PRODUCTION koşusu (`npm run build` → `npm run preview` → `E2E_BASE_URL=http://localhost:4173 npx playwright test --project=chromium`);
+  (3) isteğe bağlı artık bakımı: `cleanup-live-test-data.sql` §3 (arşivle) / §4 (uyarılı tam silme, yalnız `LIVE-%`/`E2E-%`).
+- **PHASE 7 COMPLETE DEĞİL** — LIVE SUPABASE VERIFIED olsa da REAL BROWSER ve PRODUCTION katmanları açıktır.
 
 ---
 

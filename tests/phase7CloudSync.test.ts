@@ -10,9 +10,11 @@ import assert from 'node:assert/strict';
 import type { CloudFilter, CloudRow, CloudPort } from '../src/clinical/cloud/port';
 import {
   activateCloud,
+  adoptBaseOutbox,
   bindCloud,
   cacheKey,
   cloudContext,
+  cloudWritesExpected,
   deactivateCloud,
   flushOutbox,
   getSyncState,
@@ -467,4 +469,68 @@ test('P0-7: belge yüklemesi Storage yolunu ve metadata satırını üretir; sil
   assert.equal(removed.length, 1);
   assert.equal((await port.select('documents')).length, 0);
   deactivateCloud();
+});
+
+/* -------------------------------------------------------------------------- */
+/* P0-2/REAL BROWSER koşu #2 — aktivasyon öncesi yazım sessizce DÜŞMEMELİ        */
+/* -------------------------------------------------------------------------- */
+
+test('P0-2: bulut aktivasyonu tamamlanmadan yapılan kayıt kuyruğa alınır (sessiz veri kaybı yok)', async () => {
+  localStorage.clear();
+  const port = new MemoryPort();
+  // Sayfa yeni açıldı: bulut hesabı var ama aktivasyon (13 okuma) henüz bitmedi.
+  bind(port);
+  deactivateCloud();
+  assert.equal(getSyncState().cloud, false);
+
+  saveClient(makeClient('cli_pre_activation', 'HK-PRE-1'));
+
+  // Sunucuya istek gitmedi ama kayıt kaybolmadı: kuyrukta bekliyor.
+  assert.equal((await port.select('clients')).length, 0);
+  assert.equal(getSyncState().pending, 1);
+  assert.equal(getSyncState().phase, 'saving');
+  const baseOutbox = JSON.parse(localStorage.getItem('outbox') ?? '[]') as unknown[];
+  assert.equal(baseOutbox.length, 1, 'aktivasyon öncesi yazım kuyruğa alınmalı');
+  // Yerel görünürlük korunur (kullanıcı kaydı hemen görür).
+  assert.equal(getClients().length, 1);
+  deactivateCloud();
+});
+
+test('P0-2: aktivasyon tamamlanınca kuyruktaki kayıt sunucuya gönderilir ve kapsamlı kuyruk boşalır', async () => {
+  localStorage.clear();
+  const port = new MemoryPort();
+  bind(port);
+  deactivateCloud();
+  saveClient(makeClient('cli_pre_activation', 'HK-PRE-1'));
+  assert.equal(getSyncState().pending, 1);
+
+  // Aktivasyon tamamlandı: bağlam kuruldu, kuyruk kapsamlı ad alanına taşınır.
+  bind(port);
+  const adopted = adoptBaseOutbox();
+  assert.equal(adopted, 1);
+  assert.equal(localStorage.getItem('outbox'), null, 'kapsamsız kuyruk temizlenmeli');
+
+  const sent = await flushOutbox();
+  assert.equal(sent, 1);
+  const rows = await port.select('clients');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]!.file_number, 'HK-PRE-1');
+  assert.equal(rows[0]!.owner_user_id, USER);
+  // Kuyruk boşaldı; ikinci aktarım kopya üretmez.
+  assert.equal(getSyncState().pending, 0);
+  assert.equal(adoptBaseOutbox(), 0);
+  assert.equal(await flushOutbox(), 0);
+  assert.equal((await port.select('clients')).length, 1);
+  deactivateCloud();
+});
+
+test('P0-2: bulutsuz (yerel) kurulumda kuyruk oluşmaz — davranış değişmez', async () => {
+  localStorage.clear();
+  // Bu test dosyasında bulut bağlanmadıysa `cloudWritesExpected()` yalnız
+  // yapılandırmaya bakar; yapılandırma yoksa yazım eskisi gibi yerelde kalır.
+  if (cloudWritesExpected()) return;
+  saveClient(makeClient('cli_local_only', 'HK-LOCAL-1'));
+  assert.equal(localStorage.getItem('outbox'), null);
+  assert.equal(getSyncState().pending, 0);
+  assert.equal(getClients().length, 1);
 });

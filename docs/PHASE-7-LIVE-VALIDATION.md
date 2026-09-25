@@ -8,9 +8,9 @@ Bu belge yalnızca **canlı doğrulama** (P0-8) katmanını raporlar ve katmanla
 
 | Katman | Sonuç | Kanıt |
 |---|---|---|
-| **LOCAL / PGlite** | **PASS** | `npm test` **145/145** (142 + 3 yeni emit-seed kontrolü), `phase7RlsMatrix` 14/14, `phase7LockChain` 11/11, `liveValidationSeed` 7/7, `liveValidationVerifySql` 1/1 |
+| **LOCAL / PGlite** | **PASS** | `npm test` **149/149** (145 + 3 bulut aktivasyon yarışı + 1 render kapısı testi), `phase7RlsMatrix` 14/14, `phase7LockChain` 11/11, `liveValidationSeed` 7/7, `liveValidationVerifySql` 1/1 |
 | **LIVE SUPABASE** | **VERIFIED** (REST/Auth/Storage düzeyinde) | **Koşu #6: 65 PASS · 18 DENY · 0 FAIL · 1 SKIP** — `liveSupabase: "VERIFIED"` (§0) |
-| **REAL BROWSER** | **NOT RUN** | Chromium ikilisi sandbox'ta indirilemiyor (`cdn.playwright.dev` ECONNRESET); spec + runbook hazır (§6.5) |
+| **REAL BROWSER** | **NOT RUN** | 3 başarısız koşu (#1 spec varsayımı · #2 **uygulama veri kaybı yarışı** · #3 spec belirsiz locator); ikisi de düzeltildi, yeni koşu bekliyor (§6.5) |
 | **PRODUCTION** | **NOT VERIFIED** | Production bundle + dağıtım ortamı koşusu yapılmadı; `E2E_BASE_URL` ile koşulabilir (§6.6) |
 
 > `PGlite PASS — Production NOT VERIFIED` **ile** `LIVE SUPABASE VERIFIED` aynı şey değildir.
@@ -452,9 +452,16 @@ RLS politikalarında **hiçbir değişiklik yapılmadı**.
 | `scripts/live-validation/cleanup-live-test-data.sql` | `E2E-%` öneki de kapsama alındı (tarayıcı testinin ürettiği kayıtlar) |
 | `playwright.config.ts` | `E2E_BASE_URL` desteği: production/preview bundle'a karşı koşu (dev sunucusu kapanır) |
 | `docs/PHASE-7-LIVE-VALIDATION.md` | bu belge (koşu #4 tam matrisi, 4 FAIL'in kök nedeni, artık veri notu) |
+| `src/App.tsx` (koşu #2 düzeltmesi) | **bulut hazır kapısı**: sunucu anlık görüntüsü yüklenene kadar klinik içerik render edilmez (`data-cloud-gate="loading"`) |
+| `src/clinical/cloud/sync.ts` (koşu #2 düzeltmesi) | aktivasyon öncesi yazım kuyruğa alınır (sessiz veri kaybı yok) + `adoptBaseOutbox()` |
+| `src/clinical/cloud/bootstrap.ts` (koşu #2 düzeltmesi) | aktivasyonda kuyruk devri + gönderim sonrası anlık görüntü tazeleme |
+| `tests/phase7CloudSync.test.ts` | +3 test: aktivasyon öncesi yazım kaybolmaz · kuyruk devriyle sunucuya gider · bulutsuz modda davranış değişmez |
+| `tests/workspaceUi.test.ts` | +1 test: bulut kapısı kaynak güvencesi |
 
-**Dokunulmayanlar:** RLS politikaları, migration dosyaları, uygulama kodu (feature/UI değişikliği yok),
-`src/**`, `supabase/migrations/**`.
+**Dokunulmayanlar (tüm P0-8 turları):** RLS politikaları, migration dosyaları, `supabase/migrations/**`,
+kimlik doğrulama akışı, klinik özellikler/UI tasarımı. **Tek uygulama kodu değişikliği** koşu #2'nin
+veri kaybı yarışı düzeltmesidir (`src/App.tsx`, `src/clinical/cloud/{sync,bootstrap}.ts`); yeni özellik
+eklenmedi, mevcut ekranların yerleşimi/gezinmesi değişmedi.
 
 ---
 
@@ -591,6 +598,88 @@ ekranda değil. Koşu ayrıca `alert()` yakalamadığı için kaydetme sessizce 
 
 İlk başarısız koşudan kalan `E2E-MUHA5DLU` kaydı bu mekanizmayla (veya
 `cleanup-live-test-data.sql` ile — betik artık `E2E-%` önekini de kapsar) temizlenir.
+
+#### Gerçek tarayıcı koşusu #2 (2026-09-25, kullanıcı makinesi) — FAILED (UYGULAMA: veri kaybı yarışı)
+
+Spec düzeltmesinden sonraki koşu (33 sn), kaydın **detay sayfasında** görünmesine rağmen **liste
+sayfasında** 30 sn boyunca hiç görünmediğini gösterdi:
+
+```
+Locator: getByRole('button', { name: 'E2E Tarayici muhaecmg' })
+Error: element(s) not found          (30 sn sonra)
+  143 | await openClients(page);
+> 145 | await expect(clientRow).toBeVisible({ timeout: 30_000 });
+```
+
+**Kök neden (uygulama tarafında, gerçek kodla yeniden üretildi):** bulut aktivasyonu
+(`activateCloud`: 13 paralel `select`) tamamlanmadan yapılan her yazım `queueWrite` içinde
+**sessizce düşürülüyordu** — ne sunucuya gidiyor ne kuyruğa giriyordu:
+
+```ts
+export function queueWrite(intent: WriteIntent): Promise<void> {
+  if (!port || !context) return Promise.resolve();   // ← yazım kaybolur (kuyruk yok)
+  ...
+}
+```
+
+Ardından hidrasyon (`applyClinicalSnapshot`) yerel önbelleği **sunucu anlık görüntüsüyle
+değiştirdiği** için kayıt arayüzden de siliniyordu. Yerel kanıt (bu depoda, gerçek `clinicalStore`
++ `sync` koduyla):
+
+```
+1) hidrasyon öncesi durum: {"cloud":false,"phase":"inactive","pending":0}
+2) kayıt sonrası buluta giden INSERT sayısı: 0
+   outbox anahtarı var mı: 0                                ← kuyruğa da girmedi
+   yazılan yerel anahtarlar: [ 'psikolog_clients_v2' ]      ← kapsamsız ad alanı
+3) liste (hidrasyon sonrası) görüyor mu: 0 kayıt
+```
+
+`ClientListPage.handleSave` yazma sonucunu beklemediği için kayıt yine de detay sayfasına
+yönleniyordu; kayıp ancak liste/yenileme sonrası görünür oluyordu. Bu **sessiz veri kaybı**
+sınıfındadır ("kirli başarı" değil, doğrudan kayıt kaybı).
+
+**Düzeltmeler (uygulama + test):**
+
+| # | Düzeltme | Dosya |
+|---|---|---|
+| 1 | Sunucu anlık görüntüsü yüklenene kadar klinik içerik render edilmez (`[data-cloud-gate="loading"]`): hazır olmadan kayıt oluşturulamaz | `src/App.tsx` |
+| 2 | Aktivasyon öncesi yazımlar **kuyruğa alınır** (sessizce düşürülmez) | `src/clinical/cloud/sync.ts` |
+| 3 | Aktivasyonda kapsamsız kuyruk kapsamlı ad alanına taşınır (`adoptBaseOutbox`), gönderilir ve gönderim olduysa anlık görüntü tazelenir | `src/clinical/cloud/sync.ts`, `src/clinical/cloud/bootstrap.ts` |
+| 4 | Spec: kaydın sunucuya yazıldığı **ağ kanıtıyla** zorunlu kılınır (`POST /rest/v1/clients → 2xx`); başarısızlıkta şerit/yerel depo/çağrı özeti anotasyonlara yazılır | `e2e/live-multi-user.spec.ts` |
+| 5 | 3 yeni regresyon testi (yarış + kuyruk devri + bulutsuz mod) + 1 kapı kaynak testi | `tests/phase7CloudSync.test.ts`, `tests/workspaceUi.test.ts` |
+
+Not: yerel (bulutsuz) mod değişmez — bulut yapılandırılmamışsa davranış eskisi gibi yereldir
+(test: `P0-2: bulutsuz (yerel) kurulumda kuyruk oluşmaz`).
+
+#### Gerçek tarayıcı koşusu #3 (2026-09-25, kullanıcı makinesi) — FAILED (spec: belirsiz locator)
+
+Üçüncü koşu 2,9 sn sürdü ve bu kez kayıt listede **vardı**; test Playwright strict mode ihlaliyle düştü:
+
+```
+Error: strict mode violation: getByRole('button', { name: 'E2E Tarayici muhappu7' }) resolved to 3 elements:
+  1) <button class="client-name-button">E2E Tarayici muhappu7</button>
+  2) <button title="Danışan bilgilerini düzenle" aria-label="E2E Tarayici muhappu7 bilgilerini düzenle">
+  3) <button title="Danışanı sil" aria-label="E2E Tarayici muhappu7 kaydını sil">
+```
+
+Üç sonuç:
+
+1. **Spec hatası:** satırda aynı adı taşıyan 3 düğme vardır (ad düğmesi + düzenle/sil `aria-label`'ları).
+   Düzeltme: satır artık benzersiz protokol numarasıyla (`ownRow(...)`) bulunur, ad doğrulaması
+   `nameButton(...)` (`exact: true`) ile yapılır.
+2. **Kayıp deterministik değil, yarış:** koşu #3'te üretilen kayıt (aynı spec, aynı hız) listede
+   göründü — yani aktivasyon bazen kayıttan önce bitiyor. Kaydın kapsamlı ad alanına yazılmış olması
+   yazımın sunucuya **gönderildiğini** gösterir; ancak yanıtın 2xx olduğu bu koşuda kanıtlanmadı
+   (yerel önbellekte görünmek yeterli değildir) → bu yüzden spec artık 2xx yazım yanıtını şart koşar.
+3. Koşu #3 başındaki self-healing taraması **0 artık** buldu. Koşu #2'nin kaydı ya hiç yazılmadı ya da
+   arada kullanıcı tarafından temizlendi (cleanup SQL); kesin olan, koşu #2'nin kaydının listede hiç
+   görünmediğidir (madde 2'deki yarış ile tutarlı).
+
+**Durum:** üç koşu da FAILED · REAL BROWSER hâlâ **NOT RUN** · düzeltmelerden sonra yeniden koşu bekliyor.
+Koşu #3 test kaydı (`E2E-MUHAPPU7`) strict mode adımında düştüğü için arayüzden silinemedi; sunucuda
+kalmış olabilir. Yeni spec başlangıçtaki self-healing adımıyla `E2E-` önekli tüm artıkları siler;
+alternatif olarak `cleanup-live-test-data.sql` (§3 arşivle / §4 uyarılı tam silme) kapsamı `E2E-%`
+önekini de içerir.
 
 ### 6.6 PRODUCTION runbook (kendi makinenizde)
 

@@ -91,6 +91,12 @@ const CACHE_PREFIX = 'psikolog:';
 
 let context: CloudContext | null = null;
 let port: CloudPort | null = null;
+/**
+ * Bu oturumda bulut bekleniyor mu? (yapılandırma ya da daha önce bağlanmış
+ * bulut oturumu). Aktivasyon tamamlanmadan yapılan yazımların sessizce
+ * düşürülmemesi için kullanılır; yerel (bulutsuz) kurulumda false kalır.
+ */
+let cloudExpected = isCloudConfigured();
 let state: SyncState = { cloud: false, phase: 'inactive', pending: 0 };
 const listeners = new Set<(next: SyncState) => void>();
 
@@ -297,7 +303,17 @@ export async function whenIdle(): Promise<void> {
 }
 
 export function queueWrite(intent: WriteIntent): Promise<void> {
-  if (!port || !context) return Promise.resolve();
+  if (!port || !context) {
+    // Bulut bağlamı henüz hazır değil (aktivasyon sürüyor ya da oturum yeni
+    // kuruldu). Yazımı sessizce düşürmek veri kaybı olurdu: kuyruğa alınır ve
+    // aktivasyon tamamlanınca `adoptBaseOutbox()` ile kapsamlı kuyruğa taşınır.
+    if (!cloudWritesExpected()) return Promise.resolve();
+    const items = readOutbox();
+    items.push({ id: crypto.randomUUID(), at: Date.now(), intent });
+    writeOutbox(items);
+    setState({ phase: 'saving', lastError: undefined });
+    return Promise.resolve();
+  }
   setState({ phase: 'saving', lastError: undefined });
   const task = execute(intent)
     .then(() => {
@@ -319,6 +335,31 @@ export function queueWrite(intent: WriteIntent): Promise<void> {
     });
   inFlight.add(task);
   return task;
+}
+
+/**
+ * Bağlam kurulmadan (aktivasyon sürerken) kuyruğa alınan yazımları kapsamlı
+ * kuyruğa taşır. `cacheKey` bağlama göre değiştiği için bu adım olmadan o
+ * kayıtlar hiçbir zaman gönderilmez (sessiz veri kaybı).
+ */
+export function adoptBaseOutbox(): number {
+  if (typeof localStorage === 'undefined' || !context) return 0;
+  let base: OutboxItem[] = [];
+  try {
+    const raw = localStorage.getItem(OUTBOX_SUFFIX);
+    const parsed = raw ? (JSON.parse(raw) as OutboxItem[]) : [];
+    base = Array.isArray(parsed) ? parsed : [];
+  } catch {
+    base = [];
+  }
+  if (!base.length) return 0;
+  writeOutbox([...readOutbox(), ...base]);
+  try {
+    localStorage.removeItem(OUTBOX_SUFFIX);
+  } catch {
+    /* kota doluysa kapsamsız kuyruk kalır; sonraki aktivasyonda yeniden denenir */
+  }
+  return base.length;
 }
 
 export async function flushOutbox(): Promise<number> {
@@ -346,6 +387,11 @@ export function isCloudConfigured(): boolean {
   return supabaseConfig.configured && supabase !== null;
 }
 
+/** Bulut yazımı bekleniyor mu? (yapılandırma ya da bu oturumda bağlanmış bulut) */
+export function cloudWritesExpected(): boolean {
+  return cloudExpected || isCloudConfigured();
+}
+
 export function canUseCloud(user: AuthenticatedUser | null): boolean {
   return Boolean(user && user.organizationId && isCloudConfigured());
 }
@@ -361,6 +407,7 @@ export async function activateCloud(user: AuthenticatedUser): Promise<repo.Clini
     throw new Error('Bulut yapılandırılmamış.');
   }
   idMap = null;
+  cloudExpected = true;
   context = { userId: user.id, organizationId: user.organizationId, resolveId: toCloudId };
   port = createSupabasePort(client as never);
   setState({ cloud: true, phase: 'loading', lastError: undefined, pending: readOutbox().length });
@@ -386,6 +433,7 @@ export function deactivateCloud(): void {
 
 /** Test/ileri düzey kullanım: port ve bağlamı doğrudan bağlar. */
 export function bindCloud(nextContext: CloudContext, nextPort: CloudPort): void {
+  cloudExpected = true;
   context = nextContext;
   port = nextPort;
   setState({ cloud: true, phase: 'ready' });

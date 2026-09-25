@@ -1,9 +1,17 @@
 /**
- * Taslak ve çevrimdışı kuyruk.
- * React state tek doğruluk kaynağı, bu modül localStorage aynası
- * localStorage: küçük JSON <1MB, eşzamanlı, sekme kapanıp açılsa yaşar
- * OMR ham görselleri gibi türetilmiş artefakt yok, sadece danışan formu
- * Kayıt ağ hatasıyla düşerse aynı idempotencyKey ile outbox'a alınır, bağlantı gelince retry
+ * Taslak ve çevrimdışı kuyruk yardımcıları.
+ *
+ * SINIFLANDIRMA (PHASE-07 / P0-6):
+ * - `isNetworkError` ÜRETİMDE kullanılır: bulut senkronizasyon kuyruğu
+ *   (`src/clinical/cloud/sync.ts`) ağ hatalarını bu fonksiyonla ayırır.
+ * - `createDraft`/`saveDraft`/`loadDraft`/`clearDraft`/outbox yardımcıları
+ *   üretimde bağlı DEĞİLDİR; bulut kuyruğu (outbox) aynı işi tüm klinik
+ *   varlıklar için yaptığı için bunlar yedek güvenlik ağı olarak SUNULMAZ.
+ *   Yalnızca test edilmiş, ileride çevrimdışı form taslağı için tutulan
+ *   yardımcılardır (bkz. PHASE-7 raporu "Kalan Riskler").
+ *
+ * Yeniden kullanılabilirlik: React state tek doğruluk kaynağıdır, bu modül
+ * localStorage aynasıdır; ağ hatasında aynı idempotencyKey ile kuyruğa alınır.
  */
 
 export const DRAFT_VERSION = 1 as const;

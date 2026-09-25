@@ -24,6 +24,14 @@ export type TreatmentGoal = {
 
 export type CaseFormulation = {
   clientId: string;
+  /** Bulut kaydının kimliği ve imza/kilit durumu (P0-5) */
+  id?: string;
+  status?: 'draft' | 'signed' | 'locked';
+  revision?: number;
+  amendmentOf?: string;
+  amendmentReason?: string;
+  signedAt?: string;
+  lockedAt?: string;
   modality: string;
   predisposing: string;
   precipitating: string;
@@ -36,6 +44,13 @@ export type CaseFormulation = {
 
 export type SafetyPlan = {
   clientId: string;
+  id?: string;
+  status?: 'draft' | 'signed' | 'locked';
+  revision?: number;
+  amendmentOf?: string;
+  amendmentReason?: string;
+  signedAt?: string;
+  lockedAt?: string;
   warningSigns: string;
   coping: string;
   people: string;

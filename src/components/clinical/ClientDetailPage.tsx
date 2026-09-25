@@ -11,9 +11,12 @@ import type {
   PaymentStatus,
 } from '../../clinical/clinicalTypes';
 import {
+  createSessionRevision,
   getClientById,
   getSessionsByClientId,
+  lockSoapSession,
   saveSoapSession,
+  signSoapSession,
   deleteSoapSession,
   getBeckDepressionTests,
   getBeckAnxietyTests,
@@ -26,6 +29,8 @@ import type { RapidScreeningResult } from '../../clinical/rapidScreening';
 import { getSafetyPlan, getScreenings, getSettings, subscribePracticeStore } from '../../clinical/practiceStore';
 import { clinicToday, maskTc } from '../../clinical/recordRules';
 import { ClinicalDialog } from './ClinicalDialog';
+import { ConfirmDialog } from '../ConfirmDialog';
+import { RecordLockActions, RecordStatusBadge } from './RecordLockActions';
 import { Icon } from '../Icon';
 import { FormulationPanel } from './FormulationPanel';
 import { ScoreChips } from './ScoreChips';
@@ -66,6 +71,7 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
   // SOAP modal state
   const [soapModalOpen, setSoapModalOpen] = useState(false);
   const [editingSession, setEditingSession] = useState<SoapSession | null>(null);
+  const [pendingSoapDelete, setPendingSoapDelete] = useState<SoapSession | null>(null);
   const [soapForm, setSoapForm] = useState<Partial<SoapSession>>({
     sessionNumber: 1,
     date: clinicToday(),
@@ -192,9 +198,17 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
     setSoapModalOpen(false);
   }
 
-  function handleDeleteSoap(id: string) {
-    if (confirm('Bu seans notunu silmek istediğinize emin misiniz?')) {
-      deleteSoapSession(id);
+  function handleDeleteSoap(session: SoapSession) {
+    setPendingSoapDelete(session);
+  }
+
+  function confirmDeleteSoap() {
+    const session = pendingSoapDelete;
+    if (!session) return;
+    try {
+      deleteSoapSession(session.id);
+    } finally {
+      setPendingSoapDelete(null);
     }
   }
 
@@ -340,16 +354,27 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
                         <div className="soap-date-text">{s.date} · Saat {s.startTime} ({s.durationMinutes} dk)</div>
                       </div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <RecordStatusBadge status={s.status} revision={s.revision} />
                       <span className={`badge badge-risk-${s.riskLevel}`}>
                         Risk: {s.riskLevel === 'none' ? 'Yok' : s.riskLevel === 'low' ? 'Düşük' : s.riskLevel === 'moderate' ? 'Orta' : 'Yüksek!'}
                       </span>
-                      <button type="button" className="btn-secondary btn-sm" onClick={() => openEditSessionModal(s)}>
-                        <Icon name="edit" size={14} />
-                      </button>
-                      <button type="button" className="btn-secondary btn-sm" style={{ color: 'var(--danger)' }} onClick={() => handleDeleteSoap(s.id)}>
-                        <Icon name="trash" size={14} />
-                      </button>
+                      {s.status !== 'locked' && (
+                        <button type="button" className="btn-secondary btn-sm" title="Seans notunu düzenle" onClick={() => openEditSessionModal(s)}>
+                          <Icon name="edit" size={14} />
+                        </button>
+                      )}
+                      {s.status !== 'locked' && (
+                        <button type="button" className="btn-secondary btn-sm" style={{ color: 'var(--danger)' }} title="Seans notunu sil" onClick={() => handleDeleteSoap(s)}>
+                          <Icon name="trash" size={14} />
+                        </button>
+                      )}
+                      <RecordLockActions
+                        status={s.status}
+                        onSign={() => signSoapSession(s.id)}
+                        onLock={() => lockSoapSession(s.id)}
+                        onRevise={reason => createSessionRevision(s.id, reason)}
+                      />
                     </div>
                   </div>
 
@@ -710,6 +735,16 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
             </div>
           )}
         </div>
+      )}
+
+      {pendingSoapDelete && (
+        <ConfirmDialog
+          title="Seans notunu sil"
+          description={`#${pendingSoapDelete.sessionNumber} · ${pendingSoapDelete.date} seans notu silinecek. Bu işlem geri alınamaz.`}
+          confirmLabel="Seans notunu sil"
+          onConfirm={confirmDeleteSoap}
+          onCancel={() => setPendingSoapDelete(null)}
+        />
       )}
 
       {/* SOAP Modal */}

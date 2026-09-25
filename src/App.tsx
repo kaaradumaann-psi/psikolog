@@ -3,6 +3,8 @@ import type { FormEvent } from 'react';
 import type { AuthenticatedUser } from './auth/authTypes';
 import { displayName } from './auth/userDisplay';
 import { supabaseConfig } from './auth/supabaseClient';
+import { startClinicalCloud, stopClinicalCloud } from './clinical/cloud/bootstrap';
+import { CloudSyncBanner } from './components/CloudSyncBanner';
 import { getSession, onAuthChange, signIn, signOut, userFromSession } from './auth/supabaseAuth';
 import { AppointmentsPage } from './components/clinical/AppointmentsPage';
 import { AssessmentHubPage } from './components/clinical/AssessmentHubPage';
@@ -238,7 +240,11 @@ function CloudGate() {
       user={user}
       localMode={false}
       onLogout={() => {
-        void signOut().finally(() => navigate('/', { replace: true }));
+        void signOut().finally(() => {
+          // Çıkışta kullanıcıya ait klinik cache/draft temizlenir (P0-6)
+          stopClinicalCloud({ purge: true });
+          navigate('/', { replace: true });
+        });
       }}
     />
   );
@@ -247,6 +253,20 @@ function CloudGate() {
 function WorkspaceShell({ user, onLogout, localMode }: { user: AuthenticatedUser; onLogout: () => void; localMode: boolean }) {
   const route = useRoute();
   const [storageError, setStorageError] = useState<string | null>(null);
+  const [cloudError, setCloudError] = useState<string | null>(null);
+
+  // Oturum açıldığında klinik veri Supabase'den yüklenir (tek doğruluk kaynağı).
+  useEffect(() => {
+    if (localMode) return;
+    let cancelled = false;
+    startClinicalCloud(user).catch((reason: unknown) => {
+      if (!cancelled) setCloudError(reason instanceof Error ? reason.message : 'Klinik veriler sunucudan yüklenemedi.');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [localMode, user]);
+
   useEffect(() => {
     const onError = (event: Event) => {
       const detail = (event as CustomEvent<string>).detail;
@@ -295,7 +315,9 @@ function WorkspaceShell({ user, onLogout, localMode }: { user: AuthenticatedUser
           <div className="sidebar-privacy">
             <span className="sidebar-privacy-icon"><Icon name="shield" size={18} /></span>
             <strong>{localMode ? 'Yerel çalışma alanı' : 'Bulut hesabı açık'}</strong>
-            <p>{localMode ? 'Kayıtlar bu tarayıcıda tutulur ve şifrelenmez. Düzenli yedek alın.' : 'Yerel klinik kayıtlar bu cihazda tutulur. Hesap ayarlarınızı kontrol edin.'}</p>
+            <p>{localMode
+              ? 'Kayıtlar bu tarayıcıda tutulur ve şifrelenmez. Düzenli yedek alın.'
+              : 'Klinik kayıtlar sunucuda (Supabase) tutulur; bu cihazda yalnızca önbellek bulunur.'}</p>
             <a href="/ayarlar">Ayarları aç <Icon name="arrowRight" size={14} /></a>
           </div>
           <span className="sidebar-version">PSİKOLOG · KLİNİK ÇALIŞMA ALANI</span>
@@ -341,6 +363,8 @@ function WorkspaceShell({ user, onLogout, localMode }: { user: AuthenticatedUser
           </div>
         </header>
         <ConnectivityBanner />
+        {!localMode && <CloudSyncBanner />}
+        {cloudError && <p className="shell-alert" role="alert">{cloudError}</p>}
         {storageError && <p className="shell-alert" role="alert">{storageError}</p>}
         <main className="app-main" id="main" tabIndex={-1}>
           {route.page === 'danisan' && <ClientDetailPage clientId={route.id} />}

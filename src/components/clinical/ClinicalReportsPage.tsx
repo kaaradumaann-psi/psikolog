@@ -6,8 +6,11 @@ import type {
   ReportSection,
 } from '../../clinical/clinicalTypes';
 import {
+  createClinicalReportRevision,
   getClinicalReports,
+  lockClinicalReport,
   saveClinicalReport,
+  signClinicalReport,
   deleteClinicalReport,
   getClients,
   getBeckDepressionTests,
@@ -20,6 +23,8 @@ import { getFormulation, getScreenings, getSettings } from '../../clinical/pract
 import { getSessionsByClientId } from '../../clinical/clinicalStore';
 import { clinicToday, isSafeImageUrl } from '../../clinical/recordRules';
 import { Icon } from '../Icon';
+import { ConfirmDialog } from '../ConfirmDialog';
+import { RecordLockActions, RecordStatusBadge } from './RecordLockActions';
 
 export function ClinicalReportsPage() {
   const [reports, setReports] = useState<ClinicalReport[]>(() => getClinicalReports());
@@ -27,6 +32,8 @@ export function ClinicalReportsPage() {
   const [reportClientId, setReportClientId] = useState('');
   const [activeReport, setActiveReport] = useState<ClinicalReport | null>(() => reports[0] || null);
   const [isEditing, setIsEditing] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<ClinicalReport | null>(null);
+  const [lockError, setLockError] = useState<string | null>(null);
 
   // Form State
   const [reportForm, setReportForm] = useState<Partial<ClinicalReport>>({
@@ -172,17 +179,41 @@ export function ClinicalReportsPage() {
   }
 
   function startEdit(rep: ClinicalReport) {
+    if (rep.lockedAt) {
+      setLockError('Kilitli rapor düzenlenemez. Düzeltme için yeni revizyon oluşturun.');
+      return;
+    }
     setActiveReport(rep);
     setReportForm({ ...rep });
     setIsEditing(true);
   }
 
-  function handleDelete(id: string) {
-    if (confirm('Bu klinik raporu silmek istediğinize emin misiniz?')) {
-      deleteClinicalReport(id);
-      const remaining = reports.filter(r => r.id !== id);
+  function handleDelete(rep: ClinicalReport) {
+    setPendingDelete(rep);
+  }
+
+  function confirmDeleteReport() {
+    const report = pendingDelete;
+    if (!report) return;
+    try {
+      deleteClinicalReport(report.id);
+      const remaining = reports.filter(r => r.id !== report.id);
       setActiveReport(remaining[0] || null);
       setIsEditing(false);
+      setLockError(null);
+    } catch (error) {
+      setLockError(error instanceof Error ? error.message : 'Rapor silinemedi.');
+    } finally {
+      setPendingDelete(null);
+    }
+  }
+
+  function runLockAction(action: () => void) {
+    try {
+      action();
+      setLockError(null);
+    } catch (error) {
+      setLockError(error instanceof Error ? error.message : 'İşlem tamamlanamadı.');
     }
   }
 
@@ -235,6 +266,9 @@ export function ClinicalReportsPage() {
                 <strong>{r.clientName}</strong>
                 <span>{r.reportTitle}</span>
                 <small>{r.reportDate}</small>
+                <div style={{ marginTop: 4 }}>
+                  <RecordStatusBadge status={r.lockedAt ? 'locked' : r.signedAt ? 'signed' : 'draft'} revision={r.revision} />
+                </div>
               </button>
             ))
           )}
@@ -281,21 +315,39 @@ export function ClinicalReportsPage() {
                   </>
                 ) : (
                   <>
-                    <button type="button" className="btn-secondary btn-sm" onClick={() => startEdit(activeReport)}>
-                      <Icon name="edit" size={14} />
-                      <span>Raporu Düzenle</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-secondary btn-sm"
-                      style={{ color: 'var(--danger)' }}
-                      onClick={() => handleDelete(activeReport.id)}
-                    >
-                      <Icon name="trash" size={14} />
-                    </button>
+                    {!activeReport.lockedAt && (
+                      <button type="button" className="btn-secondary btn-sm" onClick={() => startEdit(activeReport)}>
+                        <Icon name="edit" size={14} />
+                        <span>Raporu Düzenle</span>
+                      </button>
+                    )}
+                    {!activeReport.lockedAt && (
+                      <button
+                        type="button"
+                        className="btn-secondary btn-sm"
+                        style={{ color: 'var(--danger)' }}
+                        title="Raporu sil"
+                        onClick={() => handleDelete(activeReport)}
+                      >
+                        <Icon name="trash" size={14} />
+                      </button>
+                    )}
+                    <RecordLockActions
+                      status={activeReport.lockedAt ? 'locked' : activeReport.signedAt ? 'signed' : 'draft'}
+                      onSign={() => runLockAction(() => { const next = signClinicalReport(activeReport.id); if (next) setActiveReport(next); })}
+                      onLock={() => runLockAction(() => { const next = lockClinicalReport(activeReport.id); if (next) setActiveReport(next); })}
+                      onRevise={reason => runLockAction(() => {
+                        const next = createClinicalReportRevision(activeReport.id, reason);
+                        if (next) {
+                          setActiveReport(next);
+                          setReportForm({ ...next });
+                        }
+                      })}
+                    />
                   </>
                 )}
               </div>
+              {lockError && <p className="record-lock-error" role="alert">{lockError}</p>}
 
               {/* A4 Kağıt Düzeni */}
               <div
@@ -422,6 +474,16 @@ export function ClinicalReportsPage() {
           )}
         </div>
       </div>
+
+      {pendingDelete && (
+        <ConfirmDialog
+          title="Klinik raporu sil"
+          description={`${pendingDelete.clientName} · ${pendingDelete.reportTitle} (${pendingDelete.reportDate}) silinecek. Bu işlem geri alınamaz.`}
+          confirmLabel="Raporu sil"
+          onConfirm={confirmDeleteReport}
+          onCancel={() => setPendingDelete(null)}
+        />
+      )}
     </div>
   );
 }

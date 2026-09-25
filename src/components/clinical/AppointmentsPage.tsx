@@ -1,7 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
-import type { Appointment, Client, SessionType, AppointmentStatus, PaymentStatus } from '../../clinical/clinicalTypes';
+import type { Appointment, Client, SessionType, AppointmentStatus, PaymentStatus, SoapSession } from '../../clinical/clinicalTypes';
 import {
+  completeAppointmentWithSession,
   getAppointments,
+  getSoapSessions,
   saveAppointment,
   deleteAppointment,
   getClients,
@@ -10,14 +12,18 @@ import {
 import { getSettings } from '../../clinical/practiceStore';
 import { clinicToday } from '../../clinical/recordRules';
 import { ClinicalDialog } from './ClinicalDialog';
+import { ConfirmDialog } from '../ConfirmDialog';
 import { Icon } from '../Icon';
 import { navigate } from '../../router';
 
 export function AppointmentsPage() {
   const [appointments, setAppointments] = useState<Appointment[]>(() => getAppointments());
   const [clients, setClients] = useState<Client[]>(() => getClients());
+  const [sessions, setSessions] = useState<SoapSession[]>(() => getSoapSessions());
   const [dateFilter, setDateFilter] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [pendingComplete, setPendingComplete] = useState<Appointment | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Appointment | null>(null);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingApp, setEditingApp] = useState<Appointment | null>(null);
@@ -40,6 +46,7 @@ export function AppointmentsPage() {
     const unsub = subscribeClinicalStore(() => {
       setAppointments(getAppointments());
       setClients(getClients());
+      setSessions(getSoapSessions());
     });
     return unsub;
   }, []);
@@ -82,10 +89,17 @@ export function AppointmentsPage() {
     setModalOpen(true);
   }
 
-  function handleDelete(id: string) {
-    if (confirm('Bu randevu kaydını silmek istediğinize emin misiniz?')) {
-      deleteAppointment(id);
+  const sessionByAppointment = useMemo(() => {
+    const map = new Map<string, SoapSession>();
+    for (const session of sessions) {
+      if (session.appointmentId) map.set(session.appointmentId, session);
     }
+    return map;
+  }, [sessions]);
+
+  function handleDelete(id: string) {
+    const target = appointments.find((item) => item.id === id) ?? null;
+    setPendingDelete(target);
   }
 
   function handleSave(e: React.FormEvent) {
@@ -118,9 +132,26 @@ export function AppointmentsPage() {
     setModalOpen(false);
   }
 
-  function completeAppointmentAndOpenFile(a: Appointment) {
-    saveAppointment({ ...a, status: 'completed' });
-    navigate(`/danisanlar/${a.clientId}`);
+  /**
+   * "Görüşmeyi tamamla": randevu tamamlanır ve danışan/psikolog/kurum bilgisi
+   * otomatik dolan taslak SOAP notu oluşturulur. Kullanıcı bu bilgileri
+   * yeniden girmez; not doğrudan danışanın seans sekmesinde açılır.
+   */
+  function confirmCompleteAppointment() {
+    const appointment = pendingComplete;
+    if (!appointment) return;
+    completeAppointmentWithSession(appointment);
+    setPendingComplete(null);
+    setEditingApp(null);
+    setModalOpen(false);
+    navigate(`/danisanlar/${appointment.clientId}?sekme=sessions`);
+  }
+
+  function confirmDeleteAppointment() {
+    const appointment = pendingDelete;
+    if (!appointment) return;
+    deleteAppointment(appointment.id);
+    setPendingDelete(null);
   }
 
   return (
@@ -259,11 +290,22 @@ export function AppointmentsPage() {
                         <button
                           type="button"
                           className="btn-primary btn-sm"
-                          title="Randevuyu tamamlandı olarak işaretle ve danışan dosyasını aç"
-                          onClick={() => completeAppointmentAndOpenFile(app)}
+                          title="Randevuyu tamamla ve seans notunu oluştur"
+                          onClick={() => setPendingComplete(app)}
                         >
                           <Icon name="checkCircle" size={13} />
                           <span>Görüşmeyi tamamla</span>
+                        </button>
+                      )}
+                      {app.status === 'completed' && sessionByAppointment.get(app.id) && (
+                        <button
+                          type="button"
+                          className="btn-secondary btn-sm"
+                          title="Randevudan oluşturulan seans notunu aç"
+                          onClick={() => navigate(`/danisanlar/${app.clientId}?sekme=sessions`)}
+                        >
+                          <Icon name="clipboard" size={13} />
+                          <span>Seans #{sessionByAppointment.get(app.id)?.sessionNumber} notu</span>
                         </button>
                       )}
                       <button
@@ -424,6 +466,27 @@ export function AppointmentsPage() {
               </div>
             </form>
         </ClinicalDialog>
+      )}
+
+      {pendingComplete && (
+        <ConfirmDialog
+          tone="neutral"
+          title="Görüşmeyi tamamla"
+          description={`${pendingComplete.clientName} randevusu tamamlandı olarak işaretlenecek ve taslak SOAP seans notu oluşturulacak. Danışan, seans numarası, tarih/saat ve ücret bilgileri otomatik doldurulur.`}
+          confirmLabel="Tamamla ve notu oluştur"
+          onConfirm={confirmCompleteAppointment}
+          onCancel={() => setPendingComplete(null)}
+        />
+      )}
+
+      {pendingDelete && (
+        <ConfirmDialog
+          title="Randevu kaydını sil"
+          description={`${pendingDelete.clientName} · ${pendingDelete.date} ${pendingDelete.time} randevusu silinecek. Bu işlem geri alınamaz.`}
+          confirmLabel="Randevuyu sil"
+          onConfirm={confirmDeleteAppointment}
+          onCancel={() => setPendingDelete(null)}
+        />
       )}
     </div>
   );

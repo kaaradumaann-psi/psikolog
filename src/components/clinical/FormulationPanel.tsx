@@ -6,13 +6,21 @@ import {
 } from '../../clinical/casework';
 import type { CaseFormulation, SafetyPlan, TreatmentGoal } from '../../clinical/casework';
 import {
+  createFormulationRevision,
+  createSafetyPlanRevision,
   getFormulation,
   getSafetyPlan,
+  lockFormulation,
+  lockSafetyPlan,
   newId,
   saveFormulation,
   saveSafetyPlan,
+  signFormulation,
+  signSafetyPlan,
   subscribePracticeStore,
 } from '../../clinical/practiceStore';
+import { cloudContext, getSyncState } from '../../clinical/cloud/sync';
+import { RecordLockActions, RecordStatusBadge } from './RecordLockActions';
 import '../../styles/dashboard.css';
 
 export function FormulationPanel({ clientId, safetyNeeded }: { clientId: string; safetyNeeded: boolean }) {
@@ -37,13 +45,24 @@ export function FormulationPanel({ clientId, safetyNeeded }: { clientId: string;
   }
 
   function saveAll() {
+    if (formulation.status === 'locked' || safety.status === 'locked') {
+      setSaved('Kilitli kayıt düzenlenemez. Düzeltme için yeni revizyon oluşturun.');
+      window.setTimeout(() => setSaved(null), 3000);
+      return;
+    }
     saveFormulation(formulation);
     saveSafetyPlan(safety);
-    setSaved('Kaydedildi');
-    window.setTimeout(() => setSaved(null), 2000);
+    // "Kaydedildi" yalnız bulut yazımı gerçekten başarılı olduğunda gösterilir
+    // (bulut durumu üstteki senkronizasyon şeridinde izlenir).
+    if (!cloudContext()) setSaved('Kaydedildi');
+    else if (getSyncState().phase === 'error') setSaved(getSyncState().lastError ?? 'Sunucuya kaydedilemedi');
+    else setSaved('Sunucuya gönderildi — durum üstteki şeritte.');
+    window.setTimeout(() => setSaved(null), 3000);
   }
 
   const planEmpty = safetyPlanIsEmpty(safety);
+  const formulationLocked = formulation.status === 'locked';
+  const safetyLocked = safety.status === 'locked';
 
   return (
     <div className="formulation-panel">
@@ -53,7 +72,16 @@ export function FormulationPanel({ clientId, safetyNeeded }: { clientId: string;
             <h3>Vaka formülasyonu</h3>
             <p>4P klinik resim. Tanı listesinin yerine geçmez; seansların nereye gittiğini tutar.</p>
           </div>
-          <button type="button" className="btn-primary btn-sm" onClick={saveAll}>Kaydet</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <RecordStatusBadge status={formulation.status} revision={formulation.revision} />
+            <button type="button" className="btn-primary btn-sm" onClick={saveAll} disabled={formulationLocked}>Kaydet</button>
+            <RecordLockActions
+              status={formulation.status}
+              onSign={() => { signFormulation(clientId); }}
+              onLock={() => { lockFormulation(clientId); }}
+              onRevise={reason => { createFormulationRevision(clientId, reason); }}
+            />
+          </div>
         </div>
         {saved && <p className="formulation-saved">{saved}</p>}
         <label className="form-group">
@@ -120,6 +148,15 @@ export function FormulationPanel({ clientId, safetyNeeded }: { clientId: string;
             <h3>Güvenlik planı</h3>
             <p>Uyarı işaretleri, baş etme, kişiler ve ortam. Ölçek maddesi pozitifse seansın başında yüz yüze değerlendirilir.</p>
           </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <RecordStatusBadge status={safety.status} revision={safety.revision} />
+            <RecordLockActions
+              status={safety.status}
+              onSign={() => { signSafetyPlan(clientId); }}
+              onLock={() => { lockSafetyPlan(clientId); }}
+              onRevise={reason => { createSafetyPlanRevision(clientId, reason); }}
+            />
+          </div>
         </div>
         {safetyNeeded && planEmpty && <p className="safety-callout">Güvenlik uyarısı var, plan boş.</p>}
         <div className="formulation-grid">
@@ -148,7 +185,7 @@ export function FormulationPanel({ clientId, safetyNeeded }: { clientId: string;
             <textarea rows={3} value={safety.reasons} onChange={(event) => setSafety({ ...safety, reasons: event.target.value })} />
           </label>
         </div>
-        <button type="button" className="btn-primary btn-sm" onClick={saveAll}>Planı kaydet</button>
+        <button type="button" className="btn-primary btn-sm" onClick={saveAll} disabled={safetyLocked}>Planı kaydet</button>
       </div>
     </div>
   );

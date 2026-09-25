@@ -5,6 +5,8 @@
 import type { CaseFormulation, SafetyPlan } from './casework';
 import type { RapidScreeningResult } from './rapidScreening';
 import { isSafeDocumentUrl, isSafeImageUrl, reportStorageError } from './recordRules';
+import { cacheKey, cloudContext, queueWrite } from './cloud/sync';
+import type { ClinicalSnapshot } from './cloud/repository';
 
 export type PracticeNote = {
   id: string;
@@ -38,7 +40,10 @@ export type PracticeDocument = {
   mimeType: string;
   sizeBytes: number;
   description?: string;
+  /** Yerel önizleme (cloud modunda yalnız küçük dosyalar/kapak) */
   dataUrl?: string;
+  /** Supabase Storage yolu: <org>/<client>/<dosya> */
+  storagePath?: string;
   createdAt: string;
 };
 
@@ -120,7 +125,7 @@ export function newId(prefix: string): string {
 
 function read<T>(key: string, fallback: T): T {
   try {
-    const raw = localStorage.getItem(key);
+    const raw = localStorage.getItem(cacheKey(key));
     if (!raw) return fallback;
     return JSON.parse(raw) as T;
   } catch {
@@ -130,7 +135,7 @@ function read<T>(key: string, fallback: T): T {
 
 function write<T>(key: string, value: T): void {
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    localStorage.setItem(cacheKey(key), JSON.stringify(value));
     notify();
   } catch (error) {
     reportStorageError();
@@ -208,11 +213,13 @@ export function getNotesByClient(clientId: string): PracticeNote[] {
 export function saveNote(note: PracticeNote): void {
   const list = getNotes().filter((item) => item.id !== note.id);
   write(NOTES_KEY, [note, ...list]);
+  queueWrite({ entity: 'note', op: 'upsert', value: note });
   recordAudit({ action: 'save', entity: 'note', entityId: note.id, summary: 'Klinik not kaydedildi' });
 }
 
 export function deleteNote(id: string): void {
   write(NOTES_KEY, getNotes().filter((note) => note.id !== id));
+  queueWrite({ entity: 'note', op: 'delete', value: id });
   recordAudit({ action: 'delete', entity: 'note', entityId: id, summary: 'Klinik not silindi' });
 }
 
@@ -223,11 +230,13 @@ export function getTasks(): PracticeTask[] {
 export function saveTask(task: PracticeTask): void {
   const list = getTasks().filter((item) => item.id !== task.id);
   write(TASKS_KEY, [task, ...list]);
+  queueWrite({ entity: 'task', op: 'upsert', value: task });
   recordAudit({ action: 'save', entity: 'task', entityId: task.id, summary: task.title });
 }
 
 export function deleteTask(id: string): void {
   write(TASKS_KEY, getTasks().filter((task) => task.id !== id));
+  queueWrite({ entity: 'task', op: 'delete', value: id });
   recordAudit({ action: 'delete', entity: 'task', entityId: id, summary: 'Görev silindi' });
 }
 
@@ -242,11 +251,14 @@ export function getDocumentsByClient(clientId: string): PracticeDocument[] {
 export function saveDocument(doc: PracticeDocument): void {
   const list = getDocuments().filter((item) => item.id !== doc.id);
   write(DOCS_KEY, [doc, ...list]);
+  queueWrite({ entity: 'document', op: 'upsert', value: doc });
   recordAudit({ action: 'save', entity: 'document', entityId: doc.id, summary: doc.fileName });
 }
 
 export function deleteDocument(id: string): void {
+  const removed = getDocuments().find((doc) => doc.id === id);
   write(DOCS_KEY, getDocuments().filter((doc) => doc.id !== id));
+  if (removed) queueWrite({ entity: 'document', op: 'delete', value: removed });
   recordAudit({ action: 'delete', entity: 'document', entityId: id, summary: 'Belge silindi' });
 }
 
@@ -256,6 +268,7 @@ export function getSettings(): PracticeSettings {
 
 export function saveSettings(settings: PracticeSettings): void {
   write(SETTINGS_KEY, settings);
+  queueWrite({ entity: 'settings', op: 'upsert', value: settings });
   recordAudit({ action: 'save', entity: 'settings', entityId: 'practice', summary: 'Antet ve uygulama ayarları güncellendi' });
 }
 
@@ -266,6 +279,7 @@ export function getScreenings(): RapidScreeningResult[] {
 export function saveScreening(result: RapidScreeningResult): void {
   const list = getScreenings().filter((item) => item.id !== result.id);
   write(SCREEN_KEY, [result, ...list]);
+  queueWrite({ entity: 'screening', op: 'upsert', value: result });
   recordAudit({
     action: 'save',
     entity: 'screening',
@@ -276,6 +290,7 @@ export function saveScreening(result: RapidScreeningResult): void {
 
 export function deleteScreening(id: string): void {
   write(SCREEN_KEY, getScreenings().filter((item) => item.id !== id));
+  queueWrite({ entity: 'screening', op: 'delete', value: id });
 }
 
 export function getFormulations(): CaseFormulation[] {
@@ -287,8 +302,14 @@ export function getFormulation(clientId: string): CaseFormulation | undefined {
 }
 
 export function saveFormulation(item: CaseFormulation): void {
+  const existing = getFormulations().find((row) => row.clientId === item.clientId);
+  if (existing?.status === 'locked') {
+    throw new Error('Kilitli formülasyon değiştirilemez. Düzeltme için yeni revizyon oluşturun.');
+  }
   const list = getFormulations().filter((row) => row.clientId !== item.clientId);
-  write(FORM_KEY, [{ ...item, updatedAt: new Date().toISOString() }, ...list]);
+  const next = { ...item, id: item.id ?? newId('form'), updatedAt: new Date().toISOString() };
+  write(FORM_KEY, [next, ...list]);
+  queueWrite({ entity: 'formulation', op: 'upsert', value: next });
   recordAudit({ action: 'save', entity: 'formulation', entityId: item.clientId, summary: 'Formülasyon güncellendi' });
 }
 
@@ -301,8 +322,14 @@ export function getSafetyPlan(clientId: string): SafetyPlan | undefined {
 }
 
 export function saveSafetyPlan(item: SafetyPlan): void {
+  const existing = getSafetyPlans().find((row) => row.clientId === item.clientId);
+  if (existing?.status === 'locked') {
+    throw new Error('Kilitli güvenlik planı değiştirilemez. Düzeltme için yeni revizyon oluşturun.');
+  }
   const list = getSafetyPlans().filter((row) => row.clientId !== item.clientId);
-  write(SAFETY_KEY, [{ ...item, updatedAt: new Date().toISOString() }, ...list]);
+  const next = { ...item, id: item.id ?? newId('safe'), updatedAt: new Date().toISOString() };
+  write(SAFETY_KEY, [next, ...list]);
+  queueWrite({ entity: 'safety', op: 'upsert', value: next });
   recordAudit({ action: 'save', entity: 'safety', entityId: item.clientId, summary: 'Güvenlik planı güncellendi' });
 }
 
@@ -331,6 +358,9 @@ export function purgeClientPractice(clientId: string): void {
 }
 
 export function importPracticeData(bundle: Partial<PracticeBundle> | null | undefined): void {
+  if (cloudContext()) {
+    throw new Error('Bulut modunda yedek geri yükleme kapalıdır: klinik kayıtlar sunucudan okunur.');
+  }
   if (!bundle || typeof bundle !== 'object') return;
   if (Array.isArray(bundle.notes)) {
     if (bundle.notes.length > 5000) throw new Error('Not listesi çok büyük.');
@@ -361,4 +391,138 @@ export function importPracticeData(bundle: Partial<PracticeBundle> | null | unde
   }
   if (Array.isArray(bundle.audit)) write(AUDIT_KEY, bundle.audit.slice(0, 200));
   recordAudit({ action: 'import', entity: 'backup', entityId: 'practice', summary: 'Uygulama verisi yedekten yüklendi' });
+}
+
+
+/* ==========================================================================
+   PHASE-07 — İmza / kilit (formülasyon ve güvenlik planı)
+   ========================================================================== */
+
+type RecordWithStatus = {
+  clientId: string;
+  id?: string;
+  status?: 'draft' | 'signed' | 'locked';
+  revision?: number;
+  amendmentOf?: string;
+  amendmentReason?: string;
+  signedAt?: string;
+  lockedAt?: string;
+};
+
+function setRecordStatus<T extends RecordWithStatus>(
+  key: string,
+  items: T[],
+  clientId: string,
+  status: 'signed' | 'locked',
+  table: string,
+  auditEntity: string,
+): T | null {
+  const index = items.findIndex((item) => item.clientId === clientId);
+  const current = items[index];
+  if (!current) return null;
+  if (current.status === 'locked' && status === 'signed') throw new Error('Kilitli kayıt yeniden imzalanamaz.');
+  const now = new Date().toISOString();
+  const next: T = {
+    ...current,
+    id: current.id ?? newId(key === SAFETY_KEY ? 'safe' : 'form'),
+    status,
+    revision: current.revision ?? 1,
+    signedAt: current.signedAt ?? now,
+    lockedAt: status === 'locked' ? now : current.lockedAt,
+  };
+  items[index] = next;
+  write(key, items);
+  const recordId = next.id ?? current.clientId;
+  queueWrite(
+    status === 'signed'
+      ? { entity: 'sign', op: 'sign', value: { table, id: recordId } }
+      : { entity: 'lock', op: 'lock', value: { table, id: recordId, signedAt: next.signedAt } },
+  );
+  recordAudit({
+    action: 'save',
+    entity: auditEntity,
+    entityId: current.clientId,
+    summary: status === 'signed' ? 'İmzalandı' : 'İmzalandı ve kilitlendi',
+  });
+  return next;
+}
+
+export function signFormulation(clientId: string): CaseFormulation | null {
+  return setRecordStatus(FORM_KEY, getFormulations(), clientId, 'signed', 'formulations', 'formulation');
+}
+
+export function lockFormulation(clientId: string): CaseFormulation | null {
+  return setRecordStatus(FORM_KEY, getFormulations(), clientId, 'locked', 'formulations', 'formulation');
+}
+
+export function signSafetyPlan(clientId: string): SafetyPlan | null {
+  return setRecordStatus(SAFETY_KEY, getSafetyPlans(), clientId, 'signed', 'safety_plans', 'safety');
+}
+
+export function lockSafetyPlan(clientId: string): SafetyPlan | null {
+  return setRecordStatus(SAFETY_KEY, getSafetyPlans(), clientId, 'locked', 'safety_plans', 'safety');
+}
+
+/* ==========================================================================
+   PHASE-07 — Bulut anlık görüntüsünü yerel cache'e uygulama
+   ========================================================================== */
+/* --------------------------------------------------------------------------
+   PHASE-07 — Revizyon: kilitli kaydın içeriği değiştirilmez; yeni sürüm açılır.
+   -------------------------------------------------------------------------- */
+
+function createRecordRevision<T extends RecordWithStatus>(
+  key: string,
+  entity: 'formulation' | 'safety',
+  clientId: string,
+  reason: string,
+): T | null {
+  const items = (JSON.parse(localStorage.getItem(cacheKey(key)) ?? 'null') as T[] | null) ?? [];
+  const current = items.find((item) => item.clientId === clientId);
+  if (!current) return null;
+  if (current.status !== 'locked') throw new Error('Revizyon yalnızca kilitli kayıtlar için oluşturulur.');
+  const trimmed = reason.trim();
+  if (trimmed.length < 3) throw new Error('Revizyon nedeni en az 3 karakter olmalıdır.');
+  const next: T = {
+    ...current,
+    id: newId(entity === 'safety' ? 'safe' : 'form'),
+    status: 'draft',
+    revision: (current.revision ?? 1) + 1,
+    amendmentOf: current.id ?? current.clientId,
+    amendmentReason: trimmed,
+    signedAt: undefined,
+    lockedAt: undefined,
+  };
+  const index = items.findIndex((item) => item.clientId === clientId);
+  items[index] = next;
+  write(key, items);
+  queueWrite(
+    entity === 'safety'
+      ? { entity: 'safety', op: 'upsert', value: next as unknown as SafetyPlan }
+      : { entity: 'formulation', op: 'upsert', value: next as unknown as CaseFormulation },
+  );
+  recordAudit({
+    action: 'save',
+    entity: entity === 'safety' ? 'safety' : 'formulation',
+    entityId: clientId,
+    summary: `Revizyon oluşturuldu (${trimmed.slice(0, 80)})`,
+  });
+  return next;
+}
+
+export function createFormulationRevision(clientId: string, reason: string): CaseFormulation | null {
+  return createRecordRevision<CaseFormulation>(FORM_KEY, 'formulation', clientId, reason);
+}
+
+export function createSafetyPlanRevision(clientId: string, reason: string): SafetyPlan | null {
+  return createRecordRevision<SafetyPlan>(SAFETY_KEY, 'safety', clientId, reason);
+}
+
+export function applyPracticeSnapshot(snapshot: ClinicalSnapshot): void {
+  write(NOTES_KEY, snapshot.notes);
+  write(TASKS_KEY, snapshot.tasks);
+  write(DOCS_KEY, snapshot.documents);
+  write(SCREEN_KEY, snapshot.screenings);
+  write(FORM_KEY, snapshot.formulations);
+  write(SAFETY_KEY, snapshot.safetyPlans);
+  if (snapshot.settings) write(SETTINGS_KEY, { ...DEFAULT_SETTINGS, ...getSettings(), ...snapshot.settings });
 }

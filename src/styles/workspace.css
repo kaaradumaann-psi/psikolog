@@ -607,3 +607,17 @@
   .workspace-sidebar { display: none !important; }
   .workspace-content { width: 100%; }
 }
+
+/* PHASE-07 — bulut senkronizasyon durumu */
+.cloud-sync-banner {
+  margin: 0 0 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 0.86rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+.cloud-sync-banner.is-info { background: var(--primary-tint, #f1f7ff); color: var(--text, #0d0d0d); border-color: var(--primary-border, #d6e7ff); }
+.cloud-sync-banner.is-success { background: #eefbf3; color: #14603a; border-color: #bfe8d1; }
+.cloud-sync-banner.is-warning { background: #fff7e8; color: #7a4c00; border-color: #f3ddb5; }
+.cloud-sync-banner.is-error { background: #fff1f1; color: #8f1d1d; border-color: #f2c9c9; }

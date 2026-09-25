@@ -23,6 +23,7 @@ import {
   getTasks,
   subscribePracticeStore,
 } from '../clinical/practiceStore';
+import { clientSessionFromAppointmentPath, clientTabPath } from './clinical/clientTabs';
 import { DataManagementModal } from './clinical/DataManagementModal';
 import { ScoreChips } from './clinical/ScoreChips';
 import { Icon } from './Icon';
@@ -226,8 +227,8 @@ export function Dashboard({ user }: Props) {
                       {prep.checks.length > 0 && <ul className="prep-checks">{prep.checks.map((check) => <li key={check}>{check}</li>)}</ul>}
                       <div className="prep-actions">
                         <button type="button" className="btn-primary btn-sm" onClick={() => navigate(`/danisanlar/${prep.clientId}`)}>Dosyayı aç</button>
-                        <button type="button" className="btn-secondary btn-sm" onClick={() => navigate(`/danisanlar/${prep.clientId}?sekme=formulasyon`)}>Formülasyon</button>
-                        <button type="button" className="btn-secondary btn-sm" onClick={() => navigate('/seanslar')}>Seans notları</button>
+                        <a className="btn-secondary btn-sm" href={clientTabPath(prep.clientId, 'formulation')}>Formülasyon</a>
+                        <a className="btn-secondary btn-sm" href={clientSessionFromAppointmentPath(prep.clientId, prep.appointmentId)}>Seans notu</a>
                       </div>
                     </div>
                   </article>

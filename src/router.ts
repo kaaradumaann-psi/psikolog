@@ -91,6 +91,26 @@ export function useRoute(): AppRoute {
   return route;
 }
 
+/**
+ * Live query string. `useRoute` only tracks the pathname, so a deep link that
+ * changes `?sekme=…` on the page you are already on would otherwise be ignored.
+ */
+export function useLocationSearch(): string {
+  const [search, setSearch] = useState<string>(() =>
+    typeof window === 'undefined' ? '' : window.location.search,
+  );
+  useEffect(() => {
+    const update = () => setSearch(window.location.search);
+    listeners.add(update);
+    window.addEventListener('popstate', update);
+    return () => {
+      listeners.delete(update);
+      window.removeEventListener('popstate', update);
+    };
+  }, []);
+  return search;
+}
+
 export function installLinkInterceptor(): void {
   document.addEventListener('click', (event) => {
     if (event.defaultPrevented || event.button !== 0) return;

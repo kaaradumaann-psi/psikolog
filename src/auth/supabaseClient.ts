@@ -4,8 +4,18 @@ import { AUTH_STORAGE_KEY, createAuthStorage } from './authStorage';
 
 export { AUTH_STORAGE_KEY, createAuthStorage } from './authStorage';
 
-// import.meta.env only in Vite/esbuild, not in Node test runner (tsx) — safe access
-const viteEnv = (import.meta as unknown as { env?: Record<string, string | undefined> }).env ?? {};
+// `import.meta.env` is undefined under the Node test runner (tsx), so read it
+// defensively. Vite replaces the whole expression at build time, which is what
+// makes the production gate static rather than runtime-negotiable.
+const viteEnv = import.meta.env as ImportMetaEnv | undefined;
+
+/**
+ * Vite replaces `import.meta.env.DEV` statically: `true` under `vite dev`,
+ * `false` in `vite build`. Under the Node test runner it is undefined, which is
+ * treated as NOT development — tests must never inherit a development-only
+ * bypass by accident.
+ */
+export const isDevRuntime: boolean = viteEnv?.DEV === true;
 
 function safeSupabaseOrigin(value: string | undefined): string {
   if (!value?.trim()) return '';
@@ -28,8 +38,8 @@ function safeSupabaseOrigin(value: string | undefined): string {
   }
 }
 
-const url = safeSupabaseOrigin(viteEnv.VITE_SUPABASE_URL);
-const anonKey = viteEnv.VITE_SUPABASE_ANON_KEY?.trim() ?? '';
+const url = safeSupabaseOrigin(viteEnv?.VITE_SUPABASE_URL);
+const anonKey = viteEnv?.VITE_SUPABASE_ANON_KEY?.trim() ?? '';
 
 export const supabaseConfig = {
   url,

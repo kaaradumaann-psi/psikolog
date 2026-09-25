@@ -62,3 +62,22 @@ test('mobile navigation and empty screens fit without horizontal scrolling', asy
   await page.getByRole('dialog', { name: 'Gezinme menüsü' }).getByRole('link', { name: 'Kaynakça' }).click();
   await expect(page.getByRole('heading', { name: 'Ölçek kaynakçası' })).toBeVisible();
 });
+
+/**
+ * P0 §8 — an appointment converted into a session must keep its appointment
+ * link. The dashboard prep card deep-links to the client's session tab with
+ * ?randevu=… and the SOAP form opens prefilled from that appointment.
+ *
+ * NOTE: this suite could not be executed in the sandbox that added it (no
+ * Playwright browser binaries, no network). It runs against `npm run dev`,
+ * i.e. local-dev mode, and exercises no cloud path.
+ */
+test('appointment deep link opens the prefilled session form', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/randevular');
+  const noteLink = page.locator('a[href*="randevu="]').first();
+  const href = await noteLink.getAttribute('href');
+  expect(href).toMatch(/^\/danisanlar\/[^/?]+\?sekme=sessions&randevu=/);
+  await noteLink.click();
+  await expect(page.getByRole('dialog', { name: /Seans/i })).toBeVisible();
+});

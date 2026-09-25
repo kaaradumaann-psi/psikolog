@@ -9,6 +9,7 @@ import {
 } from '../../clinical/clinicalStore';
 import { getSettings } from '../../clinical/practiceStore';
 import { clinicToday } from '../../clinical/recordRules';
+import { clientSessionFromAppointmentPath } from './clientTabs';
 import { ClinicalDialog } from './ClinicalDialog';
 import { Icon } from '../Icon';
 import { navigate } from '../../router';
@@ -266,6 +267,14 @@ export function AppointmentsPage() {
                           <span>Görüşmeyi tamamla</span>
                         </button>
                       )}
+                      <a
+                        className="btn-secondary btn-sm"
+                        title="Bu randevudan seans notu oluştur"
+                        href={clientSessionFromAppointmentPath(app.clientId, app.id)}
+                      >
+                        <Icon name="clipboard" size={13} />
+                        <span>Seans notu</span>
+                      </a>
                       <button
                         type="button"
                         className="btn-secondary btn-sm"

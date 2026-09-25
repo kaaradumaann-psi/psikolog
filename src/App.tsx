@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { AuthenticatedUser } from './auth/authTypes';
 import { displayName } from './auth/userDisplay';
-import { supabaseConfig } from './auth/supabaseClient';
+import { isDevRuntime, supabaseConfig } from './auth/supabaseClient';
+import { resolveAccessMode } from './auth/accessMode';
+import { bootstrapCloudSession, endCloudSession } from './clinical/cloud/bootstrap';
 import { getSession, onAuthChange, signIn, signOut, userFromSession } from './auth/supabaseAuth';
 import { AppointmentsPage } from './components/clinical/AppointmentsPage';
 import { AssessmentHubPage } from './components/clinical/AssessmentHubPage';
@@ -136,30 +138,94 @@ export default function App() {
       </div>
     );
   }
-  if (!supabaseConfig.configured) {
+  const accessMode = resolveAccessMode({
+    configured: supabaseConfig.configured,
+    isDev: isDevRuntime,
+  });
+  if (accessMode === 'not-ready') return <NotReadyScreen />;
+  if (accessMode === 'local-dev') {
     return <WorkspaceShell user={LOCAL_USER} localMode onLogout={() => navigate('/')} />;
   }
   return <CloudGate />;
 }
 
+/**
+ * Production build without a configured backend. No clinical screen, no data —
+ * the workspace refuses to open instead of falling back to an unauthenticated
+ * local identity.
+ */
+function NotReadyScreen() {
+  return (
+    <div className="auth-page">
+      <main className="auth-shell">
+        <div className="auth-card">
+          <div className="auth-brand">
+            <span className="auth-brand-mark"><BrandMark /></span>
+            <div>
+              <strong>{APP_NAME}</strong>
+              <small>Klinik çalışma alanı</small>
+            </div>
+          </div>
+          <div className="auth-heading">
+            <h1>Çalışma alanı hazır değil.</h1>
+            <p>
+              Bu kurulumda kimlik doğrulama bağlantısı tanımlı değil. Klinik kayıt güvenliği için
+              çalışma alanı giriş olmadan açılmaz ve hiçbir danışan verisi gösterilmez.
+            </p>
+          </div>
+          <p className="auth-card-note">
+            <code>VITE_SUPABASE_URL</code> ve <code>VITE_SUPABASE_ANON_KEY</code> tanımlanıp uygulama
+            yeniden derlenmelidir. Yalnızca publishable/anon anahtar kullanılır; hizmet rolü anahtarı
+            tarayıcıya konmaz.
+          </p>
+        </div>
+      </main>
+      <SiteFooter compact />
+    </div>
+  );
+}
+
 function CloudGate() {
   const [user, setUser] = useState<AuthenticatedUser | null | undefined>(undefined);
+  const [workspaceReady, setWorkspaceReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /**
+   * The workspace only opens once the database session is bound and the cloud
+   * snapshot has been pulled, so a refresh never shows stale local cache.
+   */
+  async function activate(next: AuthenticatedUser | null, cancelled: () => boolean) {
+    if (!next) {
+      endCloudSession();
+      if (!cancelled()) {
+        setUser(null);
+        setWorkspaceReady(false);
+      }
+      return;
+    }
+    await bootstrapCloudSession(next);
+    if (cancelled()) return;
+    setUser(next);
+    setWorkspaceReady(true);
+  }
 
   useEffect(() => {
     let cancelled = false;
+    const isCancelled = () => cancelled;
     getSession()
       .then((session) => userFromSession(session))
       .then((next) => {
-        if (!cancelled) setUser(next);
+        void activate(next, isCancelled);
       })
       .catch(() => {
         if (!cancelled) setUser(null);
       });
     const { data } = onAuthChange((_event, session) => {
-      void userFromSession(session).then((next) => {
-        if (!cancelled) setUser(next);
-      });
+      void userFromSession(session)
+        .then((next) => activate(next, isCancelled))
+        .catch(() => {
+          if (!cancelled) setUser(null);
+        });
     });
     return () => {
       cancelled = true;
@@ -173,20 +239,20 @@ function CloudGate() {
     setError(null);
     try {
       const next = await signIn(String(data.get('email') || ''), String(data.get('password') || ''));
-      setUser(next);
+      await activate(next, () => false);
       navigate('/', { replace: true });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Giriş yapılamadı');
     }
   }
 
-  if (user === undefined) {
+  if (user === undefined || (user && !workspaceReady)) {
     return (
       <div className="auth-page">
         <main className="auth-shell">
           <div className="auth-card auth-loading" role="status">
             <span className="auth-brand-mark"><BrandMark /></span>
-            <p>Oturum doğrulanıyor…</p>
+            <p>{user ? 'Klinik kayıtlar yükleniyor…' : 'Oturum doğrulanıyor…'}</p>
           </div>
         </main>
       </div>
@@ -238,6 +304,7 @@ function CloudGate() {
       user={user}
       localMode={false}
       onLogout={() => {
+        endCloudSession();
         void signOut().finally(() => navigate('/', { replace: true }));
       }}
     />
@@ -247,13 +314,22 @@ function CloudGate() {
 function WorkspaceShell({ user, onLogout, localMode }: { user: AuthenticatedUser; onLogout: () => void; localMode: boolean }) {
   const route = useRoute();
   const [storageError, setStorageError] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
   useEffect(() => {
     const onError = (event: Event) => {
       const detail = (event as CustomEvent<string>).detail;
       setStorageError(detail || 'Kayıt yazılamadı.');
     };
+    const onSyncError = (event: Event) => {
+      const detail = (event as CustomEvent<string>).detail;
+      setSyncError(detail || 'Kayıt buluta yazılamadı.');
+    };
     window.addEventListener('psikolog:storage-error', onError);
-    return () => window.removeEventListener('psikolog:storage-error', onError);
+    window.addEventListener('psikolog:sync-error', onSyncError);
+    return () => {
+      window.removeEventListener('psikolog:storage-error', onError);
+      window.removeEventListener('psikolog:sync-error', onSyncError);
+    };
   }, []);
 
   const workspace = resolveWorkspace(route) ?? 'home';
@@ -342,6 +418,11 @@ function WorkspaceShell({ user, onLogout, localMode }: { user: AuthenticatedUser
         </header>
         <ConnectivityBanner />
         {storageError && <p className="shell-alert" role="alert">{storageError}</p>}
+        {syncError && (
+          <p className="shell-alert" role="alert">
+            Bulut kaydı başarısız: {syncError} Kayıt bu cihazda duruyor; bağlantı gelince yeniden denenecek.
+          </p>
+        )}
         <main className="app-main" id="main" tabIndex={-1}>
           {route.page === 'danisan' && <ClientDetailPage clientId={route.id} />}
           {route.page === 'danisanlar' && <ClientListPage />}

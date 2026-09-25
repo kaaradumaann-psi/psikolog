@@ -13,7 +13,11 @@ import type {
   Scl90Result,
   ClinicalReport,
 } from './clinicalTypes';
-import { purgeClientPractice, recordAudit } from './practiceStore';
+import { getScreenings, purgeClientPractice, recordAudit, upgradePracticeIds } from './practiceStore';
+import { applyIdMap, buildIdMap, isUuid } from './cloud/ids';
+import { push as pushCloud, pushNow, remove as removeCloud } from './cloud/sync';
+import { anamnesisRowToClientPatch, rowToAppointment, rowToClient, rowToReport, rowToSession, rowToTestRecord } from './cloud/mapping';
+import type { AnamnesisRow, AppointmentRow, ClientRow, ReportRow, SessionRow, TestAdministrationRow, TestResultRow } from './cloud/types';
 import { MAX_CLIENTS, MAX_SESSIONS, reportStorageError } from './recordRules';
 
 const CLIENTS_KEY = 'psikolog_clients_v2';
@@ -126,6 +130,8 @@ export function saveClient(client: Client): void {
   }
   setLocal(CLIENTS_KEY, list);
   recordAudit({ action: 'save', entity: 'client', entityId: client.id, summary: `${client.firstName} ${client.lastName}` });
+  const saved = list.find((item) => item.id === client.id);
+  if (saved) pushCloud({ entity: 'client', record: saved });
 }
 
 export function deleteClient(id: string): void {
@@ -138,6 +144,7 @@ export function deleteClient(id: string): void {
   setLocal(REPORTS_KEY, getClinicalReports().filter(r => r.clientId !== id));
   purgeClientPractice(id);
   recordAudit({ action: 'delete', entity: 'client', entityId: id, summary: 'Danışan dosyası ve bağlı kayıtlar silindi' });
+  removeCloud('client', id);
 }
 
 /* ------------------------------------------------------------------ */
@@ -165,11 +172,14 @@ export function saveSoapSession(session: SoapSession): void {
     list.unshift({ ...session, createdAt: now, updatedAt: now });
   }
   setLocal(SESSIONS_KEY, list);
+  const saved = list.find((item) => item.id === session.id);
+  if (saved) pushCloud({ entity: 'session', record: saved });
 }
 
 export function deleteSoapSession(id: string): void {
   const list = getSoapSessions().filter(s => s.id !== id);
   setLocal(SESSIONS_KEY, list);
+  removeCloud('session', id);
 }
 
 /* ------------------------------------------------------------------ */
@@ -190,11 +200,14 @@ export function saveAppointment(appointment: Appointment): void {
     list.push(appointment);
   }
   setLocal(APPOINTMENTS_KEY, list);
+  const saved = list.find((item) => item.id === appointment.id);
+  if (saved) pushCloud({ entity: 'appointment', record: saved });
 }
 
 export function deleteAppointment(id: string): void {
   const list = getAppointments().filter(a => a.id !== id);
   setLocal(APPOINTMENTS_KEY, list);
+  removeCloud('appointment', id);
 }
 
 /* ------------------------------------------------------------------ */
@@ -215,11 +228,14 @@ export function saveBeckDepressionTest(test: BeckDepressionResult): void {
     list.unshift(test);
   }
   setLocal(BDI_KEY, list);
+  const saved = list.find((item) => item.id === test.id);
+  if (saved && saved.clientId) pushCloud({ entity: 'test', record: { kind: 'bdi', ...saved } });
 }
 
 export function deleteBeckDepressionTest(id: string): void {
   const list = getBeckDepressionTests().filter(t => t.id !== id);
   setLocal(BDI_KEY, list);
+  removeCloud('test', id);
 }
 
 /* ------------------------------------------------------------------ */
@@ -240,11 +256,14 @@ export function saveBeckAnxietyTest(test: BeckAnxietyResult): void {
     list.unshift(test);
   }
   setLocal(BAI_KEY, list);
+  const saved = list.find((item) => item.id === test.id);
+  if (saved && saved.clientId) pushCloud({ entity: 'test', record: { kind: 'bai', ...saved } });
 }
 
 export function deleteBeckAnxietyTest(id: string): void {
   const list = getBeckAnxietyTests().filter(t => t.id !== id);
   setLocal(BAI_KEY, list);
+  removeCloud('test', id);
 }
 
 /* ------------------------------------------------------------------ */
@@ -265,11 +284,14 @@ export function saveScl90Test(test: Scl90Result): void {
     list.unshift(test);
   }
   setLocal(SCL90_KEY, list);
+  const saved = list.find((item) => item.id === test.id);
+  if (saved && saved.clientId) pushCloud({ entity: 'test', record: { kind: 'scl90', ...saved } });
 }
 
 export function deleteScl90Test(id: string): void {
   const list = getScl90Tests().filter(t => t.id !== id);
   setLocal(SCL90_KEY, list);
+  removeCloud('test', id);
 }
 
 /* ------------------------------------------------------------------ */
@@ -291,11 +313,28 @@ export function saveClinicalReport(report: ClinicalReport): void {
     list.unshift({ ...report, createdAt: now, updatedAt: now });
   }
   setLocal(REPORTS_KEY, list);
+  const saved = list.find((item) => item.id === report.id);
+  // Provenance only — the report body already carries the clinical content.
+  if (saved && saved.clientId) {
+    pushCloud({
+      entity: 'report',
+      record: saved,
+      snapshot: {
+        schema: 1,
+        origin: 'clinical-store',
+        reportType: saved.reportType,
+        sectionCount: saved.sections.length,
+        recommendationCount: saved.recommendations.length,
+        sessionCount: getSessionsByClientId(saved.clientId).length,
+      },
+    });
+  }
 }
 
 export function deleteClinicalReport(id: string): void {
   const list = getClinicalReports().filter(r => r.id !== id);
   setLocal(REPORTS_KEY, list);
+  removeCloud('report', id);
 }
 
 /* ------------------------------------------------------------------ */
@@ -378,4 +417,176 @@ export function clearAllClinicalData(): void {
   purgeClientPractice('*');
   localStorage.setItem(PURGE_FLAG, '1');
   recordAudit({ action: 'delete', entity: 'backup', entityId: 'clinical', summary: 'Yerel klinik kayıt temizlendi' });
+}
+
+/* ==========================================================================
+   BULUT ID YÜKSELTME
+   --------------------------------------------------------------------------
+   Yerel kayıtlar kısa id'lerle (cli_…, sess_…) tutuluyordu; bulut tabloları
+   uuid birincil anahtar kullanıyor. İlk bulut yazımından ÖNCE bir kez
+   çalıştırılır: uuid olmayan her kayda uuid atanır ve ona işaret eden tüm
+   alanlar aynı geçişte yeniden yazılır. Böylece hiçbir kayıt yetim kalmaz.
+   ========================================================================== */
+
+export function ensureCloudIds(): boolean {
+  initClinicalStore();
+
+  const clients = getClients();
+  const sessions = getSoapSessions();
+  const appointments = getAppointments();
+  const bdi = getBeckDepressionTests();
+  const bai = getBeckAnxietyTests();
+  const scl = getScl90Tests();
+  const reports = getClinicalReports();
+  const screenings = getScreenings();
+
+  const clientMap = buildIdMap(clients);
+  const sessionMap = buildIdMap(sessions);
+  const appointmentMap = buildIdMap(appointments);
+  const bdiMap = buildIdMap(bdi);
+  const baiMap = buildIdMap(bai);
+  const sclMap = buildIdMap(scl);
+  const reportMap = buildIdMap(reports);
+  const screeningMap = buildIdMap(screenings);
+
+  const changed =
+    clientMap.size + sessionMap.size + appointmentMap.size + bdiMap.size +
+    baiMap.size + sclMap.size + reportMap.size + screeningMap.size;
+  if (changed === 0) return false;
+
+  setLocal(CLIENTS_KEY, applyIdMap(clients, clientMap, []));
+  setLocal(SESSIONS_KEY, applyIdMap(sessions, sessionMap, ['clientId', 'appointmentId']));
+  setLocal(APPOINTMENTS_KEY, applyIdMap(appointments, appointmentMap, ['clientId']));
+  setLocal(BDI_KEY, applyIdMap(bdi, bdiMap, ['clientId']));
+  setLocal(BAI_KEY, applyIdMap(bai, baiMap, ['clientId']));
+  setLocal(SCL90_KEY, applyIdMap(scl, sclMap, ['clientId']));
+  setLocal(REPORTS_KEY, applyIdMap(reports, reportMap, ['clientId']));
+
+  upgradePracticeIds({
+    clients: clientMap,
+    notes: new Map<string, string>(),
+    tasks: new Map<string, string>(),
+    documents: new Map<string, string>(),
+    screenings: screeningMap,
+  });
+
+  return true;
+}
+
+/** True when any local record still uses a non-uuid id. */
+export function hasLegacyIds(): boolean {
+  return [...getClients(), ...getSoapSessions(), ...getAppointments()].some((row) => !isUuid(row.id));
+}
+
+/* ==========================================================================
+   BULUT ANLIK GÖRÜNTÜSÜNÜ YEREL ÖNBELLEĞE UYGULA
+   --------------------------------------------------------------------------
+   Bulut ana kaynaktır. Aynı id'li yerel kayıt bulut satırıyla birleştirilir
+   (yalnızca cihazda tutulan alanlar korunur), bulutta olmayan yerel kayıtlar
+   ise silinmez — henüz senkronize olmamış olabilirler.
+   ========================================================================== */
+
+export type ClinicalCloudSnapshot = {
+  clients: ClientRow[];
+  anamneses: AnamnesisRow[];
+  appointments: AppointmentRow[];
+  sessions: SessionRow[];
+  tests: { administration: TestAdministrationRow; result: TestResultRow }[];
+  reports: ReportRow[];
+};
+
+function mergeById<T extends { id: string }>(local: T[], incoming: T[]): T[] {
+  const byId = new Map(local.map((row) => [row.id, row]));
+  for (const row of incoming) byId.set(row.id, { ...byId.get(row.id), ...row } as T);
+  return [...byId.values()];
+}
+
+export function applyClinicalCloudSnapshot(snapshot: ClinicalCloudSnapshot): void {
+  initClinicalStore();
+
+  const localClients = getClients();
+  const anamnesisByClient = new Map(snapshot.anamneses.map((row) => [row.client_id, row]));
+  const incomingClients = snapshot.clients.map((row) => {
+    const merged = rowToClient(row, localClients.find((item) => item.id === row.id));
+    const patch = anamnesisByClient.get(row.id);
+    return patch ? { ...merged, ...anamnesisRowToClientPatch(patch) } : merged;
+  });
+  setLocal(CLIENTS_KEY, mergeById(localClients, incomingClients));
+
+  const localAppointments = getAppointments();
+  setLocal(
+    APPOINTMENTS_KEY,
+    mergeById(
+      localAppointments,
+      snapshot.appointments.map((row) =>
+        rowToAppointment(row, localAppointments.find((item) => item.id === row.id)),
+      ),
+    ),
+  );
+
+  const localSessions = getSoapSessions();
+  setLocal(
+    SESSIONS_KEY,
+    mergeById(
+      localSessions,
+      snapshot.sessions.map((row) => rowToSession(row, localSessions.find((item) => item.id === row.id))),
+    ),
+  );
+
+  const bdi: BeckDepressionResult[] = getBeckDepressionTests();
+  const bai: BeckAnxietyResult[] = getBeckAnxietyTests();
+  const scl: Scl90Result[] = getScl90Tests();
+  const incoming = { bdi, bai, scl };
+  for (const { administration, result } of snapshot.tests) {
+    const data = (result.result_data ?? {}) as { kind?: string };
+    if (data.kind === 'bdi') {
+      incoming.bdi = mergeById(incoming.bdi, [rowToTestRecord<BeckDepressionResult>(result, administration)]);
+    } else if (data.kind === 'bai') {
+      incoming.bai = mergeById(incoming.bai, [rowToTestRecord<BeckAnxietyResult>(result, administration)]);
+    } else if (data.kind === 'scl90') {
+      incoming.scl = mergeById(incoming.scl, [rowToTestRecord<Scl90Result>(result, administration)]);
+    }
+  }
+  setLocal(BDI_KEY, incoming.bdi);
+  setLocal(BAI_KEY, incoming.bai);
+  setLocal(SCL90_KEY, incoming.scl);
+
+  setLocal(
+    REPORTS_KEY,
+    mergeById(
+      getClinicalReports(),
+      snapshot.reports.map((row) => rowToReport(row)).filter((row): row is ClinicalReport => row !== null),
+    ),
+  );
+}
+
+/** Push every local record that the cloud has not seen yet (offline backlog). */
+/** Awaited on purpose: the bootstrap must finish writing before it pulls. */
+export async function pushLocalRecordsToCloud(): Promise<void> {
+  for (const client of getClients()) await pushNow({ entity: 'client', record: client });
+  for (const appointment of getAppointments()) await pushNow({ entity: 'appointment', record: appointment });
+  for (const session of getSoapSessions()) await pushNow({ entity: 'session', record: session });
+  for (const row of getBeckDepressionTests()) {
+    if (row.clientId) await pushNow({ entity: 'test', record: { kind: 'bdi', ...row } });
+  }
+  for (const row of getBeckAnxietyTests()) {
+    if (row.clientId) await pushNow({ entity: 'test', record: { kind: 'bai', ...row } });
+  }
+  for (const row of getScl90Tests()) {
+    if (row.clientId) await pushNow({ entity: 'test', record: { kind: 'scl90', ...row } });
+  }
+  for (const report of getClinicalReports()) {
+    if (!report.clientId) continue;
+    await pushNow({
+      entity: 'report',
+      record: report,
+      snapshot: {
+        schema: 1,
+        origin: 'backlog',
+        reportType: report.reportType,
+        sectionCount: report.sections.length,
+        recommendationCount: report.recommendations.length,
+      },
+    });
+  }
 }

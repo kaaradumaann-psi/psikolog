@@ -5,6 +5,9 @@
 import type { CaseFormulation, SafetyPlan } from './casework';
 import type { RapidScreeningResult } from './rapidScreening';
 import { isSafeDocumentUrl, isSafeImageUrl, reportStorageError } from './recordRules';
+import { push as pushCloud, pushNow, remove as removeCloud } from './cloud/sync';
+import { rowToDocument, rowToNote, rowToTask, rowToTestRecord } from './cloud/mapping';
+import type { DocumentRow, NoteRow, TaskRow, TestAdministrationRow, TestResultRow } from './cloud/types';
 
 export type PracticeNote = {
   id: string;
@@ -38,7 +41,10 @@ export type PracticeDocument = {
   mimeType: string;
   sizeBytes: number;
   description?: string;
+  /** Device copy, used when the cloud bucket is not configured. */
   dataUrl?: string;
+  /** Object path inside the private `client-documents` bucket, when synced. */
+  filePath?: string;
   createdAt: string;
 };
 
@@ -209,11 +215,13 @@ export function saveNote(note: PracticeNote): void {
   const list = getNotes().filter((item) => item.id !== note.id);
   write(NOTES_KEY, [note, ...list]);
   recordAudit({ action: 'save', entity: 'note', entityId: note.id, summary: 'Klinik not kaydedildi' });
+  if (note.clientId) pushCloud({ entity: 'note', record: note });
 }
 
 export function deleteNote(id: string): void {
   write(NOTES_KEY, getNotes().filter((note) => note.id !== id));
   recordAudit({ action: 'delete', entity: 'note', entityId: id, summary: 'Klinik not silindi' });
+  removeCloud('note', id);
 }
 
 export function getTasks(): PracticeTask[] {
@@ -224,11 +232,13 @@ export function saveTask(task: PracticeTask): void {
   const list = getTasks().filter((item) => item.id !== task.id);
   write(TASKS_KEY, [task, ...list]);
   recordAudit({ action: 'save', entity: 'task', entityId: task.id, summary: task.title });
+  pushCloud({ entity: 'task', record: task });
 }
 
 export function deleteTask(id: string): void {
   write(TASKS_KEY, getTasks().filter((task) => task.id !== id));
   recordAudit({ action: 'delete', entity: 'task', entityId: id, summary: 'Görev silindi' });
+  removeCloud('task', id);
 }
 
 export function getDocuments(): PracticeDocument[] {
@@ -243,11 +253,14 @@ export function saveDocument(doc: PracticeDocument): void {
   const list = getDocuments().filter((item) => item.id !== doc.id);
   write(DOCS_KEY, [doc, ...list]);
   recordAudit({ action: 'save', entity: 'document', entityId: doc.id, summary: doc.fileName });
+  if (doc.clientId) pushCloud({ entity: 'document', record: doc });
 }
 
 export function deleteDocument(id: string): void {
+  const target = getDocuments().find((doc) => doc.id === id);
   write(DOCS_KEY, getDocuments().filter((doc) => doc.id !== id));
   recordAudit({ action: 'delete', entity: 'document', entityId: id, summary: 'Belge silindi' });
+  if (target) removeCloud('document', id, target);
 }
 
 export function getSettings(): PracticeSettings {
@@ -266,6 +279,9 @@ export function getScreenings(): RapidScreeningResult[] {
 export function saveScreening(result: RapidScreeningResult): void {
   const list = getScreenings().filter((item) => item.id !== result.id);
   write(SCREEN_KEY, [result, ...list]);
+  if (result.clientId) {
+    pushCloud({ entity: 'test', record: { kind: result.type, ...result } });
+  }
   recordAudit({
     action: 'save',
     entity: 'screening',
@@ -276,6 +292,7 @@ export function saveScreening(result: RapidScreeningResult): void {
 
 export function deleteScreening(id: string): void {
   write(SCREEN_KEY, getScreenings().filter((item) => item.id !== id));
+  removeCloud('test', id);
 }
 
 export function getFormulations(): CaseFormulation[] {
@@ -361,4 +378,130 @@ export function importPracticeData(bundle: Partial<PracticeBundle> | null | unde
   }
   if (Array.isArray(bundle.audit)) write(AUDIT_KEY, bundle.audit.slice(0, 200));
   recordAudit({ action: 'import', entity: 'backup', entityId: 'practice', summary: 'Uygulama verisi yedekten yüklendi' });
+}
+
+/* ==========================================================================
+   Cloud id upgrade — yerel kısa id'leri uuid'ye çevirirken referansları koru
+   ========================================================================== */
+
+/**
+ * Rewrite every `clientId` reference (and each record's own id) through the
+ * supplied maps. Called once, before the first cloud write, so no local record
+ * is orphaned when client ids become uuids.
+ */
+export function upgradePracticeIds(maps: {
+  clients: Map<string, string>;
+  notes: Map<string, string>;
+  tasks: Map<string, string>;
+  documents: Map<string, string>;
+  screenings: Map<string, string>;
+}): void {
+  const resolve = (map: Map<string, string>, value: string | undefined) =>
+    typeof value === 'string' ? map.get(value) ?? value : value;
+
+  const touched =
+    maps.clients.size + maps.notes.size + maps.tasks.size + maps.documents.size + maps.screenings.size;
+  if (touched === 0) return;
+
+  write(
+    NOTES_KEY,
+    getNotes().map((note) => ({
+      ...note,
+      id: resolve(maps.notes, note.id),
+      clientId: resolve(maps.clients, note.clientId),
+    })),
+  );
+  write(
+    TASKS_KEY,
+    getTasks().map((task) => ({
+      ...task,
+      id: resolve(maps.tasks, task.id),
+      clientId: task.clientId ? resolve(maps.clients, task.clientId) : undefined,
+    })),
+  );
+  write(
+    DOCS_KEY,
+    getDocuments().map((doc) => ({
+      ...doc,
+      id: resolve(maps.documents, doc.id),
+      clientId: resolve(maps.clients, doc.clientId),
+    })),
+  );
+  write(
+    SCREEN_KEY,
+    getScreenings().map((item) => ({
+      ...item,
+      id: resolve(maps.screenings, item.id),
+      clientId: item.clientId ? resolve(maps.clients, item.clientId) : undefined,
+    })),
+  );
+  write(
+    FORM_KEY,
+    getFormulations().map((item) => ({ ...item, clientId: resolve(maps.clients, item.clientId) })),
+  );
+  write(
+    SAFETY_KEY,
+    getSafetyPlans().map((item) => ({ ...item, clientId: resolve(maps.clients, item.clientId) })),
+  );
+}
+
+/* ==========================================================================
+   BULUT ANLIK GÖRÜNTÜSÜ — notlar, görevler, belgeler, kısa taramalar
+   ========================================================================== */
+
+function mergeById<T extends { id: string }>(local: T[], incoming: T[]): T[] {
+  const byId = new Map(local.map((row) => [row.id, row]));
+  for (const row of incoming) byId.set(row.id, { ...byId.get(row.id), ...row } as T);
+  return [...byId.values()];
+}
+
+export type PracticeCloudSnapshot = {
+  documents: DocumentRow[];
+  notes: NoteRow[];
+  tasks: TaskRow[];
+  screenings: { administration: TestAdministrationRow; result: TestResultRow }[];
+};
+
+export function applyCloudPracticeSnapshot(snapshot: PracticeCloudSnapshot): void {
+  const localDocs = getDocuments();
+  write(
+    DOCS_KEY,
+    mergeById(
+      localDocs,
+      // The device copy (dataUrl) is kept; the bucket path comes from the row.
+      snapshot.documents.map((row) => rowToDocument(row, localDocs.find((item) => item.id === row.id))),
+    ),
+  );
+  write(NOTES_KEY, mergeById(getNotes(), snapshot.notes.map((row) => rowToNote(row))));
+  write(
+    TASKS_KEY,
+    mergeById(
+      getTasks(),
+      snapshot.tasks.map((row) => rowToTask(row, getTasks().find((item) => item.id === row.id))),
+    ),
+  );
+  write(
+    SCREEN_KEY,
+    mergeById(
+      getScreenings(),
+      snapshot.screenings.map(({ administration, result }) =>
+        rowToTestRecord<RapidScreeningResult>(result, administration),
+      ),
+    ),
+  );
+}
+
+/** Push local practice records the cloud has not seen yet (offline backlog). */
+/** Awaited on purpose: the bootstrap must finish writing before it pulls. */
+export async function pushLocalPracticeRecordsToCloud(): Promise<void> {
+  for (const note of getNotes()) {
+    if (note.clientId) await pushNow({ entity: 'note', record: note });
+  }
+  for (const task of getTasks()) await pushNow({ entity: 'task', record: task });
+  for (const doc of getDocuments()) {
+    if (doc.clientId) await pushNow({ entity: 'document', record: doc });
+  }
+  for (const screening of getScreenings()) {
+    if (screening.clientId) await pushNow({ entity: 'test', record: { kind: screening.type, ...screening } });
+  }
 }

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import type {
+  Appointment,
   Client,
   SoapSession,
   BeckDepressionResult,
@@ -19,6 +20,7 @@ import {
   getBeckAnxietyTests,
   getScl90Tests,
   getClinicalReports,
+  getAppointments,
   subscribeClinicalStore,
 } from '../../clinical/clinicalStore';
 import { readingsForClient, measurementNote, safetyPlanIsEmpty } from '../../clinical/casework';
@@ -26,35 +28,42 @@ import type { RapidScreeningResult } from '../../clinical/rapidScreening';
 import { getSafetyPlan, getScreenings, getSettings, subscribePracticeStore } from '../../clinical/practiceStore';
 import { clinicToday, maskTc } from '../../clinical/recordRules';
 import { ClinicalDialog } from './ClinicalDialog';
+import { CLIENT_TABS, DEFAULT_CLIENT_TAB, parseAppointmentParam, parseClientTab, type ClientTab } from './clientTabs';
 import { Icon } from '../Icon';
 import { FormulationPanel } from './FormulationPanel';
 import { ScoreChips } from './ScoreChips';
 import { ClientDocuments, ClientNotes } from '../practice/ClientRecordsPanel';
-import { navigate } from '../../router';
+import { navigate, useLocationSearch } from '../../router';
 
-type Tab = 'overview' | 'sessions' | 'formulation' | 'tests' | 'progress' | 'reports' | 'notes' | 'documents';
+type Tab = ClientTab;
 
-const FILE_SECTIONS: { id: Tab; label: string }[] = [
-  { id: 'sessions', label: 'Seans notları' },
-  { id: 'formulation', label: 'Formülasyon' },
-  { id: 'tests', label: 'Ölçekler' },
-  { id: 'progress', label: 'Gelişim' },
-  { id: 'overview', label: 'Anamnez' },
-  { id: 'notes', label: 'Notlar' },
-  { id: 'documents', label: 'Belgeler' },
-  { id: 'reports', label: 'Raporlar' },
-];
+const FILE_SECTIONS: { id: Tab; label: string }[] = CLIENT_TABS;
 
 function tabFromLocation(): Tab {
-  const sekme = new URLSearchParams(window.location.search).get('sekme');
-  const allowed: Tab[] = ['overview', 'sessions', 'formulation', 'tests', 'progress', 'reports', 'notes', 'documents'];
-  return allowed.includes(sekme as Tab) ? (sekme as Tab) : 'sessions';
+  if (typeof window === 'undefined') return DEFAULT_CLIENT_TAB;
+  return parseClientTab(window.location.search);
 }
 
 export function ClientDetailPage({ clientId }: { clientId: string }) {
   const [client, setClient] = useState<Client | undefined>(() => getClientById(clientId));
   const [activeTab, setActiveTab] = useState<Tab>(tabFromLocation);
   const [sectionMenuOpen, setSectionMenuOpen] = useState(false);
+  const locationSearch = useLocationSearch();
+
+  // A deep link that only changes ?sekme=… must move the open file, not just a fresh mount.
+  useEffect(() => {
+    setActiveTab(parseClientTab(locationSearch));
+  }, [locationSearch]);
+
+  const appointmentParam = parseAppointmentParam(locationSearch);
+  useEffect(() => {
+    if (!appointmentParam) return;
+    const appointment = getAppointments().find(
+      (item) => item.id === appointmentParam && item.clientId === clientId,
+    );
+    if (appointment) openSessionFromAppointment(appointment);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only on deep-link change
+  }, [appointmentParam, clientId]);
 
   const [sessions, setSessions] = useState<SoapSession[]>(() => getSessionsByClientId(clientId));
   const [bdiTests, setBdiTests] = useState<BeckDepressionResult[]>([]);
@@ -156,6 +165,33 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
     setSoapModalOpen(true);
   }
 
+  /**
+   * Create the note from an appointment: date, time, duration, type and the
+   * appointment link are carried over instead of being retyped.
+   */
+  function openSessionFromAppointment(appointment: Appointment) {
+    const nextNum = sessions.length > 0 ? Math.max(...sessions.map(s => s.sessionNumber)) + 1 : 1;
+    setEditingSession(null);
+    setSoapForm({
+      sessionNumber: nextNum,
+      date: appointment.date,
+      startTime: appointment.time,
+      durationMinutes: appointment.durationMinutes,
+      sessionType: appointment.sessionType,
+      subjective: '',
+      objective: '',
+      assessment: '',
+      plan: '',
+      riskLevel: 'none',
+      riskNotes: '',
+      homework: '',
+      fee: appointment.fee ?? getSettings().defaultFee,
+      paymentStatus: appointment.paymentStatus,
+      appointmentId: appointment.id,
+    });
+    setSoapModalOpen(true);
+  }
+
   function openEditSessionModal(s: SoapSession) {
     setEditingSession(s);
     setSoapForm({ ...s });
@@ -184,6 +220,7 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
       homework: soapForm.homework?.trim() || '',
       fee: Number(soapForm.fee) || 0,
       paymentStatus: (soapForm.paymentStatus as PaymentStatus) || 'paid',
+      appointmentId: soapForm.appointmentId,
       createdAt: editingSession ? editingSession.createdAt : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };

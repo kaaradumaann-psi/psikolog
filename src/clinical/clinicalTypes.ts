@@ -73,6 +73,8 @@ export interface SoapSession {
   homework?: string;
   fee?: number;
   paymentStatus: PaymentStatus;
+  /** Set when this note was created from an appointment, so the link survives. */
+  appointmentId?: string;
   createdAt: string;
   updatedAt: string;
 }

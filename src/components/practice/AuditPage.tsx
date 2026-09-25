@@ -20,6 +20,20 @@ export function AuditPage() {
           <span>Ayarlara dön</span>
         </button>
       </div>
+
+      {/*
+        The local log is browser storage: the person holding the device can edit or
+        clear it. It must not be presented as a trustworthy record. The authoritative
+        log is the server-side `audit_logs` table, which is append-only for
+        `authenticated` (see supabase/migrations/20260925000000_p0_clinical_workflow.sql).
+      */}
+      <div className="warning-banner" role="note">
+        <strong>Bu liste tarayıcı belleğinde tutulur ve bu cihazda değiştirilebilir;</strong> hukuki bir
+        kanıt olarak kullanılamaz. Yetkili kayıt izi veritabanındaki <code>audit_logs</code> tablosudur —
+        o tablo yalnızca ekleme kabul eder, giriş yapmış kullanıcılardan
+        <code> UPDATE / DELETE / TRUNCATE</code> yetkileri veritabanı seviyesinde kaldırılmıştır.
+      </div>
+
       {events.length === 0 ? (
         <div className="empty-state-card"><h4>Kayıt yok</h4><p>Kaydetme ve silme işlemleri burada görünür.</p></div>
       ) : (

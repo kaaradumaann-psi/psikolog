@@ -163,6 +163,50 @@ function describeError(error) {
   return { kind, facts, text: `${parts.join(' · ')}${suffix}` };
 }
 
+/**
+ * CLEANUP sonucunu rapor planına çevirir (saf fonksiyon → ağsız test edilebilir).
+ *
+ * Kabul edilen sonuçlar:
+ *   - silme başarılı            → PASS + "gerçekten silindi" PASS
+ *   - kilitli kayıt engelledi   → DENY (immutability kanıtı) + PASS (kayıt yerinde) + SKIP (bakım)
+ * Diğer her durum FAIL'dir.
+ */
+function cleanupPlan({ deleted, errorKind = null, remainingRows = 0 }) {
+  const deleteName = 'A sentetik danışanı siler (cascade)';
+  if (errorKind && !DENY_KINDS.has(errorKind)) {
+    return [{ name: deleteName, status: 'FAIL' }];
+  }
+  if (deleted && remainingRows === 0) {
+    return [
+      { name: deleteName, status: 'PASS' },
+      { name: 'Sentetik zincir gerçekten silindi', status: 'PASS' },
+    ];
+  }
+  if (!deleted && errorKind && remainingRows === 1) {
+    const isLock = errorKind === 'lock-deny';
+    return [
+      {
+        name: isLock
+          ? 'Kilitli klinik kayıt danışan silinmesini engelledi (DB düzeyinde immutability)'
+          : `Danışan silme ${errorKind} ile engellendi`,
+        status: 'DENY',
+      },
+      {
+        name: isLock ? 'Kilitli kayıt hâlâ yerinde (immutability kanıtı)' : 'Danışan kaydı hâlâ yerinde (silme etkisiz)',
+        status: 'PASS',
+      },
+      { name: 'Sentetik zincir temizliği', status: 'SKIP' },
+    ];
+  }
+  return [
+    {
+      name: 'Sentetik zincir temizliği',
+      status: 'FAIL',
+      detail: `beklenmeyen durum: deleted=${deleted} · errorKind=${errorKind ?? '(yok)'} · kalan=${remainingRows} satır`,
+    },
+  ];
+}
+
 /** Sorguyu çalıştırır, hatayı gerçek HTTP koduyla birlikte fırlatır. */
 async function unwrap(builder) {
   const { data, error, status, statusText } = await builder;
@@ -935,32 +979,56 @@ async function main() {
         return data;
       }, 'PASS');
     }
-    // --- temizlik: oturum AÇIKKEN (çıkış sonrası istek anon rolüne düşer ve reddedilir)
-    await probe('CLEANUP', 'A sentetik danışanı siler (cascade)', async () => {
-      const { data, error, status, statusText } = await aAgain.client
-        .from('clients')
-        .delete()
-        .eq('id', chainA.clientId)
-        .select('id');
-      if (error) throw new DbError(error, status, statusText);
-      return data;
-    }, 'PASS');
+    // --- temizlik: oturum AÇIKKEN (çıkış sonrası istek anon rolüne düşer ve reddedilir).
+    //     Zincirde kilitli klinik kayıt varsa DB trigger'ı silmeyi (cascade dahil) reddeder;
+    //     bu istenen immutability'dir → DENY + SKIP olarak raporlanır (cleanupPlan).
+    let deleted = false;
+    let cleanupErrorKind = null;
+    let cleanupErrorText = '';
+    let cleanupMeta = {};
+    try {
+      const data = await unwrap(
+        aAgain.client.from('clients').delete().eq('id', chainA.clientId).select('id'),
+      );
+      deleted = Array.isArray(data) && data.length > 0;
+    } catch (error) {
+      const described = describeError(error);
+      cleanupErrorKind = described.kind;
+      cleanupErrorText = described.text;
+      cleanupMeta = {
+        httpStatus: described.facts.status,
+        code: described.facts.code,
+        kind: described.kind,
+      };
+    }
 
-    const { data: afterCleanup, error: afterCleanupError } = await aAgain.client
-      .from('clients')
-      .select('id')
-      .eq('id', chainA.clientId);
-    const chainGone = !afterCleanupError && (afterCleanup ?? []).length === 0;
-    record(
-      'CLEANUP',
-      'Sentetik zincir gerçekten silindi',
-      chainGone ? 'PASS' : 'FAIL',
-      chainGone
-        ? 'danışan ve bağlı kayıtlar yok (cascade)'
-        : afterCleanupError
-          ? describeError(new DbError(afterCleanupError, null, '')).text
-          : `hâlâ ${(afterCleanup ?? []).length} satır görünüyor`,
-    );
+    const {
+      data: afterCleanup,
+      error: afterCleanupError,
+      status: afterCleanupStatus,
+      statusText: afterCleanupStatusText,
+    } = await aAgain.client.from('clients').select('id').eq('id', chainA.clientId);
+
+    if (afterCleanupError) {
+      const described = describeError(new DbError(afterCleanupError, afterCleanupStatus, afterCleanupStatusText));
+      record('CLEANUP', 'Sentetik zincir temizliği', 'FAIL', described.text, {
+        httpStatus: described.facts.status,
+        code: described.facts.code,
+        kind: described.kind,
+      });
+    } else {
+      const remainingRows = (afterCleanup ?? []).length;
+      for (const step of cleanupPlan({ deleted, errorKind: cleanupErrorKind, remainingRows })) {
+        const detail =
+          step.detail ??
+          (step.status === 'FAIL'
+            ? cleanupErrorText
+            : step.status === 'SKIP'
+              ? 'kilitli klinik kayıt tasarım gereği silinemez — artık canlıda kalır (bkz. scripts/live-validation/cleanup-live-test-data.sql)'
+              : '');
+        record('CLEANUP', step.name, step.status, detail, step.status === 'FAIL' ? cleanupMeta : {});
+      }
+    }
 
     await aAgain.client.auth.signOut();
   }
@@ -1129,8 +1197,56 @@ async function selfTest() {
     console.log(`     ${actual === expectedStatus ? '✔ sınıflandırma doğru' : `✘ beklenen ${expectedStatus}, gelen ${actual}`}`);
   }
 
+  console.log('\n=== CLEANUP rapor planı simülasyonu (ağ yok) ===');
+  const cleanupCases = [
+    [
+      'silme başarılı',
+      { deleted: true, errorKind: null, remainingRows: 0 },
+      ['PASS', 'PASS'],
+    ],
+    [
+      'kilitli kayıt engelledi',
+      { deleted: false, errorKind: 'lock-deny', remainingRows: 1 },
+      ['DENY', 'PASS', 'SKIP'],
+    ],
+    [
+      'RLS engelledi (kilit dışı)',
+      { deleted: false, errorKind: 'rls-deny', remainingRows: 1 },
+      ['DENY', 'PASS', 'SKIP'],
+    ],
+    [
+      'beklenmeyen hata',
+      { deleted: false, errorKind: 'other', remainingRows: 1 },
+      ['FAIL'],
+    ],
+    [
+      'silindi ama kayıt hâlâ görünüyor',
+      { deleted: true, errorKind: null, remainingRows: 1 },
+      ['FAIL'],
+    ],
+  ];
+  let cleanupMismatches = 0;
+  for (const [label, input, expected] of cleanupCases) {
+    const plan = cleanupPlan(input);
+    const actual = plan.map((step) => step.status);
+    const statusOk = actual.length === expected.length && actual.every((status, index) => status === expected[index]);
+    // Kilit senaryosunda mesaj gerçekten "kilit" olduğunu söylemeli; diğer DENY'lerde jenerik olmalı.
+    const nameOk =
+      input.errorKind === null || input.errorKind === 'other'
+        ? true
+        : input.errorKind === 'lock-deny'
+          ? /Kilitli klinik kayıt/.test(plan[0]?.name ?? '')
+          : !/Kilitli/.test(plan[0]?.name ?? '');
+    const ok = statusOk && nameOk;
+    if (!ok) cleanupMismatches += 1;
+    console.log(
+      `  ${ok ? '✔' : '✘'} ${label}: ${actual.join(' + ')}${ok ? '' : ` (beklenen ${expected.join(' + ')}${nameOk ? '' : ' · mesaj adı'})`}`,
+    );
+  }
+
   console.log(`\n  sınıflandırma sonucu: ${cases.length - mismatches}/${cases.length} doğru`);
-  process.exit(mismatches === 0 ? 0 : 1);
+  console.log(`  CLEANUP planı: ${cleanupCases.length - cleanupMismatches}/${cleanupCases.length} doğru`);
+  process.exit(mismatches === 0 && cleanupMismatches === 0 ? 0 : 1);
 }
 
 function finish() {

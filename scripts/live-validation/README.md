@@ -26,6 +26,7 @@ Sıra atlanırsa tipik belirtiler (canlı koşularda görüldü):
 | `locked UPDATE/DELETE → DENY` + `HTTP 400 · code=P0001` | **Beklenen**: imza/kilit trigger'ı kaydı değiştirmiyor/silmiyor | Yok — bu bir kanıttır |
 | `B read A → DENY` + `code=NoSuchKey` | **Beklenen**: Storage nesnesi sahibi olmayana görünmüyor | Yok — bu bir kanıttır |
 | `CLEANUP → FAIL` (42501, hint `TO anon`) | Koşucu hatası: silme, oturum kapandıktan sonra denenmişti (düzeltildi) | Koşuyu güncel commit ile tekrarlayın |
+| `CLEANUP` grubunda `DENY` + `SKIP` | **Beklenen**: zincirde kilitli (LOCKED) klinik kayıt var; DB trigger'ı danışan silinmesini (cascade dahil) engelliyor | İsteğe bağlı: `cleanup-live-test-data.sql` §3 (arşivle) veya §4 (tam silme, uyarılı) |
 
 ### Koşucunun kendi yapamadığı tek şey: kurum ataması
 
@@ -170,14 +171,24 @@ gerçek HTTP/kod alanları; sır yok).
   amendment/revision PASS + eski sürümün `superseded_by` işaretlenmesi.
 - **STORAGE:** A upload/read PASS; B read/update/delete A DENY; A temizlik.
 - **LOGOUT:** A çıkış → B girişinde A verisi görünmez → A yeniden girişte veri geri gelir.
-- **CLEANUP:** sentetik zincir A tarafından silinir (cascade) — silme **oturum açıkken** yapılır
-  (çıkıştan sonra istek `anon` rolüne düşer ve 42501 alır) ve silindiği ayrıca doğrulanır.
+- **CLEANUP:** silme **oturum açıkken** denenir (çıkıştan sonra istek `anon` rolüne düşer → 42501).
+  - Zincirde kilitli kayıt **yoksa** → silinir ve `Sentetik zincir gerçekten silindi` **PASS**.
+  - Kilitli kayıt **varsa** → `Kilitli klinik kayıt danışan silinmesini engelledi` **DENY**
+    (`HTTP 400 · P0001`) + `Kilitli kayıt hâlâ yerinde` **PASS** + `Sentetik zincir temizliği`
+    **SKIP**. Bu, imza/kilit tasarımının istenen sonucudur: kilitli klinik kayıt cascade ile
+    bile silinemez.
+
+> Koşu #4'ten (#4, #5) sonra sentetik zincirlerin bir kısmı bu nedenle **canlıda kalır**.
+> Bu yüzden `CLEANUP` FAIL değil `DENY + SKIP` raporlar; güvenlik kontrolü değil, bakım adımıdır.
 
 ### Artık veri (opsiyonel)
 
-Eski koşulardan kalan sentetik kayıtlar varsa: `scripts/live-validation/cleanup-live-test-data.sql`
-(SQL Editor). Yalnızca `clients.file_number like 'LIVE-%'` ve `%-live-check.txt` nesnelerini hedefler;
-önce önizleme sorguları çalıştırılır, silme adımları yorumlu durur.
+`scripts/live-validation/cleanup-live-test-data.sql` (SQL Editor):
+
+1. **§1–2 önizleme** (kilitli kayıt sayısı dahil), 2. **§3 arşivle** (önerilen; klinik kayıtlar korunur),
+   3. **§4 tam silme** (uyarılı: kilit trigger'ları yalnız işlem süresince kapatılır, hedef yalnız
+   `file_number LIKE 'LIVE-%'` satırları, sonunda trigger'lar yeniden açılır), 4. **§5 doğrulama**
+   (trigger'lar `O` = açık mı?).
 
 ### Kapsam dışı (ayrı raporlanır)
 
@@ -206,5 +217,6 @@ Sınıflandırma kümeleri: `grant-deny` (42501 / GRANT katmanı), `rls-deny` (p
 DENY bekleyen kontroller için ilk dördü **kanıt** sayılır; `missing-object`/`auth`/`network` FAIL'dir.
 
 Ağ olmadan doğrulanabilir: `node scripts/live-validation/run.mjs --selftest`
-(**13/13** sınıflandırma kontrolü; canlı koşularda görülen birebir payload'larla — `P0001` kilit
-mesajları, `NoSuchKey` — ve ilgisiz bir `P0001`'in FAIL kalması kontrolü).
+(**13/13** sınıflandırma + **5/5** CLEANUP rapor planı; canlı koşularda görülen birebir
+payload'larla — `P0001` kilit mesajları, `NoSuchKey` — ilgisiz bir `P0001`'in FAIL kalması ve
+kilitli kayıt senaryosunun `DENY + PASS + SKIP` üretmesi kontrolleri).

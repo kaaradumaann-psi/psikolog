@@ -42,15 +42,16 @@ mimarisi kapatılmak üzere çalışıldı. Bu fazda:
   (canlı şemada PHASE 7 nesneleri var), kalan tek FAIL **kurum ataması (seed uygulanmadı)**.
   **koşu #3** aynı tablo (admin `rol=ADMIN`, org yok → rol elle değiştirilmiş; seed yok) →
   `emit-seed.mjs` + koşucunun kendisi `live-seed.local.sql` üretiyor →
-  **koşu #4: İLK TAM MATRİS — 64 PASS / 14 DENY / 4 FAIL.** Seed uygulandı
-  (A/B/admin `organization_id` dolu). Güvenlik kanıtları yeşil: `anon` 4/4 DENY (401/42501),
-  B→A okuma/güncelleme/silme DENY (0 satır), B→A INSERT 403/42501,
-  **kilitli kayıt UPDATE/DELETE trigger ile reddedildi (400/P0001)**,
-  Storage B read/update/delete DENY, çıkış izolasyonu DENY, klinik zincir 9/9 + kalıcılık PASS,
-  imza/kilit/revizyon + `superseded_by` PASS. **4 FAIL'in tamamı koşucu tarafı**
-  (kilit reddi ve storage `NoSuchKey` sınıflandırması + temizliğin çıkıştan sonra denenmesi);
-  düzeltildi ve canlı payload'larla `--selftest` **13/13**.
-  **LIVE SUPABASE hâlâ FAILED** (düzeltmelerin canlıda doğrulanması için son koşu bekliyor).
+  **koşu #4: İLK TAM MATRİS — 64 PASS / 14 DENY / 4 FAIL** → 2 raporlama hatası düzeltildi →
+  **koşu #5: 64 PASS / 17 DENY / 2 FAIL.** Seed uygulandı (A/B/admin `organization_id` dolu).
+  Güvenlik kanıtları yeşil: `anon` 5/5 DENY (401/42501), B→A okuma/güncelleme/silme DENY (0 satır),
+  B→A INSERT 403/42501, **kilitli kayıt UPDATE/DELETE trigger ile reddedildi (400/P0001)**,
+  Storage B read (`NoSuchKey`) / update (`AccessDenied`) / delete (0 satır) DENY,
+  çıkış izolasyonu DENY, klinik zincir 27/27 + kalıcılık PASS, imza/kilit/revizyon +
+  `superseded_by=rev2` PASS. Kalan 2 FAIL yalnız **CLEANUP**: sentetik zincirde kilitli kayıt
+  olduğu için danışan silme (cascade dahil) DB trigger'ıyla engellendi — **istenen immutability**;
+  koşucu artık bunu `DENY` + `SKIP` olarak raporlar.
+  **LIVE SUPABASE hâlâ FAILED** (bu raporlamanın canlıda doğrulanması için son koşu bekliyor).
   **Gerçek tarayıcı ve production validation hâlâ NOT VERIFIED.**
 
 Doğrulama özeti (bu raporda kanıtlarıyla):
@@ -68,7 +69,10 @@ Canlı Supabase → **FAILED (kısmi koşu #2: 15 PASS / 2 DENY / 1 FAIL)**, ger
 > (5) kullanıcı makinesi **koşu #3**: aynı sonuç tablosu — admin profili bu kez `rol=ADMIN` (org yok,
 > yani rol elle değiştirilmiş; seed yine uygulanmamış) → koşucu artık seed SQL'ini otomatik üretir;
 > (6) kullanıcı makinesi **koşu #4 (seed sonrası, ilk tam matris)**: 64 PASS / 14 DENY / 4 FAIL —
-> tüm güvenlik kontrolleri kanıtlı geçti, 4 FAIL koşucu raporlama/sıra hatasıydı ve düzeltildi.
+> tüm güvenlik kontrolleri kanıtlı geçti, 4 FAIL koşucu raporlama/sıra hatasıydı ve düzeltildi;
+> (7) kullanıcı makinesi **koşu #5**: 64 PASS / 17 DENY / 2 FAIL — `locked UPDATE/DELETE` ve
+> `B read A` artık kanıtlı **DENY**; kalan 2 FAIL, kilitli kaydın cascade silmeyi engellemesi
+> (istenen immutability) → koşucu bunu `DENY` + `SKIP` raporlayacak şekilde güncellendi.
 > Kurum ataması **tasarım gereği** istemciden yapılamaz
 > (`profiles_insert_self` → `organization_id is null`; `authenticated` rolünde `profiles` UPDATE yok);
 > SQL Editor'da çalıştırılır.
@@ -275,10 +279,10 @@ Kaynak-of-truth testi: localStorage temizlenip yeniden yüklenince veri Supabase
 | Entegrasyon (store ↔ sahte CloudPort) | **PASS** | `tests/phase7CloudSync.test.ts` (12) |
 | PGlite / SQL davranışı | **PASS** | `tests/phase7LockChain.test.ts` (11), `phase7SessionChain.test.ts` (10) |
 | RLS/IDOR matrisi | **PASS** | `tests/phase7RlsMatrix.test.ts` (14), `security*` (23) |
-| Canlı doğrulama kiti — hata biçimlendirme/sınıflandırma | **PASS** | `run.mjs --selftest` → **13/13** (ağ yok; canlı koşudan alınan `P0001` kilit ve `NoSuchKey` payload'larıyla) |
+| Canlı doğrulama kiti — hata biçimlendirme/sınıflandırma + CLEANUP planı | **PASS** | `run.mjs --selftest` → **13/13** sınıflandırma + **5/5** CLEANUP planı (ağ yok; canlı koşudan alınan `P0001` kilit ve `NoSuchKey` payload'larıyla) |
 | Canlı doğrulama seed SQL'i + emit-seed | **PASS** | `tests/liveValidationSeed.test.ts` (7 kontrol: atama, idempotency, sessiz geçmeme, admin yokluğu, placeholder tekilliği, e-posta doldurma + parola yazmama, eksik env'de çıkış kodu 2) |
 | Canlı şema/verify SQL'i | **PASS** | `tests/liveValidationVerifySql.test.ts` (1 kontrol: 25+ nesne + 11 migration) |
-| Canlı Supabase kiti (`scripts/live-validation/run.mjs`) | **Kısmi — güvenlik kanıtları yeşil, raporlama düzeltmesi bekliyor** | Koşu #4 (kullanıcı makinesi, tam matris): **64 PASS · 14 DENY · 4 FAIL** (4 FAIL koşucu hatası; kanıtları §0.3) |
+| Canlı Supabase kiti (`scripts/live-validation/run.mjs`) | **Kısmi — güvenlik kanıtları yeşil, CLEANUP raporlaması bekliyor** | Koşu #5 (kullanıcı makinesi, tam matris): **64 PASS · 17 DENY · 2 FAIL** (2 FAIL = kilitli kaydın cascade silmeyi engellemesi; tasarım gereği) |
 | Tarayıcı (Playwright, gerçek Chromium) | **NOT RUN / BLOCKED** | Chromium ikili dosyası yok (`~/.cache/ms-playwright` boş); kullanıcı makinesinde koşulmadı |
 | Üretim (canlı Supabase + dağıtım) | **NOT VERIFIED** | Production bundle + dağıtım ortamı doğrulaması yapılmadı |
 
@@ -301,14 +305,17 @@ Toplam: `npm test` → **145 test, 145 PASS, 0 FAIL**. `npx tsc --noEmit` → **
    **Güncelleme (koşu #1 → #4):** koşu #1 AUTH 6 PASS / anon `[object Object]` / kurum ataması FAIL →
    teşhis düzeltmesi → koşu #2/#3: **anon DENY kanıtlı** (401/42501), **SEMA 9/9 PASS**, kurum ataması
    hâlâ FAIL (seed yok; atama tasarım gereği istemciden yapılamaz) → seed otomatikleştirildi →
-   **koşu #4 (tam matris): 64 PASS / 14 DENY / 4 FAIL.** Yeşil çıkan kanıtlar:
+   **koşu #4 (tam matris): 64 PASS / 14 DENY / 4 FAIL** → raporlama düzeltmesi →
+   **koşu #5: 64 PASS / 17 DENY / 2 FAIL.** Yeşil çıkan kanıtlar:
    AUTH 12/12, SEMA 9/9, klinik zincir 27/27 + kalıcılık, RLS A→A PASS / B→A DENY (0 satır) /
    B→A INSERT 403-42501 / admin kapsam PASS / anon 5/5 DENY, imza-kilit-revizyon + `superseded_by` PASS,
    **kilitli kayıt UPDATE/DELETE DB trigger'ıyla reddedildi (`HTTP 400 · P0001`)**, Storage
    A PASS / B read-update-delete DENY, çıkış izolasyonu DENY + A yeniden giriş PASS.
-   4 FAIL yalnız koşucu raporlamasıydı (kilit reddi `P0001`, storage `NoSuchKey`, temizliğin
-   çıkıştan sonra denenmesi) ve bu turda düzeltildi → **son bir koşu ile `FAIL 0` doğrulanmalı**.
-   O doğrulama gelene kadar **LIVE SUPABASE = FAILED** (PASS yazılmaz).
+   Koşu #5'te `locked UPDATE/DELETE` ve storage `B read A` **DENY** oldu (kanıtlı). Kalan 2 FAIL
+   yalnız **CLEANUP**: zincirdeki kilitli kayıt, danışan silinmesini cascade dahil engelliyor —
+   **imza/kilit tasarımının istenen sonucu**; koşucu bunu `DENY` + `SKIP` raporlayacak şekilde
+   güncellendi. **Son bir koşu ile `FAIL 0` doğrulanmalı**; o doğrulama gelene kadar
+   **LIVE SUPABASE = FAILED** (PASS yazılmaz).
 2. **Gerçek tarayıcı doğrulaması — NOT RUN (sandbox'ta BLOCKED).** Playwright 1.63.0 kurulu ancak tarayıcı ikilisi yok
    (`~/.cache/ms-playwright` boş; sistemde `chromium`/`google-chrome` yok) ve indirme adımı başarısız
    ("Failed to download Chrome for Testing"). Bu yüzden responsive/erişilebilirlik ve uçtan uca
@@ -339,6 +346,14 @@ Toplam: `npm test` → **145 test, 145 PASS, 0 FAIL**. `npx tsc --noEmit` → **
    (yalnızca klinik silme/kilit/imza akışları önceliklendirildi).
 7. **Ağ hatası senaryosu** kuyruk düzeyinde test edildi; tarayıcıda gerçek ağ kesintisi senaryosu
    doğrulanmadı (BLOCKED).
+8. **Kilitli kayıt → danışan silinemez (canlı koşu #5 ile doğrulandı):** `clients` silindiğinde
+   alt kayıtlara uygulanan `ON DELETE CASCADE`, kilit trigger'ı tarafından reddedilir; yani kilitli
+   klinik kaydı olan bir danışan **hiç silinemez**. İmmutability açısından **istenen** davranıştır
+   (kilit DB düzeyinde korunuyor), ancak ileride yanlış kayıt düzeltme / KVKK silme-veya-anonimleştirme
+   talebi için **arşiv + anonimleştirme akışı** gerekir. PHASE 7 kapsamında yeni özellik eklenmedi;
+   bakım için `scripts/live-validation/cleanup-live-test-data.sql` (arşivle / uyarılı tam silme) var.
+9. **Sentetik artık:** koşu #4 ve #5'in test zincirleri kilitli kayıt içerdiği için canlıda kaldı
+   (test kurumları `LIVE-TEST A/B`). Temizlik için aynı betik kullanılabilir.
 
 ---
 
@@ -365,11 +380,11 @@ $ git show --stat --oneline 8355031   # tur 2 (P0-8 teşhis düzeltmesi)
  tests/liveValidationVerifySql.test.ts         | YENİ (1 kontrol)
  8 files changed, 1157 insertions(+), 296 deletions(-)
 
-$ git status --short            # koşu #4 sonrası eklenenler
- M scripts/live-validation/run.mjs              (lock-deny + not-found-deny, CLEANUP sırası)
- M scripts/live-validation/README.md            (kanıt kuralları, 13/13 selftest)
-?? scripts/live-validation/cleanup-live-test-data.sql   (yeni — eski artıklar)
- M docs/PHASE-7-LIVE-VALIDATION.md              (koşu #4 tam matris + 4 FAIL analizi)
+$ git status --short            # koşu #5 sonrası eklenenler
+ M scripts/live-validation/run.mjs              (CLEANUP: kilit koruması → DENY/SKIP)
+ M scripts/live-validation/README.md            (temizlik beklentisi + bakım seçenekleri)
+ M scripts/live-validation/cleanup-live-test-data.sql  (önizleme + arşivle + uyarılı tam silme)
+ M docs/PHASE-7-LIVE-VALIDATION.md              (koşu #5 + kalan 2 FAIL analizi)
  M docs/PHASE-7-REPORT.md                       (bu güncelleme)
 ```
 
@@ -438,12 +453,13 @@ Not: `supabase/.temp/` (CLI yerel durumu), `.env.live` ve `live-validation-resul
   (semptom kararı + `supabase_migrations.schema_migrations` karşılaştırması), `README.md` (koşu sırası + kanıt kuralları),
   `tests/liveValidationSeed.test.ts`, `tests/liveValidationVerifySql.test.ts`, `docs/PHASE-7-LIVE-VALIDATION.md`
 - TESTS: `npm test` **142/142** · TYPECHECK: PASS · BUILD: PASS · `run.mjs --selftest` **8/8**
-- LIVE SUPABASE: **FAILED (kısmi — güvenlik kanıtları yeşil)** — koşu #4 (tam matris):
-  **64 PASS · 14 DENY · 4 FAIL**. Kanıtlar: anon 5/5 DENY (401/42501), B→A okuma/güncelleme/silme
-  DENY (0 satır) + B→A INSERT 403/42501, admin kapsam PASS, klinik zincir 9/9 + kalıcılık +
+- LIVE SUPABASE: **FAILED (kısmi — güvenlik kanıtları yeşil)** — koşu #5 (tam matris):
+  **64 PASS · 17 DENY · 2 FAIL**. Kanıtlar: anon 5/5 DENY (401/42501), B→A okuma/güncelleme/silme
+  DENY (0 satır) + B→A INSERT 403/42501, admin kapsam PASS, klinik zincir 27/27 + kalıcılık +
   `session.appointment_id` + imza/kilit/revizyon + `superseded_by=rev2`, **kilitli UPDATE/DELETE
   trigger reddi (400/P0001)**, Storage A PASS / B DENY (`NoSuchKey`, `AccessDenied`, 0 satır),
-  çıkış izolasyonu DENY. 4 FAIL = koşucu raporlama/sıra hatası (düzeltildi, `--selftest` 13/13).
+  çıkış izolasyonu DENY. Kalan 2 FAIL = CLEANUP (kilitli kayıt cascade silmeyi engelliyor —
+  istenen immutability); koşucu bunu `DENY`+`SKIP` raporlayacak şekilde güncellendi.
   Koşu #1'deki `[object Object]` kök nedeni: PostgREST hatası düz nesne (`String(error)` → `[object Object]`).
   RLS politikalarında **değişiklik yok**; yalnız koşucu hata raporlama/sınıflandırma düzeltildi
   (`grant-deny` / `rls-deny` / `missing-object` / `auth` / `network`).
@@ -457,8 +473,12 @@ Not: `supabase/.temp/` (CLI yerel durumu), `.env.live` ve `live-validation-resul
 - KOŞU #4 DÜZELTMELERİ: `lock-deny` (P0001 + kilit metni) ve `not-found-deny` (storage `NoSuchKey`)
   DENY kanıtı olarak sınıflandırılır; ilgisiz `P0001` hâlâ FAIL; CLEANUP oturum açıkken çalışır ve
   silindiği ayrıca doğrulanır; `cleanup-live-test-data.sql` eski artıklar için eklendi
+- KOŞU #5 DÜZELTMESİ: CLEANUP akışı kilit korumasını tanır → kilitli kayıt varsa
+  `Kilitli klinik kayıt danışan silinmesini engelledi` **DENY** + `Kilitli kayıt hâlâ yerinde` **PASS**
+  + `Sentetik zincir temizliği` **SKIP** (bakım adımı); `cleanup-live-test-data.sql` yenilendi
+  (önizleme + arşivle + uyarılı tam silme + trigger durumu doğrulaması)
 - SIRADAKİ: (1) `node scripts/live-validation/run.mjs` (tekrar) → beklenti **FAIL 0**;
-  (2) isteğe bağlı artık temizliği: `cleanup-live-test-data.sql`;
+  (2) isteğe bağlı artık bakımı: `cleanup-live-test-data.sql` §3 (arşivle);
   (3) REAL BROWSER: `npm run test:e2e` (Chromium ikilisi gerekir) · PRODUCTION: dağıtım ortamı koşusu
 - **PHASE 7 COMPLETE DEĞİL** — LIVE SUPABASE için PASS yalnız `FAIL 0` koşusundan sonra yazılır
 - **PHASE 7 COMPLETE DEĞİL** (canlı doğrulama FAILED; PASS yazılmaz)

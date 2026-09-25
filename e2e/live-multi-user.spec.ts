@@ -33,6 +33,9 @@
  *          Uygulama düzeltmesi: (a) sunucu anlık görüntüsü yüklenene kadar klinik içerik render
  *          edilmez (`[data-cloud-gate="loading"]`), (b) aktivasyon öncesi yazımlar kuyruğa alınır
  *          ve aktivasyonda kapsamlı kuyruğa taşınıp gönderilir.
+ * koşu #6 (2026-09-25, kullanıcı makinesi) — spec v4 ile PASS (22,8 sn). Ortam bu rapor satırından
+ *          ayırt edilemediği için spec artık `ortam` anotasyonu yazar (E2E_BASE_URL + gözlenen origin);
+ *          PRODUCTION kanıtı yalnız bu etiket production bundle'ı gösteriyorsa sayılır.
  * koşu #4 PASSED (13,5 sn) — tam matris uçtan uca: kayıt → detay → liste → localStorage temizliği +
  *          yenileme (kayıt sunucudan geri geldi) → B göremedi → A yeniden gördü → arayüzden silme.
  *          Ağ özeti: POST /rest/v1/clients → 201 (kayıt sunucuya yazıldı), başarısız istek yok.
@@ -162,6 +165,21 @@ async function awaitBackendIdle(backend: { pendingCount: () => number }) {
     .toBe(0);
 }
 
+/**
+ * Kanıtın hangi ortama ait olduğunu yazar (koşu #6 dersi: rapor satırı ortamı göstermiyordu,
+ * bu yüzden PRODUCTION kanıtı ayırt edilemedi). Karar `E2E_BASE_URL` ile gözlenen origin'e dayanır.
+ */
+function environmentLabel(observedOrigin: string): string {
+  const configured = (process.env.E2E_BASE_URL ?? '').trim();
+  const isPreviewPort = /:4173$/.test(observedOrigin);
+  const kind = configured
+    ? isPreviewPort
+      ? 'PRODUCTION/PREVIEW bundle (E2E_BASE_URL, :4173)'
+      : `PRODUCTION/uzak ortam (E2E_BASE_URL: ${configured})`
+    : 'dev sunucusu (Vite) — PRODUCTION kanıtı DEĞİLDİR';
+  return `ortam: ${kind} | gözlenen origin: ${observedOrigin} | E2E_BASE_URL: ${configured || 'yok'}`;
+}
+
 /** Uygulamanın kendi "bulut hazır" kapısı: sunucu anlık görüntüsü gelene kadar içerik render edilmez. */
 async function waitForCloudReady(page: Page) {
   await expect(
@@ -264,6 +282,10 @@ test.describe('REAL BROWSER — canlı Supabase çok kullanıcılı oturum', () 
 
     // ---------------------------------------------------------------- 2) hazırlık + eski artıklar
     await openClients(page);
+    test.info().annotations.push({
+      type: 'ortam',
+      description: environmentLabel(await page.evaluate(() => window.location.origin)),
+    });
     test.info().annotations.push({ type: 'hidrasyon', description: backend.summary() });
     await deleteLeftovers(page);
     // Artık silmelerinin yanıtları otursun: kaydetme kanıtı yalnız POST ile ölçülecek.

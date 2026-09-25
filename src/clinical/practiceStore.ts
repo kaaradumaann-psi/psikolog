@@ -319,6 +319,22 @@ export function exportPracticeData(): PracticeBundle {
   };
 }
 
+export function remapPracticeClientId(from: string, to: string): void {
+  if (!from || !to || from === to) return;
+  const rewrite = <T extends { clientId?: string }>(key: string) => {
+    write(
+      key,
+      read<T[]>(key, []).map((item) => (item.clientId === from ? { ...item, clientId: to } : item)),
+    );
+  };
+  rewrite<PracticeNote>(NOTES_KEY);
+  rewrite<PracticeTask>(TASKS_KEY);
+  rewrite<PracticeDocument>(DOCS_KEY);
+  rewrite<RapidScreeningResult>(SCREEN_KEY);
+  rewrite<{ clientId: string }>(FORM_KEY);
+  rewrite<{ clientId: string }>(SAFETY_KEY);
+}
+
 export function purgeClientPractice(clientId: string): void {
   const all = clientId === '*';
   const keep = (id: string | undefined) => !all && id !== clientId;

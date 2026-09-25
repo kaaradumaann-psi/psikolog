@@ -15,6 +15,8 @@ import type {
 } from './clinicalTypes';
 import { purgeClientPractice, recordAudit } from './practiceStore';
 import { MAX_CLIENTS, MAX_SESSIONS, reportStorageError } from './recordRules';
+import { scheduleClientCloudDelete, scheduleClientCloudSync } from './clientCloud';
+import { resolveClientId } from './clientIds';
 
 const CLIENTS_KEY = 'psikolog_clients_v2';
 const SESSIONS_KEY = 'psikolog_sessions_v2';
@@ -103,7 +105,8 @@ export function getClients(): Client[] {
 }
 
 export function getClientById(id: string): Client | undefined {
-  return getClients().find(c => c.id === id);
+  const resolved = resolveClientId(id);
+  return getClients().find((client) => client.id === resolved || client.id === id);
 }
 
 export function saveClient(client: Client): void {
@@ -126,6 +129,39 @@ export function saveClient(client: Client): void {
   }
   setLocal(CLIENTS_KEY, list);
   recordAudit({ action: 'save', entity: 'client', entityId: client.id, summary: `${client.firstName} ${client.lastName}` });
+  scheduleClientCloudSync(list.find((item) => item.id === client.id) ?? client);
+}
+
+/** Local write only — used by cloud hydrate so legacy rows are not deleted. */
+export function saveClientQuiet(client: Client): void {
+  const list = getClients();
+  const idx = list.findIndex((item) => item.id === client.id);
+  if (idx >= 0) list[idx] = client;
+  else list.unshift(client);
+  setLocal(CLIENTS_KEY, list);
+}
+
+export function remapClinicalClientId(from: string, to: string): void {
+  if (!from || !to || from === to) return;
+  const rewrite = <T extends { id?: string; clientId?: string }>(key: string) => {
+    const list = getLocal<T[]>(key, []);
+    setLocal(
+      key,
+      list.map((item) => {
+        const next = { ...item };
+        if (next.id === from) next.id = to;
+        if (next.clientId === from) next.clientId = to;
+        return next;
+      }),
+    );
+  };
+  rewrite<Client>(CLIENTS_KEY);
+  rewrite<SoapSession>(SESSIONS_KEY);
+  rewrite<Appointment>(APPOINTMENTS_KEY);
+  rewrite<BeckDepressionResult>(BDI_KEY);
+  rewrite<BeckAnxietyResult>(BAI_KEY);
+  rewrite<Scl90Result>(SCL90_KEY);
+  rewrite<ClinicalReport>(REPORTS_KEY);
 }
 
 export function deleteClient(id: string): void {
@@ -138,6 +174,7 @@ export function deleteClient(id: string): void {
   setLocal(REPORTS_KEY, getClinicalReports().filter(r => r.clientId !== id));
   purgeClientPractice(id);
   recordAudit({ action: 'delete', entity: 'client', entityId: id, summary: 'Danışan dosyası ve bağlı kayıtlar silindi' });
+  scheduleClientCloudDelete(id);
 }
 
 /* ------------------------------------------------------------------ */

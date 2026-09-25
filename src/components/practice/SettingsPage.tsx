@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
+import { startMmpiSso } from '../../auth/sso';
 import { supabaseConfig } from '../../auth/supabaseClient';
+import { MMPI_ORIGIN } from '../../lib/mmpiOrigin';
 import { DataManagementModal } from '../clinical/DataManagementModal';
 import {
   MAX_BRAND_ASSET_BYTES,
@@ -36,6 +38,8 @@ export function SettingsPage({ canAdmin }: { canAdmin: boolean }) {
   const [backupOpen, setBackupOpen] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ssoError, setSsoError] = useState<string | null>(null);
+  const [ssoBusy, setSsoBusy] = useState(false);
 
   useEffect(() => subscribePracticeStore(() => setSettings(getSettings())), []);
 
@@ -116,12 +120,36 @@ export function SettingsPage({ canAdmin }: { canAdmin: boolean }) {
       <section className="modern-table-card" style={{ padding: 18, marginTop: 16 }}>
         <h2 style={{ fontSize: 16, marginTop: 0 }}>Bulut</h2>
         {supabaseConfig.configured ? (
-          <p style={{ color: 'var(--soft)' }}>Supabase bağlı. Kurum verisi RLS ile ayrılır. Yerel dosya yine bu cihazda kalır; bulut danışanları ayrı şemadadır.</p>
+          <p style={{ color: 'var(--soft)' }}>Supabase bağlı. Kurum verisi RLS ile ayrılır. Yerel dosya yine bu cihazda kalır; kimlik için danışan UUID’si buluta yazılır.</p>
         ) : (
           <p style={{ color: 'var(--soft)' }}>
             Supabase tanımlı değil — çalışma alanı çevrimdışı önceliklidir. Kurumsal kurulum için <code>.env</code> içine yalnızca anon anahtar yazılır; hizmet rolü tarayıcıya girmez. Şema <code>supabase/migrations</code> altındadır.
           </p>
         )}
+        <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
+          <p style={{ color: 'var(--soft)', margin: 0 }}>MMPI çalışma alanı ayrı bir uygulamadır. Parola gönderilmez; kısa ömürlü tek kullanımlık kod kullanılır.</p>
+          {supabaseConfig.configured ? (
+            <button
+              type="button"
+              className="btn-primary btn-sm"
+              disabled={ssoBusy}
+              onClick={() => {
+                setSsoError(null);
+                setSsoBusy(true);
+                void startMmpiSso().catch((reason) => {
+                  setSsoBusy(false);
+                  setSsoError(reason instanceof Error ? reason.message : 'MMPI oturumu başlatılamadı.');
+                });
+              }}
+            >
+              MMPI’ye git
+            </button>
+          ) : (
+            <p style={{ color: 'var(--soft)', margin: 0 }}>MMPI’ye parolasız geçiş için bulut girişi gerekir.</p>
+          )}
+          <p style={{ color: 'var(--muted)', margin: 0, fontSize: 13 }}>Hedef: {MMPI_ORIGIN}</p>
+          {ssoError && <p style={{ color: 'var(--danger-ink)', margin: 0 }} role="alert">{ssoError}</p>}
+        </div>
         {canAdmin && supabaseConfig.configured && <CloudAdminPanel />}
       </section>
       {backupOpen && <DataManagementModal onClose={() => setBackupOpen(false)} />}

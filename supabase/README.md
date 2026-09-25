@@ -69,7 +69,21 @@ insert into storage.buckets (id, name, public) values ('client-documents', 'clie
 
 Policies: org_member read/write, owner delete, no anon. File size 10MiB, mime whitelist pdf/jpg/png/webp/docx.
 
-## 6. Güvenlik
+## 6. PHASE 1 SSO secrets
+
+Deploy after `db push`:
+
+```sh
+supabase functions deploy sso-issue
+supabase functions deploy sso-redeem
+supabase secrets set SSO_HMAC_SECRET='<32+ char random>' \
+  MMPI_SSO_ORIGIN=https://mmpi.halilkaraduman.com.tr \
+  ALLOWED_ORIGINS=https://psikolog.halilkaraduman.com.tr
+```
+
+`SSO_HMAC_SECRET` is never a `VITE_` variable. MMPI `sso-consume` uses the same HMAC secret and `PSYCHOLOGY_SSO_REDEEM_URL`.
+
+## 7. Güvenlik
 
 - RLS her tablo, anon revoke
 - Security definer search_path=public

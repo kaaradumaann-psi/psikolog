@@ -13,7 +13,8 @@
     "preview": "vite preview --host 0.0.0.0 --port 4173",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:sso": "playwright test -c playwright.sso.config.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",

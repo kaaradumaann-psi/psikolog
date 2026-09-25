@@ -43,6 +43,15 @@ enable_manual_linking = true
 third_party_auth = false
 # Public registration KAPALI — only Edge Function creates users
 
+[functions.admin-users]
+verify_jwt = true
+
+[functions.sso-issue]
+verify_jwt = true
+
+[functions.sso-redeem]
+verify_jwt = false
+
 [auth.email]
 enable_signup = false
 double_confirm_changes = true

@@ -3,7 +3,9 @@ import type { FormEvent } from 'react';
 import type { AuthenticatedUser } from './auth/authTypes';
 import { displayName } from './auth/userDisplay';
 import { supabaseConfig } from './auth/supabaseClient';
+import { setSessionUser } from './auth/sessionUser';
 import { getSession, onAuthChange, signIn, signOut, userFromSession } from './auth/supabaseAuth';
+import { hydrateClientsFromCloud } from './clinical/clientCloud';
 import { AppointmentsPage } from './components/clinical/AppointmentsPage';
 import { AssessmentHubPage } from './components/clinical/AssessmentHubPage';
 import { BeckAnxietyPage } from './components/clinical/BeckAnxietyPage';
@@ -255,6 +257,11 @@ function WorkspaceShell({ user, onLogout, localMode }: { user: AuthenticatedUser
     window.addEventListener('psikolog:storage-error', onError);
     return () => window.removeEventListener('psikolog:storage-error', onError);
   }, []);
+  useEffect(() => {
+    setSessionUser(localMode ? null : user);
+    if (!localMode) void hydrateClientsFromCloud(user);
+    return () => setSessionUser(null);
+  }, [user, localMode]);
 
   const workspace = resolveWorkspace(route) ?? 'home';
   const activeItem = NAV_GROUPS.flatMap((group) => group.items).find((item) => item.id === workspace);

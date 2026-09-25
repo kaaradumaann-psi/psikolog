@@ -8,6 +8,7 @@ import {
 } from '../../clinical/clinicalStore';
 import { ClinicalDialog } from './ClinicalDialog';
 import { Icon } from '../Icon';
+import { newClientId } from '../../clinical/clientIds';
 import { ageFromBirthDate, isValidTc, nextFileNumber, normalizeTc } from '../../clinical/recordRules';
 import { navigate } from '../../router';
 
@@ -163,7 +164,7 @@ export function ClientListPage() {
       return;
     }
 
-    const clientId = editingClient ? editingClient.id : 'cli_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 6);
+    const clientId = editingClient ? editingClient.id : newClientId();
     const clientToSave: Client = {
       id: clientId,
       fileNumber,

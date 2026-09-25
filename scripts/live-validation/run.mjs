@@ -11,8 +11,17 @@
  *  - `service_role` GEREKMEZ. Yalnızca anon/publishable anahtar + test kullanıcıları.
  *
  * KULLANIM
- *   node scripts/live-validation/run.mjs            # tam koşu
- *   node scripts/live-validation/run.mjs --dry-run  # yalnız ortam kontrolü (ağ yok)
+ *   node scripts/live-validation/run.mjs             # tam koşu
+ *   node scripts/live-validation/run.mjs --dry-run   # yalnız ortam kontrolü (ağ yok)
+ *   node scripts/live-validation/run.mjs --selftest  # hata biçimlendirme öz-testi (ağ yok)
+ *
+ * HATA RAPORLAMA (P0-8 teşhis düzeltmesi)
+ *   supabase-js, başarısız HTTP yanıtında `error` alanına PostgREST gövdesini
+ *   DÜZ NESNE olarak koyar ({ code, message, details, hint }); HTTP kodu ise
+ *   yanıtın `status` / `statusText` alanındadır. Bu yüzden `String(error)` veya
+ *   `${error}` kullanmak "[object Object]" üretir. Bu koşucu artık hatayı
+ *   `DbError` ile sarar ve HTTP status + code + message + details + hint
+ *   alanlarını güvenli (sır ayıklanmış) biçimde raporlar.
  *
  * GEREKLİ ORTAM DEĞİŞKENLERİ (adlar; değerler paylaşılmaz):
  *   VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY,
@@ -29,6 +38,107 @@ import { createClient } from '@supabase/supabase-js';
 const BUCKET = 'client-documents';
 const RESULTS = [];
 const DRY_RUN = process.argv.includes('--dry-run');
+
+/* ------------------------------------------------- hata teşhisi (güvenli) */
+
+const SECRET_PATTERNS = [
+  [/eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}/g, '[jwt-gizlendi]'],
+  [/sb_[a-z]+_[A-Za-z0-9_-]{8,}/g, '[anahtar-gizlendi]'],
+  [/(apikey|api_key|access_token|refresh_token|token|password|secret)=[^&\s"']+/gi, '$1=[gizlendi]'],
+];
+
+function redact(value) {
+  let text = typeof value === 'string' ? value : '';
+  for (const [pattern, replacement] of SECRET_PATTERNS) text = text.replace(pattern, replacement);
+  return text;
+}
+
+const clip = (value, max = 200) =>
+  value === null || value === undefined
+    ? ''
+    : redact(String(value)).replace(/\s+/g, ' ').trim().slice(0, max);
+
+/**
+ * supabase-js'in düz nesne olarak döndürdüğü PostgREST hatasını, HTTP kodunu da
+ * taşıyan bir Error'a sarar (status/statusText yanıt nesnesinden gelir).
+ */
+class DbError extends Error {
+  constructor(error, status, statusText) {
+    super(clip(error?.message ?? '', 300) || 'PostgREST hatası');
+    this.name = 'DbError';
+    this.code = error?.code ?? null;
+    this.details = error?.details ?? null;
+    this.hint = error?.hint ?? null;
+    this.status = typeof status === 'number' ? status : null;
+    this.statusText = statusText ?? '';
+  }
+}
+
+function errorFacts(error) {
+  const source = error ?? {};
+  const status =
+    typeof source.status === 'number'
+      ? source.status
+      : typeof source.statusCode === 'number'
+        ? source.statusCode
+        : null;
+  return {
+    code: clip(source.code, 40) || null,
+    message: clip(source.message, 240) || '(mesaj yok)',
+    details: clip(source.details, 180) || null,
+    hint: clip(source.hint, 180) || null,
+    status,
+    statusText: clip(source.statusText, 40) || null,
+  };
+}
+
+const MISSING_OBJECT_CODES = new Set(['42P01', '3F000', 'PGRST202', 'PGRST205', 'PGRST106']);
+
+function classifyError(error) {
+  const facts = errorFacts(error);
+  const text = `${facts.message} ${facts.details ?? ''} ${facts.hint ?? ''}`;
+  if (facts.code && MISSING_OBJECT_CODES.has(facts.code)) return { kind: 'missing-object', facts };
+  if (/schema cache|could not find the table|does not exist|unknown relation/i.test(text)) {
+    return { kind: 'missing-object', facts };
+  }
+  if (facts.code === '42501' || /row-level security|permission denied/i.test(text)) {
+    return { kind: 'rls-deny', facts };
+  }
+  if (facts.status === 401 || facts.status === 403 || /invalid api key|jwt|unauthorized|invalid claim/i.test(text)) {
+    return { kind: 'auth', facts };
+  }
+  if (facts.status === 0 || /fetch failed|fetcherror|network|enotfound|econnrefused|tls|socket/i.test(text)) {
+    return { kind: 'network', facts };
+  }
+  return { kind: 'other', facts };
+}
+
+const KIND_HINTS = {
+  'missing-object': 'canlı şemada nesne bulunamadı → migration uygulanmamış ya da şema adı farklı',
+  'rls-deny': 'RLS/GRANT reddi — DENY bekleyen kontroller için bu bir KANITTIR',
+  auth: 'anahtar/oturum reddi',
+  network: 'ağ hatası (DNS/TLS/proxy)',
+};
+
+function describeError(error) {
+  const { kind, facts } = classifyError(error);
+  const parts = [
+    `HTTP ${facts.status === null ? '(yok)' : facts.status}${facts.statusText ? ` ${facts.statusText}` : ''}`,
+    `code=${facts.code ?? '(yok)'}`,
+    `message="${facts.message.replace(/"/g, "'")}"`,
+  ];
+  if (facts.details) parts.push(`details="${facts.details.replace(/"/g, "'")}"`);
+  if (facts.hint) parts.push(`hint="${facts.hint.replace(/"/g, "'")}"`);
+  const suffix = KIND_HINTS[kind] ? ` → ${KIND_HINTS[kind]}` : '';
+  return { kind, facts, text: `${parts.join(' · ')}${suffix}` };
+}
+
+/** Sorguyu çalıştırır, hatayı gerçek HTTP koduyla birlikte fırlatır. */
+async function unwrap(builder) {
+  const { data, error, status, statusText } = await builder;
+  if (error) throw new DbError(error, status, statusText);
+  return data;
+}
 
 /* ------------------------------------------------------------------ ortam */
 
@@ -60,26 +170,48 @@ function missingEnv() {
 
 /* ------------------------------------------------------------------ sonuç */
 
-function record(group, name, status, detail = '') {
-  RESULTS.push({ group, name, status, detail: detail ? String(detail).slice(0, 300) : '' });
+function record(group, name, status, detail = '', meta = {}) {
+  const entry = { group, name, status, detail: detail ? clip(detail, 300) : '' };
+  if (meta.httpStatus !== null && meta.httpStatus !== undefined) entry.httpStatus = meta.httpStatus;
+  if (meta.code) entry.code = meta.code;
+  if (meta.kind) entry.kind = meta.kind;
+  RESULTS.push(entry);
   const icon = status === 'PASS' ? '✅' : status === 'DENY' ? '🚫' : status === 'SKIP' ? '⏭️' : '❌';
-  console.log(`${icon} [${group}] ${name} → ${status}${detail ? ` · ${String(detail).slice(0, 160)}` : ''}`);
+  console.log(`${icon} [${group}] ${name} → ${status}${detail ? ` · ${clip(detail, 200)}` : ''}`);
 }
 
 async function probe(group, name, fn, expect) {
   try {
     const value = await fn();
-    const denied = value === false || value === null || (Array.isArray(value) && value.length === 0);
-    const status =
-      expect === 'PASS' ? (denied ? 'FAIL' : 'PASS') : denied ? 'DENY' : 'FAIL';
-    record(group, name, status, Array.isArray(value) ? `${value.length} satır` : '');
-    return { denied, value };
+    const isEmpty =
+      value === false || value === null || value === undefined || (Array.isArray(value) && value.length === 0);
+    const rows = Array.isArray(value) ? value.length : isEmpty ? 0 : 1;
+
+    if (expect === 'EXISTS') {
+      record(group, name, 'PASS', `HTTP 200 · ${rows} satır — nesne erişilebilir`, { httpStatus: 200 });
+      return { ok: true, value };
+    }
+
+    const denied = isEmpty;
+    const status = expect === 'PASS' ? (denied ? 'FAIL' : 'PASS') : denied ? 'DENY' : 'FAIL';
+    let detail;
+    if (expect === 'PASS') {
+      detail = denied
+        ? 'HTTP 200 · 0 satır — beklenen PASS, ancak RLS filtreledi/reddetti'
+        : `HTTP 200 · ${rows} satır`;
+    } else {
+      detail = denied
+        ? 'HTTP 200 · 0 satır (RLS filtreledi — beklenen DENY)'
+        : `HTTP 200 · ${rows} satır — beklenen DENY, ancak veri görünür/etkilendi (RLS SIZINTISI)`;
+    }
+    record(group, name, status, detail, { httpStatus: 200 });
+    return { denied, value, ok: status !== 'FAIL' };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const looksDenied = /row-level security|permission denied|not authorized|JWT|401|403|violates/i.test(message);
-    const status = expect === 'PASS' ? 'FAIL' : looksDenied ? 'DENY' : 'FAIL';
-    record(group, name, status, message);
-    return { denied: looksDenied, error };
+    const { kind, facts, text } = describeError(error);
+    const denied = kind === 'rls-deny';
+    const status = expect === 'PASS' ? 'FAIL' : denied ? 'DENY' : 'FAIL';
+    record(group, name, status, text, { httpStatus: facts.status, code: facts.code, kind });
+    return { denied, error, kind, ok: status !== 'FAIL' };
   }
 }
 
@@ -93,7 +225,7 @@ function makeClient() {
 
 async function signIn(email, password, label) {
   const client = makeClient();
-  const { data, error } = await client.auth.signInWithPassword({ email, password });
+  const { data, error, status, statusText } = await client.auth.signInWithPassword({ email, password });
   if (error || !data.user) {
     record('AUTH', `${label} giriş`, 'FAIL', error?.message ?? 'kullanıcı dönmedi');
     return null;
@@ -103,7 +235,7 @@ async function signIn(email, password, label) {
 }
 
 async function profileContext(ctx, label) {
-  const { data, error } = await ctx.client
+  const { data, error, status, statusText } = await ctx.client
     .from('profiles')
     .select('id, role, active, organization_id, email')
     .eq('id', ctx.user.id)
@@ -114,6 +246,31 @@ async function profileContext(ctx, label) {
   }
   record('AUTH', `${label} profil`, 'PASS', `rol=${data.role} org=${data.organization_id ? 'var' : 'YOK'}`);
   return data;
+}
+
+/* --------------------------------------------------------- canlı şema kontrolü */
+
+/**
+ * Salt-okur ön kontrol: PHASE 7 nesneleri canlı şemada var mı?
+ * RLS satırları filtrelediği için "0 satır" normaldir; ölçüt "sorgu hatasız döndü mü".
+ * Tablo/kolon yoksa gerçek PostgREST kodu (örn. PGRST205 / 42P01) raporlanır.
+ */
+async function schemaPreflight(client) {
+  const checks = [
+    ['tablo/kolon: clients.owner_user_id', () => unwrap(client.from('clients').select('id, owner_user_id').limit(1))],
+    [
+      'tablo/kolon: sessions(appointment_id, status, locked_at)',
+      () => unwrap(client.from('sessions').select('id, appointment_id, status, locked_at').limit(1)),
+    ],
+    ['tablo/kolon: appointments.fee', () => unwrap(client.from('appointments').select('id, fee').limit(1))],
+    ['tablo: formulations', () => unwrap(client.from('formulations').select('id').limit(1))],
+    ['tablo: safety_plans', () => unwrap(client.from('safety_plans').select('id').limit(1))],
+    ['kolon: reports.locked_at', () => unwrap(client.from('reports').select('id, locked_at').limit(1))],
+    ['tablo: anamneses', () => unwrap(client.from('anamneses').select('id').limit(1))],
+    ['tablo/kolon: documents.file_path', () => unwrap(client.from('documents').select('id, file_path').limit(1))],
+    [`bucket: ${BUCKET}`, () => unwrap(client.storage.from(BUCKET).list('', { limit: 1 }))],
+  ];
+  for (const [name, run] of checks) await probe('SEMA', name, run, 'EXISTS');
 }
 
 /* --------------------------------------------------------- klinik zincir */
@@ -127,9 +284,14 @@ async function buildClinicalChain(a, orgId, clientId, label) {
   const created = {};
 
   async function insert(table, row, name) {
-    const { data, error } = await sb.from(table).insert(row).select('*').single();
+    const { data, error, status, statusText } = await sb.from(table).insert(row).select('*').single();
     if (error) {
-      record(group, name, 'FAIL', error.message);
+      const described = describeError(new DbError(error, status, statusText));
+      record(group, name, 'FAIL', described.text, {
+        httpStatus: described.facts.status,
+        code: described.facts.code,
+        kind: described.kind,
+      });
       return null;
     }
     record(group, name, 'PASS', `${table} · ${String(data.id).slice(0, 8)}…`);
@@ -314,7 +476,7 @@ async function readChain(ctx, chain, label) {
   let ok = 0;
   for (const [table, id] of reads) {
     if (!id) continue;
-    const { data, error } = await sb.from(table).select('id').eq('id', id);
+    const { data, error, status, statusText } = await sb.from(table).select('id').eq('id', id);
     const found = !error && (data ?? []).length === 1;
     if (found) ok += 1;
     record(group, `${label}: ${table} okunabilir`, found ? 'PASS' : 'FAIL', error?.message ?? '');
@@ -324,7 +486,84 @@ async function readChain(ctx, chain, label) {
 
 /* ------------------------------------------------------------------ main */
 
+/**
+ * Anon (oturumsuz) okuma/yazma matrisi — YIKICI OLMAYAN tasarım:
+ * yalnızca bu blok için A tarafından oluşturulan GEÇİCİ danışan satırı hedeflenir;
+ * beklenmeyen bir sızıntı ana test zincirini bozmaz.
+ */
+async function anonMatrix(anon, a, profileA, chainClientId) {
+  let temp = null;
+  try {
+    temp = await unwrap(
+      a.client
+        .from('clients')
+        .insert({
+          organization_id: profileA.organization_id,
+          file_number: `LIVE-ANON-${stamp()}`,
+          first_name: 'Anon',
+          last_name: 'Probe',
+          status: 'active',
+          created_by: a.user.id,
+          owner_user_id: a.user.id,
+        })
+        .select('id')
+        .single(),
+    );
+    record('RLS', 'geçici danışan (anon yazma testi için)', 'PASS', `clients · ${String(temp.id).slice(0, 8)}…`);
+  } catch (error) {
+    const described = describeError(error);
+    record('RLS', 'geçici danışan (anon yazma testi için)', 'FAIL', described.text, {
+      httpStatus: described.facts.status,
+      code: described.facts.code,
+      kind: described.kind,
+    });
+  }
+
+  if (temp) {
+    await probe(
+      'RLS',
+      'anon → geçici danışan SELECT (kayıt var, görünmemeli)',
+      () => unwrap(anon.from('clients').select('id').eq('id', temp.id)),
+      'DENY',
+    );
+    await probe(
+      'RLS',
+      'anon → geçici danışan UPDATE',
+      () => unwrap(anon.from('clients').update({ phone: '05000000000' }).eq('id', temp.id).select('id')),
+      'DENY',
+    );
+    await probe(
+      'RLS',
+      'anon → geçici danışan DELETE',
+      () => unwrap(anon.from('clients').delete().eq('id', temp.id).select('id')),
+      'DENY',
+    );
+    await probe(
+      'RLS',
+      'anon sonrası geçici danışan hâlâ mevcut',
+      () => unwrap(a.client.from('clients').select('id').eq('id', temp.id)),
+      'PASS',
+    );
+    await probe(
+      'RLS',
+      'geçici danışan silindi (temizlik)',
+      () => unwrap(a.client.from('clients').delete().eq('id', temp.id).select('id')),
+      'PASS',
+    );
+  }
+
+  // Ana zincirdeki kayıt üzerinde salt-okur kanıt (kayıt A'da mevcut, anon'da görünmemeli)
+  await probe(
+    'RLS',
+    'anon → ana zincir danışan SELECT',
+    () => unwrap(anon.from('clients').select('id').eq('id', chainClientId)),
+    'DENY',
+  );
+}
+
 async function main() {
+  if (process.argv.includes('--selftest')) return selfTest();
+
   loadEnvFile();
   const missing = missingEnv();
 
@@ -349,16 +588,16 @@ async function main() {
   // --- anon (oturumsuz)
   const anon = makeClient();
   await probe('RLS', 'anon → clients SELECT', async () => {
-    const { data, error } = await anon.from('clients').select('id').limit(1);
-    if (error) throw error;
+    const { data, error, status, statusText } = await anon.from('clients').select('id').limit(1);
+    if (error) throw new DbError(error, status, statusText);
     return data;
   }, 'DENY');
   await probe('RLS', 'anon → clients INSERT', async () => {
-    const { data, error } = await anon
+    const { data, error, status, statusText } = await anon
       .from('clients')
       .insert({ first_name: 'Anon', last_name: 'Deneme', created_by: crypto.randomUUID() })
       .select('id');
-    if (error) throw error;
+    if (error) throw new DbError(error, status, statusText);
     return data;
   }, 'DENY');
 
@@ -375,8 +614,16 @@ async function main() {
   const profileB = await profileContext(b, 'psikolog B');
   if (admin) await profileContext(admin, 'admin');
 
+  // --- canlı şema ön kontrolü (seed'den ÖNCE de çalışır: gerçek migration durumunu gösterir)
+  await schemaPreflight(a.client);
+
   if (!profileA?.organization_id || !profileB?.organization_id) {
-    record('RLS', 'kurum ataması', 'FAIL', 'A/B profillerinde organization_id yok — seed-live-test-orgs.sql çalıştırın');
+    record(
+      'RLS',
+      'kurum ataması',
+      'FAIL',
+      'A/B profillerinde organization_id yok — Supabase SQL Editor → scripts/live-validation/seed-live-test-orgs.sql (dosyanın başındaki 3 test e-postasını düzenleyin)',
+    );
     return finish();
   }
 
@@ -386,45 +633,45 @@ async function main() {
 
   // --- RLS matrisi
   await probe('RLS', 'A → A clients SELECT', async () => {
-    const { data, error } = await a.client.from('clients').select('id').eq('id', chainA.clientId);
-    if (error) throw error;
+    const { data, error, status, statusText } = await a.client.from('clients').select('id').eq('id', chainA.clientId);
+    if (error) throw new DbError(error, status, statusText);
     return data;
   }, 'PASS');
   await probe('RLS', 'A → A clients UPDATE', async () => {
-    const { data, error } = await a.client
+    const { data, error, status, statusText } = await a.client
       .from('clients')
       .update({ phone: '05550000000' })
       .eq('id', chainA.clientId)
       .select('id');
-    if (error) throw error;
+    if (error) throw new DbError(error, status, statusText);
     return data;
   }, 'PASS');
   await probe('RLS', 'B → A clients SELECT', async () => {
-    const { data, error } = await b.client.from('clients').select('id').eq('id', chainA.clientId);
-    if (error) throw error;
+    const { data, error, status, statusText } = await b.client.from('clients').select('id').eq('id', chainA.clientId);
+    if (error) throw new DbError(error, status, statusText);
     return data;
   }, 'DENY');
   await probe('RLS', 'B → A clients UPDATE', async () => {
-    const { data, error } = await b.client
+    const { data, error, status, statusText } = await b.client
       .from('clients')
       .update({ phone: '05551111111' })
       .eq('id', chainA.clientId)
       .select('id');
-    if (error) throw error;
+    if (error) throw new DbError(error, status, statusText);
     return data;
   }, 'DENY');
   await probe('RLS', 'B → A clients DELETE', async () => {
-    const { data, error } = await b.client.from('clients').delete().eq('id', chainA.clientId).select('id');
-    if (error) throw error;
+    const { data, error, status, statusText } = await b.client.from('clients').delete().eq('id', chainA.clientId).select('id');
+    if (error) throw new DbError(error, status, statusText);
     return data;
   }, 'DENY');
   await probe('RLS', 'B → A sessions SELECT', async () => {
-    const { data, error } = await b.client.from('sessions').select('id').eq('id', chainA.session?.id ?? '');
-    if (error) throw error;
+    const { data, error, status, statusText } = await b.client.from('sessions').select('id').eq('id', chainA.session?.id ?? '');
+    if (error) throw new DbError(error, status, statusText);
     return data;
   }, 'DENY');
   await probe('RLS', "B → A org'a clients INSERT", async () => {
-    const { data, error } = await b.client
+    const { data, error, status, statusText } = await b.client
       .from('clients')
       .insert({
         organization_id: profileA.organization_id,
@@ -434,13 +681,13 @@ async function main() {
         created_by: b.user.id,
       })
       .select('id');
-    if (error) throw error;
+    if (error) throw new DbError(error, status, statusText);
     return data;
   }, 'DENY');
   if (admin) {
     await probe('RLS', 'Admin → A clients SELECT (yetkili kapsam)', async () => {
-      const { data, error } = await admin.client.from('clients').select('id').eq('id', chainA.clientId);
-      if (error) throw error;
+      const { data, error, status, statusText } = await admin.client.from('clients').select('id').eq('id', chainA.clientId);
+      if (error) throw new DbError(error, status, statusText);
       return data;
     }, 'PASS');
   } else {
@@ -467,53 +714,53 @@ async function main() {
   const sessionId = chainA.session?.id;
   if (sessionId) {
     await probe('SIGN/LOCK', 'DRAFT UPDATE', async () => {
-      const { data, error } = await a.client
+      const { data, error, status, statusText } = await a.client
         .from('sessions')
         .update({ plan: 'P: güncellenmiş sentetik plan' })
         .eq('id', sessionId)
         .select('id, status, revision');
-      if (error) throw error;
+      if (error) throw new DbError(error, status, statusText);
       return data;
     }, 'PASS');
 
     await probe('SIGN/LOCK', 'SIGN (draft → signed)', async () => {
-      const { data, error } = await a.client
+      const { data, error, status, statusText } = await a.client
         .from('sessions')
         .update({ status: 'signed', signed_at: new Date().toISOString(), signed_by: a.user.id })
         .eq('id', sessionId)
         .select('id, status');
-      if (error) throw error;
+      if (error) throw new DbError(error, status, statusText);
       return data;
     }, 'PASS');
 
     await probe('SIGN/LOCK', 'LOCK (signed → locked)', async () => {
-      const { data, error } = await a.client
+      const { data, error, status, statusText } = await a.client
         .from('sessions')
         .update({ status: 'locked', locked_at: new Date().toISOString(), locked_by: a.user.id })
         .eq('id', sessionId)
         .select('id, status');
-      if (error) throw error;
+      if (error) throw new DbError(error, status, statusText);
       return data;
     }, 'PASS');
 
     await probe('SIGN/LOCK', 'locked UPDATE (reddedilmeli)', async () => {
-      const { data, error } = await a.client
+      const { data, error, status, statusText } = await a.client
         .from('sessions')
         .update({ plan: 'P: kilitli kayıt değiştirilemez' })
         .eq('id', sessionId)
         .select('id');
-      if (error) throw error;
+      if (error) throw new DbError(error, status, statusText);
       return data;
     }, 'DENY');
 
     await probe('SIGN/LOCK', 'locked DELETE (reddedilmeli)', async () => {
-      const { data, error } = await a.client.from('sessions').delete().eq('id', sessionId).select('id');
-      if (error) throw error;
+      const { data, error, status, statusText } = await a.client.from('sessions').delete().eq('id', sessionId).select('id');
+      if (error) throw new DbError(error, status, statusText);
       return data;
     }, 'DENY');
 
     await probe('SIGN/LOCK', 'Amendment/Revision (yeni sürüm)', async () => {
-      const { data, error } = await a.client
+      const { data, error, status, statusText } = await a.client
         .from('sessions')
         .insert({
           client_id: chainA.clientId,
@@ -527,20 +774,26 @@ async function main() {
           created_by: a.user.id,
         })
         .select('id, revision, amendment_of');
-      if (error) throw error;
+      if (error) throw new DbError(error, status, statusText);
       return data;
     }, 'PASS');
 
-    const { data: superseded } = await a.client
-      .from('sessions')
-      .select('superseded_by, revision, status')
-      .eq('id', sessionId)
-      .maybeSingle();
+    const {
+      data: superseded,
+      error: supersededError,
+      status: supersededStatus,
+      statusText: supersededStatusText,
+    } = await a.client.from('sessions').select('superseded_by, revision, status').eq('id', sessionId).maybeSingle();
+    const supersededDetail = supersededError
+      ? describeError(new DbError(supersededError, supersededStatus, supersededStatusText)).text
+      : superseded?.superseded_by
+        ? `rev=${superseded.revision}`
+        : 'işaretlenmemiş';
     record(
       'SIGN/LOCK',
       'Eski sürüm superseded_by işaretlendi',
       superseded?.superseded_by ? 'PASS' : 'FAIL',
-      superseded?.superseded_by ? `rev=${superseded.revision}` : 'işaretlenmemiş',
+      supersededDetail,
     );
   }
 
@@ -549,45 +802,48 @@ async function main() {
   const payload = new Blob(['PHASE7 LIVE VALIDATION'], { type: 'text/plain' });
 
   await probe('STORAGE', 'A upload', async () => {
-    const { data, error } = await a.client.storage.from(BUCKET).upload(path, payload, { contentType: 'text/plain' });
-    if (error) throw error;
+    const { data, error, status, statusText } = await a.client.storage.from(BUCKET).upload(path, payload, { contentType: 'text/plain' });
+    if (error) throw new DbError(error, status, statusText);
     return data;
   }, 'PASS');
   await probe('STORAGE', 'A read', async () => {
-    const { data, error } = await a.client.storage.from(BUCKET).download(path);
-    if (error) throw error;
+    const { data, error, status, statusText } = await a.client.storage.from(BUCKET).download(path);
+    if (error) throw new DbError(error, status, statusText);
     return data ? [data] : [];
   }, 'PASS');
   await probe('STORAGE', 'B read A', async () => {
-    const { data, error } = await b.client.storage.from(BUCKET).download(path);
-    if (error) throw error;
+    const { data, error, status, statusText } = await b.client.storage.from(BUCKET).download(path);
+    if (error) throw new DbError(error, status, statusText);
     return data ? [data] : [];
   }, 'DENY');
   await probe('STORAGE', 'B update A', async () => {
-    const { data, error } = await b.client.storage
+    const { data, error, status, statusText } = await b.client.storage
       .from(BUCKET)
       .upload(path, new Blob(['B yazdi'], { type: 'text/plain' }), { upsert: true, contentType: 'text/plain' });
-    if (error) throw error;
+    if (error) throw new DbError(error, status, statusText);
     return data;
   }, 'DENY');
   await probe('STORAGE', 'B delete A', async () => {
-    const { data, error } = await b.client.storage.from(BUCKET).remove([path]);
-    if (error) throw error;
+    const { data, error, status, statusText } = await b.client.storage.from(BUCKET).remove([path]);
+    if (error) throw new DbError(error, status, statusText);
     return Array.isArray(data) && data.length === 0 ? [] : data;
   }, 'DENY');
   await probe('STORAGE', 'A delete (temizlik)', async () => {
-    const { data, error } = await a.client.storage.from(BUCKET).remove([path]);
-    if (error) throw error;
+    const { data, error, status, statusText } = await a.client.storage.from(BUCKET).remove([path]);
+    if (error) throw new DbError(error, status, statusText);
     return data;
   }, 'PASS');
+
+  // --- anon (oturumsuz) yazma matrisi — geçici satır üzerinde, ana zincire dokunmaz
+  await anonMatrix(anon, a, profileA, chainA.clientId);
 
   // --- LOGOUT ISOLATION
   await a.client.auth.signOut();
   const bAfterA = await signIn(process.env.LIVE_PSY_B_EMAIL, process.env.LIVE_PSY_B_PASSWORD, 'psikolog B (A çıkışı sonrası)');
   if (bAfterA) {
     await probe('LOGOUT', 'B oturumunda A verisi görünmemeli', async () => {
-      const { data, error } = await bAfterA.client.from('clients').select('id').eq('id', chainA.clientId);
-      if (error) throw error;
+      const { data, error, status, statusText } = await bAfterA.client.from('clients').select('id').eq('id', chainA.clientId);
+      if (error) throw new DbError(error, status, statusText);
       return data;
     }, 'DENY');
     await bAfterA.client.auth.signOut();
@@ -596,14 +852,14 @@ async function main() {
   const aAgain = await signIn(process.env.LIVE_PSY_A_EMAIL, process.env.LIVE_PSY_A_PASSWORD, 'psikolog A (yeniden giriş)');
   if (aAgain) {
     await probe('LOGOUT', 'A yeniden girişte verisi geri gelmeli', async () => {
-      const { data, error } = await aAgain.client.from('clients').select('id').eq('id', chainA.clientId);
-      if (error) throw error;
+      const { data, error, status, statusText } = await aAgain.client.from('clients').select('id').eq('id', chainA.clientId);
+      if (error) throw new DbError(error, status, statusText);
       return data;
     }, 'PASS');
     if (chainA.note?.id) {
       await probe('LOGOUT', 'A yeniden girişte notu da görünür', async () => {
-        const { data, error } = await aAgain.client.from('notes').select('id').eq('id', chainA.note.id);
-        if (error) throw error;
+        const { data, error, status, statusText } = await aAgain.client.from('notes').select('id').eq('id', chainA.note.id);
+        if (error) throw new DbError(error, status, statusText);
         return data;
       }, 'PASS');
     }
@@ -613,13 +869,97 @@ async function main() {
   // --- temizlik: sentetik zincir silinir (yalnız A kendi verisini silebilir)
   if (aAgain) {
     await probe('CLEANUP', 'A sentetik danışanı siler (cascade)', async () => {
-      const { data, error } = await aAgain.client.from('clients').delete().eq('id', chainA.clientId).select('id');
-      if (error) throw error;
+      const { data, error, status, statusText } = await aAgain.client.from('clients').delete().eq('id', chainA.clientId).select('id');
+      if (error) throw new DbError(error, status, statusText);
       return data;
     }, 'PASS');
   }
 
   return finish();
+}
+
+async function selfTest() {
+  console.log('\n=== hata biçimlendirme öz-testi (ağ yok) ===');
+  const samples = [
+    [
+      'PostgREST RLS reddi',
+      {
+        message: 'new row violates row-level security policy for table "clients"',
+        details: null,
+        hint: null,
+        code: '42501',
+      },
+      403,
+      'Forbidden',
+    ],
+    [
+      'PostgREST tablo yok',
+      {
+        message: "Could not find the table 'public.clients' in the schema cache",
+        details: null,
+        hint: null,
+        code: 'PGRST205',
+      },
+      404,
+      'Not Found',
+    ],
+    ['Ağ/TLS hatası', { message: 'TypeError: fetch failed', details: 'cause: ECONNRESET', hint: '', code: '' }, 0, ''],
+    ['Auth hatası', { message: 'Invalid API key', details: '', hint: '', code: 'invalid_api_key', status: 401 }, undefined, ''],
+    [
+      'Sır ayıklama',
+      // Not: jeton deseni çalışma anında kurulur; dosyada gerçek JWT benzeri dize tutulmaz.
+      {
+        message: `apikey=abc123&token=${['ey', 'JhbGciOiJIUzI1NiJ9', 'abcdefgh', 'ijklmnop'].join('.')}`,
+        code: 'X',
+      },
+      400,
+      'Bad Request',
+    ],
+  ];
+  for (const [label, raw, status, statusText] of samples) {
+    const described = describeError(status === undefined ? raw : new DbError(raw, status, statusText));
+    console.log(`  ${label}: ${described.kind} → ${described.text}`);
+  }
+  console.log('\n  not: String(error) KULLANILMAZ — PostgREST hataları düz nesnedir ve "[object Object]" üretir.');
+
+  console.log('\n=== probe() sınıflandırma simülasyonu (ağ yok) ===');
+  const cases = [
+    [
+      'RLS reddi + DENY beklentisi',
+      () => Promise.reject(new DbError({ code: '42501', message: 'new row violates row-level security policy' }, 403, 'Forbidden')),
+      'DENY',
+      'DENY',
+    ],
+    ['RLS filtresi (0 satır) + DENY beklentisi', () => Promise.resolve([]), 'DENY', 'DENY'],
+    ['Sızıntı (1 satır) + DENY beklentisi', () => Promise.resolve([{ id: 'x' }]), 'DENY', 'FAIL'],
+    [
+      'Tablo yok (PGRST205) + DENY beklentisi',
+      () => Promise.reject(new DbError({ code: 'PGRST205', message: "Could not find the table 'public.clients' in the schema cache" }, 404, 'Not Found')),
+      'DENY',
+      'FAIL',
+    ],
+    ['Ağ hatası + DENY beklentisi', () => Promise.reject(new DbError({ message: 'TypeError: fetch failed' }, 0, '')), 'DENY', 'FAIL'],
+    ['Auth reddi (401) + DENY beklentisi', () => Promise.reject(new DbError({ code: 'invalid_api_key', message: 'Invalid API key' }, 401, 'Unauthorized')), 'DENY', 'FAIL'],
+    ['PASS beklentisi karşılandı', () => Promise.resolve([{ id: 'y' }]), 'PASS', 'PASS'],
+    [
+      'PASS beklentisi RLS ile reddedildi',
+      () => Promise.reject(new DbError({ code: '42501', message: 'permission denied for table clients' }, 403, 'Forbidden')),
+      'PASS',
+      'FAIL',
+    ],
+  ];
+
+  let mismatches = 0;
+  for (const [label, fn, expect, expectedStatus] of cases) {
+    const before = RESULTS.length;
+    await probe('SELFTEST', label, fn, expect);
+    const actual = RESULTS[before]?.status;
+    if (actual !== expectedStatus) mismatches += 1;
+    console.log(`     ${actual === expectedStatus ? '✔ sınıflandırma doğru' : `✘ beklenen ${expectedStatus}, gelen ${actual}`}`);
+  }
+
+  console.log(`\n  sınıflandırma sonucu: ${cases.length - mismatches}/${cases.length} doğru`);
+  process.exit(mismatches === 0 ? 0 : 1);
 }
 
 function finish() {
@@ -633,6 +973,17 @@ function finish() {
     console.log(
       `  ${group.padEnd(14)} PASS ${items.filter(i => i.status === 'PASS').length} · DENY ${items.filter(i => i.status === 'DENY').length} · FAIL ${items.filter(i => i.status === 'FAIL').length} · SKIP ${items.filter(i => i.status === 'SKIP').length}`,
     );
+  }
+
+  const failuresWithMeta = RESULTS.filter((item) => item.status === 'FAIL' && (item.kind || item.code));
+  if (failuresWithMeta.length) {
+    const seen = new Map();
+    for (const item of failuresWithMeta) {
+      const key = `${item.kind ?? 'other'} · HTTP ${item.httpStatus ?? '?'} · code=${item.code ?? '(yok)'}`;
+      seen.set(key, (seen.get(key) ?? 0) + 1);
+    }
+    console.log('\n--- FAIL nedenleri (gerçek HTTP durumu / PostgREST kodu) ---');
+    for (const [key, count] of seen) console.log(`  ${count}x ${key}`);
   }
 
   console.log('\n--- sonuç etiketleri ---');

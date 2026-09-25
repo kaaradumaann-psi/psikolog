@@ -34,16 +34,21 @@ mimarisi kapatılmak üzere çalışıldı. Bu fazda:
   Storage'a yüklenir, metadata satırı (`file_path/mime_type/size_bytes/created_by/org/client`)
   yazılır, A→B nesne okuma/güncelleme/silme reddedilir.
 - **P0-8 (Regresyon/üretim doğrulaması)** kısmen yapıldı: tam test paketi, typecheck ve production
-  build yeşil; **canlı Supabase + gerçek tarayıcı + production validation BLOCKED**.
+  build yeşil; **canlı koşu kullanıcı makinesinde yapıldı → 6 PASS / 3 FAIL** (anon kontrolleri
+  `[object Object]` nedeniyle teşhis edilemedi, kurum ataması yok). Teşhis düzeltmesi uygulandı
+  (gerçek HTTP/kod raporlama, SEMA ön kontrolü, güçlendirilmiş anon matrisi); yeniden koşu bekliyor.
+  **Gerçek tarayıcı ve production validation hâlâ BLOCKED / NOT VERIFIED**.
 
 Doğrulama özeti (bu raporda kanıtlarıyla):
-`npm test` → **137/137 PASS**, `tsc --noEmit` → **PASS**, `vite build` → **PASS**.
-Canlı Supabase → **BLOCKED**, gerçek tarayıcı (Playwright/Chromium) → **BLOCKED**, üretim doğrulaması → **NOT VERIFIED**.
+`npm test` → **142/142 PASS**, `tsc --noEmit` → **PASS**, `vite build` → **PASS**.
+Canlı Supabase → **FAILED (kısmi koşu: 6 PASS / 3 FAIL)**, gerçek tarayıcı → **NOT RUN/BLOCKED**,
+üretim doğrulaması → **NOT VERIFIED**.
 
-> **P0-8 canlı doğrulama turu (2026-09-25):** CLI oturumu yok, repo link yok ve sandbox'ta
-> `*.supabase.co` / `api.supabase.com` TLS erişimi engelli (ölçümler:
-> `docs/PHASE-7-LIVE-VALIDATION.md` §1.1). Bu nedenle canlı koşu yapılamadı;
-> **PHASE 7 COMPLETE DEĞİLDİR**. Gerekli project ref ve komutlar aynı belgede §2'dedir.
+> **P0-8 canlı doğrulama turları (2026-09-25):** (1) sandbox'tan koşu **yapılamadı** (CLI oturumu/link yok,
+> `*.supabase.co` / `api.supabase.com` TLS engelli); (2) **kullanıcı makinesinden koşuldu**:
+> AUTH 6/6 PASS ancak RLS 0/3 — anon kontrolleri `[object Object]` (hata serileştirme hatası) ve
+> `kurum ataması` FAIL (seed çalıştırılmamış). Teşhis + düzeltme yapıldı, yeniden koşu bekleniyor;
+> **PHASE 7 COMPLETE DEĞİLDİR**. Ayrıntı: `docs/PHASE-7-LIVE-VALIDATION.md`.
 
 ---
 
@@ -246,12 +251,15 @@ Kaynak-of-truth testi: localStorage temizlenip yeniden yüklenince veri Supabase
 | Entegrasyon (store ↔ sahte CloudPort) | **PASS** | `tests/phase7CloudSync.test.ts` (12) |
 | PGlite / SQL davranışı | **PASS** | `tests/phase7LockChain.test.ts` (11), `phase7SessionChain.test.ts` (10) |
 | RLS/IDOR matrisi | **PASS** | `tests/phase7RlsMatrix.test.ts` (14), `security*` (23) |
-| Canlı Supabase kiti (`scripts/live-validation/run.mjs`) | **HAZIR / koşulamadı** | `--dry-run` PASS (ortam kontrolü); canlı koşu **BLOCKED** (ağ) |
-| Tarayıcı (Playwright, gerçek Chromium) | **BLOCKED** | Chromium ikili dosyası yok (`~/.cache/ms-playwright` boş, sistem tarayıcısı yok) |
-| Üretim (canlı Supabase + dağıtım) | **NOT VERIFIED** | Sandbox'tan Supabase egress engelli; production site DNS çözülemedi |
+| Canlı doğrulama kiti — hata biçimlendirme/sınıflandırma | **PASS** | `run.mjs --selftest` → **8/8** (ağ yok) |
+| Canlı doğrulama seed SQL'i | **PASS** | `tests/liveValidationSeed.test.ts` (4 kontrol: atama, idempotency, sessiz geçmeme, admin yokluğu) |
+| Canlı şema/verify SQL'i | **PASS** | `tests/liveValidationVerifySql.test.ts` (1 kontrol: 25+ nesne + 11 migration) |
+| Canlı Supabase kiti (`scripts/live-validation/run.mjs`) | **FAILED (kısmi)** | Kullanıcı makinesi: AUTH 6 PASS, RLS 3 FAIL; sandbox'ta koşu yapılamıyor |
+| Tarayıcı (Playwright, gerçek Chromium) | **NOT RUN / BLOCKED** | Chromium ikili dosyası yok (`~/.cache/ms-playwright` boş); kullanıcı makinesinde koşulmadı |
+| Üretim (canlı Supabase + dağıtım) | **NOT VERIFIED** | Production bundle + dağıtım ortamı doğrulaması yapılmadı |
 
-Toplam: `npm test` → **137 test, 137 PASS, 0 FAIL** (~40.7 s). `npx tsc --noEmit` → **PASS**.
-`npm run build` → **PASS** (vite 7.3.6, `dist/assets/index-*.js` 498.66 kB / gzip 139.37 kB).
+Toplam: `npm test` → **142 test, 142 PASS, 0 FAIL** (~69.1 s). `npx tsc --noEmit` → **PASS**.
+`npm run build` → **PASS** (vite 7.3.6, `dist/assets/index-*.js` 498.67 kB / gzip 139.37 kB).
 
 ---
 
@@ -266,7 +274,10 @@ Toplam: `npm test` → **137 test, 137 PASS, 0 FAIL** (~40.7 s). `npx tsc --noEm
    Ayrıntılı ölçümler ve gerekli komutlar: `docs/PHASE-7-LIVE-VALIDATION.md`.
    Migration'lar yalnız **PGlite (PostgreSQL uyumlu motor)** üzerinde doğrulandı; gerçek Supabase
    RLS/JWT davranışı, Storage yükleme/indirme ve Edge Function entegrasyonu **NOT VERIFIED**.
-2. **Gerçek tarayıcı doğrulaması — BLOCKED.** Playwright 1.63.0 kurulu ancak tarayıcı ikilisi yok
+   **Güncelleme:** kullanıcı kendi makinesinden koştu → AUTH 6/6 PASS, RLS 0/3 (anon `[object Object]`,
+   `kurum ataması` FAIL). Teşhis düzeltmesi sonrası **yeniden koşu bekleniyor**; sonuç gelene kadar
+   LIVE SUPABASE durumu **FAILED** olarak kalır (PASS yazılmaz).
+2. **Gerçek tarayıcı doğrulaması — NOT RUN (sandbox'ta BLOCKED).** Playwright 1.63.0 kurulu ancak tarayıcı ikilisi yok
    (`~/.cache/ms-playwright` boş; sistemde `chromium`/`google-chrome` yok) ve indirme adımı başarısız
    ("Failed to download Chrome for Testing"). Bu yüzden responsive/erişilebilirlik ve uçtan uca
    kullanıcı akışı tarayıcıda kanıtlanmadı; UI davranışı SSR/render ve store testleriyle sınırlı.
@@ -302,45 +313,31 @@ Toplam: `npm test` → **137 test, 137 PASS, 0 FAIL** (~40.7 s). `npx tsc --noEm
 ## 15. Depo Durumu
 
 ```
-$ git status --short
- M .gitignore
- M src/App.tsx
- M src/clinical/casework.ts
- M src/clinical/clinicalStore.ts
- M src/clinical/clinicalTypes.ts
- M src/clinical/practiceStore.ts
- M src/components/clinical/AppointmentsPage.tsx
- M src/components/clinical/ClientDetailPage.tsx
- M src/components/clinical/ClinicalReportsPage.tsx
- M src/components/clinical/FormulationPanel.tsx
- M src/components/clinical/SoapSessionsPage.tsx
- M src/styles/clinical.css
- M src/styles/workspace.css
- M src/workspace/draftStorage.ts
-?? MASTER_SYSTEM_AUDIT.md
-?? docs/PHASE-7-LIVE-VALIDATION.md
-?? docs/PHASE-7-PLAN.md
-?? docs/PHASE-7-REPORT.md
-?? scripts/
-?? src/clinical/cloud/
-?? src/components/CloudSyncBanner.tsx
-?? src/components/clinical/RecordLockActions.tsx
-?? supabase/migrations/20260925100000_phase07_ownership_rls.sql
-?? supabase/migrations/20260925110000_phase07_formulations_safety_plans.sql
-?? supabase/migrations/20260925120000_phase07_session_chain_lock.sql
-?? supabase/migrations/20260925130000_phase07_anamnesis_fields.sql
-?? tests/pgliteHarness.ts
-?? tests/phase7CloudSync.test.ts
-?? tests/phase7LockChain.test.ts
-?? tests/phase7RlsMatrix.test.ts
-?? tests/phase7SessionChain.test.ts
+$ git branch --show-current
+arena/01a0d937-psikolog
+$ git log -1 --format='%h %s'
+b20ede9 PHASE 7 — Supabase klinik kalıcılık, sahiplik/RLS, imza-kilit ve denetim
 
-$ git diff --stat          # (izlenen dosyalar)
- 14 files changed, 834 insertions(+), 69 deletions(-)
+$ git status --short            # tur 2 (P0-8 teşhis düzeltmesi) çalışma ağacı
+ M docs/PHASE-7-LIVE-VALIDATION.md
+ M scripts/live-validation/README.md
+ M scripts/live-validation/run.mjs
+ M scripts/live-validation/seed-live-test-orgs.sql
+ M scripts/live-validation/verify-migrations.sql
+?? tests/liveValidationSeed.test.ts
+?? tests/liveValidationVerifySql.test.ts
 
-$ git log -1
- 340930b Merge pull request #4 from kaaradumaann-psi/arena/01a0d514-psikolog
+$ git diff --stat               # bu turun değişiklikleri
+ 5 files changed, 854 insertions(+), 236 deletions(-)
++ yeni test dosyaları: tests/liveValidationSeed.test.ts (4 kontrol), tests/liveValidationVerifySql.test.ts (1 kontrol)
 ```
+
+- Tur 1 (P0-8 kiti + raporlar) `b20ede9` commit'i ile dala işlendi ve `origin`'a gönderildi
+  (39 dosya, +7806/−69).
+- Tur 2 yalnız **doğrulama kiti + test + rapor** dosyalarına dokunur: `src/**`, `supabase/migrations/**`
+  ve RLS politikaları **değişmedi**.
+- Sır taraması (tur 2): `sb_publishable_`, `sb_secret_`, JWT, `postgresql://`, private key, `DATABASE_URL=`
+  → **bulgu yok**; `.env.live` ve `live-validation-result.json` `.gitignore` içinde.
 
 Not: `supabase/.temp/` (CLI yerel durumu), `.env.live` ve `live-validation-result.json`
 `.gitignore`'a eklendi; hiçbir sır dosyası repoya girmiyor.
@@ -392,15 +389,21 @@ Not: `supabase/.temp/` (CLI yerel durumu), `.env.live` ve `live-validation-resul
 - TESTS: `phase7CloudSync` (belge), `phase7RlsMatrix` (storage DENY) · TYPECHECK: PASS · BUILD: PASS
 - BLOCKED: canlı Storage'a gerçek yükleme/indirme ve imzalı URL akışı
 
-### P0-8 — Regresyon / Canlı Doğrulama (BLOCKED)
-- CHANGED FILES: `scripts/live-validation/{run.mjs,README.md,seed-live-test-orgs.sql,verify-migrations.sql}`, `docs/PHASE-7-LIVE-VALIDATION.md`
-- TESTS: `npm test` 137/137 · TYPECHECK: PASS · BUILD: PASS
-- LIVE KIT: `--dry-run` PASS (ortam kontrolü), `node --check` PASS; **canlı koşu BLOCKED**
-- LIVE SUPABASE: **BLOCKED** (CLI oturumu yok + `*.supabase.co`/`api.supabase.com` TLS engelli, `:5432` kapalı)
-- REAL BROWSER: **BLOCKED** (Chromium ikilisi yok) · PRODUCTION: **NOT VERIFIED**
-- GEREKLİ: project ref `afvqznjqlrcoxoalkczd` → `npx supabase login` → `npx supabase link --project-ref afvqznjqlrcoxoalkczd`
-  → `npx supabase db push --include-all` → `node scripts/live-validation/run.mjs`
-- **PHASE 7 COMPLETE DEĞİL** (canlı doğrulama tamamlanmadı)
+### P0-8 — Regresyon / Canlı Doğrulama (FAILED — teşhis düzeltmesi yapıldı, yeniden koşu bekliyor)
+- CHANGED FILES (tur 1): `scripts/live-validation/{run.mjs,README.md,seed-live-test-orgs.sql,verify-migrations.sql}`, `docs/PHASE-7-LIVE-VALIDATION.md`
+- CHANGED FILES (tur 2 — teşhis): `run.mjs` (DbError/describeError/classifyError/unwrap, yeni `probe()` sınıflandırması,
+  `SEMA` ön kontrolü, güçlendirilmiş anon matrisi, `--selftest`, FAIL nedenleri özeti, JSON `httpStatus/code/kind`),
+  `seed-live-test-orgs.sql` (tek düzenleme noktası + uç durum teşhisi), `verify-migrations.sql`
+  (semptom kararı + `supabase_migrations.schema_migrations` karşılaştırması), `README.md` (koşu sırası + kanıt kuralları),
+  `tests/liveValidationSeed.test.ts`, `tests/liveValidationVerifySql.test.ts`, `docs/PHASE-7-LIVE-VALIDATION.md`
+- TESTS: `npm test` **142/142** · TYPECHECK: PASS · BUILD: PASS · `run.mjs --selftest` **8/8**
+- LIVE SUPABASE: **FAILED** — kullanıcı makinesindeki koşu: AUTH 6 PASS, RLS 3 FAIL
+  (anon `[object Object]` + `kurum ataması`). Kök neden: PostgREST hatası düz nesne; `String(error)` → `[object Object]`.
+  RLS politikalarında **değişiklik yok**; yalnız koşucu hata raporlama/sınıflandırma düzeltildi.
+- REAL BROWSER: **NOT RUN** (sandbox'ta BLOCKED — Chromium ikilisi yok) · PRODUCTION: **NOT VERIFIED**
+- SIRADAKİ: (1) `supabase db push --include-all` + `verify-migrations.sql` (semptom + 11 migration),
+  (2) SQL Editor'da seed (3 e-posta düzenlenir; beklenen: 3× `HAZIR`), (3) `node scripts/live-validation/run.mjs`
+- **PHASE 7 COMPLETE DEĞİL** (canlı doğrulama FAILED; PASS yazılmaz)
 
 ---
 

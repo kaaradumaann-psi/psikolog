@@ -126,3 +126,54 @@ from (
   union all select exists (select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='can_access_client')
   union all select exists (select 1 from pg_trigger where tgname='sessions_enforce_lock' and not tgisinternal)
 ) t;
+
+-- ===========================================================================
+-- 11) SEMPTOM — şema hazır mı? (tek satır karar)
+-- ===========================================================================
+select case
+  when to_regclass('public.formulations') is not null
+   and to_regclass('public.safety_plans') is not null
+   and exists (select 1 from information_schema.columns
+               where table_schema = 'public' and table_name = 'sessions' and column_name = 'appointment_id')
+   and exists (select 1 from information_schema.columns
+               where table_schema = 'public' and table_name = 'clients' and column_name = 'owner_user_id')
+   and exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+               where n.nspname = 'public' and p.proname = 'can_access_client')
+  then 'PHASE 7 ŞEMASI CANLIDA GÖRÜNÜYOR → RLS matrisi koşulabilir (node scripts/live-validation/run.mjs)'
+  else 'PHASE 7 ŞEMASI EKSİK → önce: npx supabase link --project-ref <ref> && npx supabase db push --include-all'
+end as semptom;
+
+-- ===========================================================================
+-- 12) MIGRATION GEÇMİŞİ (CLI kaydı) — BİLEREK EN SONDA
+--     Bu bölüm supabase_migrations.schema_migrations tablosunu okur.
+--     Tablo yoksa/hata verirse: bu projeye CLI ile hiç `db push` yapılmamış
+--     ya da migration'lar başka bir araçla uygulanmış demektir (üstteki nesne
+--     kontrolleri yine de geçerlidir; bu bölüm hata verirse üstteki çıktıyı
+--     kaybetmemek için en sonda duruyor).
+-- ===========================================================================
+with expected(version, label) as (
+  values
+    ('20260924000000', 'initial_schema'),
+    ('20260924000001', 'phase03_anamnesis_sessions'),
+    ('20260924000002', 'phase04_assessments_tests'),
+    ('20260924000003', 'phase05_reports'),
+    ('20260924000004', 'phase06_documents_notes'),
+    ('20260924000005', 'phase07_appointments_tasks'),
+    ('20260924000006', 'fix_profiles_rls'),
+    ('20260925100000', 'phase07_ownership_rls'),
+    ('20260925110000', 'phase07_formulations_safety_plans'),
+    ('20260925120000', 'phase07_session_chain_lock'),
+    ('20260925130000', 'phase07_anamnesis_fields')
+)
+select e.version,
+       e.label,
+       (m.version is not null) as uygulanmis,
+       case
+         when m.version is not null then 'OK'
+         when e.version like '2026092510%' or e.version like '2026092511%'
+           or e.version like '2026092512%' or e.version like '2026092513%' then 'EKSİK (PHASE 7)'
+         else 'EKSİK (baz şema)'
+       end as durum
+from expected e
+left join supabase_migrations.schema_migrations m on m.version = e.version
+order by e.version;

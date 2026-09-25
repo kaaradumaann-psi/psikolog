@@ -318,18 +318,23 @@ arena/01a0d937-psikolog
 $ git log -1 --format='%h %s'
 b20ede9 PHASE 7 — Supabase klinik kalıcılık, sahiplik/RLS, imza-kilit ve denetim
 
-$ git status --short            # tur 2 (P0-8 teşhis düzeltmesi) çalışma ağacı
- M docs/PHASE-7-LIVE-VALIDATION.md
- M scripts/live-validation/README.md
- M scripts/live-validation/run.mjs
- M scripts/live-validation/seed-live-test-orgs.sql
- M scripts/live-validation/verify-migrations.sql
-?? tests/liveValidationSeed.test.ts
-?? tests/liveValidationVerifySql.test.ts
+$ git log --oneline -2
+8355031 P0-8 teşhis: canlı koşu hatalarının kök nedeni ve doğrulama kitinin sertleştirilmesi
+b20ede9 PHASE 7 — Supabase klinik kalıcılık, sahiplik/RLS, imza-kilit ve denetim
 
-$ git diff --stat               # bu turun değişiklikleri
- 5 files changed, 854 insertions(+), 236 deletions(-)
-+ yeni test dosyaları: tests/liveValidationSeed.test.ts (4 kontrol), tests/liveValidationVerifySql.test.ts (1 kontrol)
+$ git show --stat --oneline 8355031   # tur 2 (P0-8 teşhis düzeltmesi)
+ docs/PHASE-7-LIVE-VALIDATION.md               | 253 ++++++++++--------
+ docs/PHASE-7-REPORT.md                        |  ...
+ scripts/live-validation/README.md             |  ...
+ scripts/live-validation/run.mjs               |  ...   (DbError/describeError/classifyError/probe/SEMA/anon/--selftest)
+ scripts/live-validation/seed-live-test-orgs.sql | ...  (live_test_slots + teşhis + doğrulama)
+ scripts/live-validation/verify-migrations.sql | ...   (semptom + migration geçmişi)
+ tests/liveValidationSeed.test.ts              | YENİ (4 kontrol)
+ tests/liveValidationVerifySql.test.ts         | YENİ (1 kontrol)
+ 8 files changed, 1157 insertions(+), 296 deletions(-)
+
+$ git status --short
+(temiz — çalışma ağacı commit'lendi ve origin/arena/01a0d937-psikolog'a gönderildi)
 ```
 
 - Tur 1 (P0-8 kiti + raporlar) `b20ede9` commit'i ile dala işlendi ve `origin`'a gönderildi

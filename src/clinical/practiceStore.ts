@@ -6,8 +6,23 @@ import type { CaseFormulation, SafetyPlan } from './casework';
 import type { RapidScreeningResult } from './rapidScreening';
 import { isSafeDocumentUrl, isSafeImageUrl, reportStorageError } from './recordRules';
 import { push as pushCloud, pushNow, remove as removeCloud } from './cloud/sync';
-import { rowToDocument, rowToNote, rowToTask, rowToTestRecord } from './cloud/mapping';
-import type { DocumentRow, NoteRow, TaskRow, TestAdministrationRow, TestResultRow } from './cloud/types';
+import {
+  rowToDocument,
+  rowToFormulation,
+  rowToNote,
+  rowToSafetyPlan,
+  rowToTask,
+  rowToTestRecord,
+} from './cloud/mapping';
+import type {
+  DocumentRow,
+  FormulationRow,
+  NoteRow,
+  SafetyPlanRow,
+  TaskRow,
+  TestAdministrationRow,
+  TestResultRow,
+} from './cloud/types';
 
 export type PracticeNote = {
   id: string;
@@ -305,7 +320,10 @@ export function getFormulation(clientId: string): CaseFormulation | undefined {
 
 export function saveFormulation(item: CaseFormulation): void {
   const list = getFormulations().filter((row) => row.clientId !== item.clientId);
-  write(FORM_KEY, [{ ...item, updatedAt: new Date().toISOString() }, ...list]);
+  const saved: CaseFormulation = { ...item, updatedAt: new Date().toISOString() };
+  write(FORM_KEY, [saved, ...list]);
+  // localStorage is the cache; the database is the source of truth.
+  if (saved.clientId) pushCloud({ entity: 'formulation', record: saved });
   recordAudit({ action: 'save', entity: 'formulation', entityId: item.clientId, summary: 'Formülasyon güncellendi' });
 }
 
@@ -319,7 +337,10 @@ export function getSafetyPlan(clientId: string): SafetyPlan | undefined {
 
 export function saveSafetyPlan(item: SafetyPlan): void {
   const list = getSafetyPlans().filter((row) => row.clientId !== item.clientId);
-  write(SAFETY_KEY, [{ ...item, updatedAt: new Date().toISOString() }, ...list]);
+  const saved: SafetyPlan = { ...item, updatedAt: new Date().toISOString() };
+  write(SAFETY_KEY, [saved, ...list]);
+  // A safety plan must not live only on this device.
+  if (saved.clientId) pushCloud({ entity: 'safety', record: saved });
   recordAudit({ action: 'save', entity: 'safety', entityId: item.clientId, summary: 'Güvenlik planı güncellendi' });
 }
 
@@ -460,7 +481,19 @@ export type PracticeCloudSnapshot = {
   notes: NoteRow[];
   tasks: TaskRow[];
   screenings: { administration: TestAdministrationRow; result: TestResultRow }[];
+  formulations: FormulationRow[];
+  safetyPlans: SafetyPlanRow[];
 };
+
+/**
+ * Formulation and safety plan are keyed by client, not by an id of their own,
+ * so they merge on `clientId` — same union semantics as `mergeById`.
+ */
+function mergeByClientId<T extends { clientId: string }>(local: T[], incoming: T[]): T[] {
+  const byClient = new Map(local.map((row) => [row.clientId, row]));
+  for (const row of incoming) byClient.set(row.clientId, { ...byClient.get(row.clientId), ...row } as T);
+  return [...byClient.values()];
+}
 
 export function applyCloudPracticeSnapshot(snapshot: PracticeCloudSnapshot): void {
   const localDocs = getDocuments();
@@ -489,6 +522,14 @@ export function applyCloudPracticeSnapshot(snapshot: PracticeCloudSnapshot): voi
       ),
     ),
   );
+  write(
+    FORM_KEY,
+    mergeByClientId(getFormulations(), snapshot.formulations.map((row) => rowToFormulation(row))),
+  );
+  write(
+    SAFETY_KEY,
+    mergeByClientId(getSafetyPlans(), snapshot.safetyPlans.map((row) => rowToSafetyPlan(row))),
+  );
 }
 
 /** Push local practice records the cloud has not seen yet (offline backlog). */
@@ -503,5 +544,11 @@ export async function pushLocalPracticeRecordsToCloud(): Promise<void> {
   }
   for (const screening of getScreenings()) {
     if (screening.clientId) await pushNow({ entity: 'test', record: { kind: screening.type, ...screening } });
+  }
+  for (const formulation of getFormulations()) {
+    if (formulation.clientId) await pushNow({ entity: 'formulation', record: formulation });
+  }
+  for (const plan of getSafetyPlans()) {
+    if (plan.clientId) await pushNow({ entity: 'safety', record: plan });
   }
 }

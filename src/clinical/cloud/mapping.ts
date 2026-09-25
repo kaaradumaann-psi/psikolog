@@ -12,8 +12,10 @@ import type {
   AppointmentRow,
   ClientRow,
   DocumentRow,
+  FormulationRow,
   NoteRow,
   ReportRow,
+  SafetyPlanRow,
   ScaleKey,
   SessionRow,
   TaskRow,
@@ -34,6 +36,7 @@ import type {
 } from '../clinicalTypes';
 import type { PracticeDocument, PracticeNote, PracticeTask } from '../practiceStore';
 import type { RapidScreeningResult } from '../rapidScreening';
+import type { CaseFormulation, GoalStatus, SafetyPlan, TreatmentGoal } from '../casework';
 
 /** Turkey is UTC+3 year-round (no DST since 2016). */
 const ISTANBUL_OFFSET = '+03:00';
@@ -510,6 +513,99 @@ export function rowToTask(row: TaskRow, local: PracticeTask | undefined): Practi
     status: (row.status || 'todo') as PracticeTask['status'],
     priority: (row.priority || 'medium') as PracticeTask['priority'],
     createdAt: row.created_at,
+    updatedAt: row.updated_at ?? row.created_at,
+  };
+}
+
+/* -------------------------------------------------- formulation / safety plan */
+
+/**
+ * The application keeps ONE formulation and ONE safety plan per client, keyed by
+ * `clientId` — neither has an id of its own. The row id is therefore derived
+ * deterministically, so re-saving re-pushes the same row instead of creating a
+ * duplicate. The tables also carry `unique (client_id)` as a second guard.
+ */
+export function formulationRowId(clientId: string): string {
+  return deriveUuid('formulation', clientId);
+}
+
+export function safetyPlanRowId(clientId: string): string {
+  return deriveUuid('safety_plan', clientId);
+}
+
+const GOAL_STATUSES: GoalStatus[] = ['active', 'met', 'paused'];
+
+function goalStatus(value: unknown): GoalStatus {
+  return GOAL_STATUSES.includes(value as GoalStatus) ? (value as GoalStatus) : 'active';
+}
+
+export function formulationToRow(formulation: CaseFormulation, owner: Owner): Row {
+  return {
+    id: formulationRowId(formulation.clientId),
+    client_id: formulation.clientId,
+    organization_id: owner.organizationId,
+    created_by: owner.userId,
+    modality: text(formulation.modality, 200),
+    predisposing: text(formulation.predisposing, 4000),
+    precipitating: text(formulation.precipitating, 4000),
+    perpetuating: text(formulation.perpetuating, 4000),
+    protective: text(formulation.protective, 4000),
+    goals: (formulation.goals ?? []).map((goal) => ({
+      id: goal.id,
+      text: (goal.text ?? '').slice(0, 2000),
+      measure: (goal.measure ?? '').slice(0, 2000),
+      status: goalStatus(goal.status),
+    })),
+    review_date: /^\d{4}-\d{2}-\d{2}$/.test(formulation.reviewDate ?? '') ? formulation.reviewDate : null,
+  };
+}
+
+export function rowToFormulation(row: FormulationRow): CaseFormulation {
+  const goals: TreatmentGoal[] = Array.isArray(row.goals)
+    ? row.goals.map((goal) => ({
+        id: String(goal.id ?? ''),
+        text: goal.text ?? '',
+        measure: goal.measure ?? '',
+        status: goalStatus(goal.status),
+      }))
+    : [];
+  return {
+    clientId: row.client_id,
+    modality: row.modality ?? '',
+    predisposing: row.predisposing ?? '',
+    precipitating: row.precipitating ?? '',
+    perpetuating: row.perpetuating ?? '',
+    protective: row.protective ?? '',
+    goals,
+    reviewDate: row.review_date ? toDateOnly(row.review_date) : '',
+    updatedAt: row.updated_at ?? row.created_at,
+  };
+}
+
+export function safetyPlanToRow(plan: SafetyPlan, owner: Owner): Row {
+  return {
+    id: safetyPlanRowId(plan.clientId),
+    client_id: plan.clientId,
+    organization_id: owner.organizationId,
+    created_by: owner.userId,
+    warning_signs: text(plan.warningSigns, 4000),
+    coping: text(plan.coping, 4000),
+    people: text(plan.people, 4000),
+    professionals: text(plan.professionals, 4000),
+    environment: text(plan.environment, 4000),
+    reasons: text(plan.reasons, 4000),
+  };
+}
+
+export function rowToSafetyPlan(row: SafetyPlanRow): SafetyPlan {
+  return {
+    clientId: row.client_id,
+    warningSigns: row.warning_signs ?? '',
+    coping: row.coping ?? '',
+    people: row.people ?? '',
+    professionals: row.professionals ?? '',
+    environment: row.environment ?? '',
+    reasons: row.reasons ?? '',
     updatedAt: row.updated_at ?? row.created_at,
   };
 }

@@ -249,6 +249,8 @@ test('P0: store writes reach Postgres and a cleared device is restored by pullin
           const kind = (entry.result.result_data as { kind?: string } | null)?.kind;
           return kind === 'gad7' || kind === 'phq9';
         }),
+        formulations: snapshot.formulations,
+        safetyPlans: snapshot.safetyPlans,
       });
 
       const clients = getClients();

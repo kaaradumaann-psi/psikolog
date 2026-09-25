@@ -11,8 +11,10 @@ import type {
   AppointmentRow,
   ClientRow,
   DocumentRow,
+  FormulationRow,
   NoteRow,
   ReportRow,
+  SafetyPlanRow,
   SessionRow,
   TaskRow,
   TestAdministrationRow,
@@ -24,8 +26,12 @@ import {
   clientToRow,
   documentStoragePath,
   documentToRow,
+  formulationRowId,
+  formulationToRow,
   noteToRow,
   reportToRow,
+  safetyPlanRowId,
+  safetyPlanToRow,
   sessionToRow,
   taskToRow,
   testToAdministrationRow,
@@ -35,6 +41,7 @@ import {
 import type { LocalTestRecord } from './mapping';
 import type { Appointment, ClinicalReport, Client, SoapSession } from '../clinicalTypes';
 import type { PracticeDocument, PracticeNote, PracticeTask } from '../practiceStore';
+import type { CaseFormulation, SafetyPlan } from '../casework';
 
 export type CloudSnapshot = {
   clients: ClientRow[];
@@ -46,6 +53,8 @@ export type CloudSnapshot = {
   documents: DocumentRow[];
   notes: NoteRow[];
   tasks: TaskRow[];
+  formulations: FormulationRow[];
+  safetyPlans: SafetyPlanRow[];
 };
 
 export type Repository = {
@@ -67,6 +76,14 @@ export type Repository = {
   deleteNote(id: string): Promise<void>;
   pushTask(task: PracticeTask): Promise<void>;
   deleteTask(id: string): Promise<void>;
+  pushFormulation(formulation: CaseFormulation): Promise<void>;
+  pushSafetyPlan(plan: SafetyPlan): Promise<void>;
+  /**
+   * Both records are one-per-client and have no id of their own, so they are
+   * addressed by client id; the row id is derived the same way it is on write.
+   */
+  deleteFormulation(clientId: string): Promise<void>;
+  deleteSafetyPlan(clientId: string): Promise<void>;
 };
 
 export function createRepository(deps: { db: DbPort; storage: StoragePort; owner: Owner }): Repository {
@@ -93,18 +110,31 @@ export function createRepository(deps: { db: DbPort; storage: StoragePort; owner
     },
 
     async pullAll(): Promise<CloudSnapshot> {
-      const [clients, anamneses, appointments, sessions, administrations, reports, documents, notes, tasks] =
-        await Promise.all([
-          db.list<ClientRow>('clients'),
-          db.list<AnamnesisRow>('anamneses'),
-          db.list<AppointmentRow>('appointments'),
-          db.list<SessionRow>('sessions'),
-          db.list<TestAdministrationRow>('test_administrations'),
-          db.list<ReportRow>('reports'),
-          db.list<DocumentRow>('documents'),
-          db.list<NoteRow>('notes'),
-          db.list<TaskRow>('tasks'),
-        ]);
+      const [
+        clients,
+        anamneses,
+        appointments,
+        sessions,
+        administrations,
+        reports,
+        documents,
+        notes,
+        tasks,
+        formulations,
+        safetyPlans,
+      ] = await Promise.all([
+        db.list<ClientRow>('clients'),
+        db.list<AnamnesisRow>('anamneses'),
+        db.list<AppointmentRow>('appointments'),
+        db.list<SessionRow>('sessions'),
+        db.list<TestAdministrationRow>('test_administrations'),
+        db.list<ReportRow>('reports'),
+        db.list<DocumentRow>('documents'),
+        db.list<NoteRow>('notes'),
+        db.list<TaskRow>('tasks'),
+        db.list<FormulationRow>('formulations'),
+        db.list<SafetyPlanRow>('safety_plans'),
+      ]);
 
       const results = administrations.length
         ? await db.list<TestResultRow>('test_results', [
@@ -117,7 +147,19 @@ export function createRepository(deps: { db: DbPort; storage: StoragePort; owner
         return result ? [{ administration, result }] : [];
       });
 
-      return { clients, anamneses, appointments, sessions, tests, reports, documents, notes, tasks };
+      return {
+        clients,
+        anamneses,
+        appointments,
+        sessions,
+        tests,
+        reports,
+        documents,
+        notes,
+        tasks,
+        formulations,
+        safetyPlans,
+      };
     },
 
     async pushClient(client: Client): Promise<void> {
@@ -211,6 +253,24 @@ export function createRepository(deps: { db: DbPort; storage: StoragePort; owner
 
     async deleteTask(id: string): Promise<void> {
       await db.remove('tasks', id);
+    },
+
+    async pushFormulation(formulation: CaseFormulation): Promise<void> {
+      requireClient('Formülasyon', formulation.clientId);
+      await db.upsert<FormulationRow>('formulations', formulationToRow(formulation, owner));
+    },
+
+    async deleteFormulation(clientId: string): Promise<void> {
+      await db.remove('formulations', formulationRowId(clientId));
+    },
+
+    async pushSafetyPlan(plan: SafetyPlan): Promise<void> {
+      requireClient('Güvenlik planı', plan.clientId);
+      await db.upsert<SafetyPlanRow>('safety_plans', safetyPlanToRow(plan, owner));
+    },
+
+    async deleteSafetyPlan(clientId: string): Promise<void> {
+      await db.remove('safety_plans', safetyPlanRowId(clientId));
     },
   };
 }

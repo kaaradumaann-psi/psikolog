@@ -16,7 +16,9 @@ export type SyncEntity =
   | 'report'
   | 'document'
   | 'note'
-  | 'task';
+  | 'task'
+  | 'formulation'
+  | 'safety';
 
 export type SyncState = {
   active: boolean;

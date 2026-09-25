@@ -44,6 +44,8 @@ export async function bootstrapCloudSession(user: AuthenticatedUser): Promise<Bo
         const kind = (entry.result.result_data as { kind?: string } | null)?.kind;
         return kind === 'gad7' || kind === 'phq9';
       }),
+      formulations: snapshot.formulations,
+      safetyPlans: snapshot.safetyPlans,
     });
 
     clearOutbox();

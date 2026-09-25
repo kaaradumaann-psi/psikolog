@@ -25,6 +25,8 @@ const TABLES = new Set<CloudTable>([
   'documents',
   'notes',
   'tasks',
+  'formulations',
+  'safety_plans',
 ]);
 
 const IDENTIFIER = /^[a-z_][a-z0-9_]*$/;

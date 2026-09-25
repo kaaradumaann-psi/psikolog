@@ -30,6 +30,7 @@ import {
 import type { OutboxEntry, SyncEntity, SyncState } from './status';
 import type { Appointment, ClinicalReport, Client, SoapSession } from '../clinicalTypes';
 import type { PracticeDocument, PracticeNote, PracticeTask } from '../practiceStore';
+import type { CaseFormulation, SafetyPlan } from '../casework';
 
 let repository: Repository | null = null;
 let owner: Owner | null = null;
@@ -42,7 +43,9 @@ export type SyncRecord =
   | { entity: 'report'; record: ClinicalReport; snapshot: Record<string, unknown> }
   | { entity: 'document'; record: PracticeDocument }
   | { entity: 'note'; record: PracticeNote }
-  | { entity: 'task'; record: PracticeTask };
+  | { entity: 'task'; record: PracticeTask }
+  | { entity: 'formulation'; record: CaseFormulation }
+  | { entity: 'safety'; record: SafetyPlan };
 
 export function configureCloudSync(deps: { db: DbPort; storage: StoragePort; owner: Owner }): Repository {
   owner = { ...deps.owner };
@@ -127,7 +130,9 @@ export async function flushWrites(): Promise<void> {
 export function push(entry: SyncRecord): void {
   if (!repository) return;
   const repo = repository;
-  const id = entry.record.id;
+  // Formulation and safety plan are one-per-client and have no id of their own;
+  // the client id is their outbox key (the repository derives the row id).
+  const id = 'id' in entry.record ? entry.record.id : entry.record.clientId;
   enqueue(() => runWrite({ entity: entry.entity, id, op: 'upsert' }, () => {
     switch (entry.entity) {
       case 'client':
@@ -146,6 +151,10 @@ export function push(entry: SyncRecord): void {
         return repo.pushNote(entry.record);
       case 'task':
         return repo.pushTask(entry.record);
+      case 'formulation':
+        return repo.pushFormulation(entry.record);
+      case 'safety':
+        return repo.pushSafetyPlan(entry.record);
     }
   }));
 }
@@ -171,6 +180,10 @@ export function pushNow(entry: SyncRecord): Promise<void> {
       return repo.pushNote(entry.record);
     case 'task':
       return repo.pushTask(entry.record);
+    case 'formulation':
+      return repo.pushFormulation(entry.record);
+    case 'safety':
+      return repo.pushSafetyPlan(entry.record);
   }
 }
 
@@ -196,6 +209,10 @@ export function remove(entity: SyncEntity, id: string, record?: unknown): void {
         return repo.deleteNote(id);
       case 'task':
         return repo.deleteTask(id);
+      case 'formulation':
+        return repo.deleteFormulation(id);
+      case 'safety':
+        return repo.deleteSafetyPlan(id);
     }
   }));
 }
@@ -221,6 +238,10 @@ export function removeNow(entity: SyncEntity, id: string, record?: unknown): Pro
       return repo.deleteNote(id);
     case 'task':
       return repo.deleteTask(id);
+    case 'formulation':
+      return repo.deleteFormulation(id);
+    case 'safety':
+      return repo.deleteSafetyPlan(id);
   }
 }
 

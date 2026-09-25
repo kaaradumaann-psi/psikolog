@@ -13,7 +13,9 @@ export type CloudTable =
   | 'reports'
   | 'documents'
   | 'notes'
-  | 'tasks';
+  | 'tasks'
+  | 'formulations'
+  | 'safety_plans';
 
 export type ClientRow = {
   id: string;
@@ -180,3 +182,45 @@ export const SYSTEM_TEST_DEFINITIONS = {
 } as const;
 
 export type ScaleKey = keyof typeof SYSTEM_TEST_DEFINITIONS;
+
+/* One row per client: the application keeps a single formulation and a single
+   safety plan per client, so both tables carry `unique (client_id)` and the row
+   id is derived deterministically from the client id (see mapping.ts). */
+
+export type GoalRow = {
+  id: string;
+  text: string;
+  measure: string;
+  status: string;
+};
+
+export type FormulationRow = {
+  id: string;
+  client_id: string;
+  organization_id: string;
+  modality: string | null;
+  predisposing: string | null;
+  precipitating: string | null;
+  perpetuating: string | null;
+  protective: string | null;
+  goals: GoalRow[];
+  review_date: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SafetyPlanRow = {
+  id: string;
+  client_id: string;
+  organization_id: string;
+  warning_signs: string | null;
+  coping: string | null;
+  people: string | null;
+  professionals: string | null;
+  environment: string | null;
+  reasons: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+};

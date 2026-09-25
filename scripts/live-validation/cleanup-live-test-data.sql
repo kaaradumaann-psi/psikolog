@@ -8,7 +8,8 @@
 -- KALIR. Bu betik o artığı temizlemek (veya görünmez kılmak) için vardır.
 --
 -- Kapsam (sert sınır): YALNIZCA bu kitin ürettiği sentetik kayıtlar
---   * public.clients.file_number LIKE 'LIVE-%'   (koşucunun kullandığı önek)
+--   * public.clients.file_number LIKE 'LIVE-%'   (API koşucusunun öneki)
+--   * public.clients.file_number LIKE 'E2E-%'    (tarayıcı testinin öneki)
 --   * storage.objects.name LIKE '%-live-check.txt'
 -- Gerçek danışan/klinik verisine DOKUNMAZ.
 --
@@ -33,7 +34,7 @@ select c.id,
        (select count(*) from public.safety_plans sp where sp.client_id = c.id and sp.status = 'locked') as kilitli_guvenlik_plani,
        (select count(*) from public.reports r where r.client_id = c.id and r.status = 'locked') as kilitli_rapor
 from public.clients c
-where c.file_number like 'LIVE-%'
+where c.file_number like 'LIVE-%' or c.file_number like 'E2E-%'
 order by c.created_at;
 
 -- ---------------------------------------------------------------------------
@@ -52,7 +53,7 @@ order by o.created_at;
 -- ===========================================================================
 -- update public.clients
 --    set status = 'archived'
---  where file_number like 'LIVE-%';
+--  where file_number like 'LIVE-%' or file_number like 'E2E-%';
 --
 -- -- storage artıklarını sil (nesneler klinik kayıt değildir)
 -- delete from storage.objects
@@ -69,7 +70,8 @@ order by o.created_at;
 -- declare
 --   hedef uuid[];
 -- begin
---   select array_agg(id) into hedef from public.clients where file_number like 'LIVE-%';
+--   select array_agg(id) into hedef from public.clients
+--    where file_number like 'LIVE-%' or file_number like 'E2E-%';
 --   if hedef is null then
 --     raise notice 'Sentetik danışan bulunamadı — yapılacak iş yok.';
 --     return;
@@ -97,7 +99,7 @@ order by o.created_at;
 --    where bucket_id = 'client-documents' and name like '%-live-check.txt';
 --
 --   raise notice 'Temizlik tamam. Kalan sentetik danışan: %',
---     (select count(*) from public.clients where file_number like 'LIVE-%');
+--     (select count(*) from public.clients where file_number like 'LIVE-%' or file_number like 'E2E-%');
 -- end $$;
 
 -- ===========================================================================
@@ -110,6 +112,7 @@ where tgname in ('sessions_enforce_lock', 'formulations_enforce_lock', 'safety_p
 order by tgname;
 -- (durum 'O' = açık/enabled olmalı)
 
-select count(*) as kalan_sentetik_danisan from public.clients where file_number like 'LIVE-%';
+select count(*) as kalan_sentetik_danisan
+  from public.clients where file_number like 'LIVE-%' or file_number like 'E2E-%';
 select count(*) as kalan_test_nesnesi
   from storage.objects where bucket_id = 'client-documents' and name like '%-live-check.txt';

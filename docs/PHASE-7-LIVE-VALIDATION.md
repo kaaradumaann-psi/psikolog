@@ -448,7 +448,8 @@ RLS politikalarında **hiçbir değişiklik yapılmadı**.
 | `scripts/live-validation/cleanup-live-test-data.sql` | **YENİ** — sentetik artık temizliği: önizleme (kilitli kayıt sayısı), **arşivle** (önerilen), uyarılı tam silme (trigger'lar işlem süresince kapalı, yalnız `LIVE-%` hedefi), trigger durumu doğrulaması |
 | `scripts/live-validation/run.mjs` (koşu #5 turu) | CLEANUP artık kilit korumasını tanır: kilitli kayıt → `DENY` + `Yerinde` `PASS` + `Temizlik` `SKIP` |
 | `scripts/live-validation/run.mjs` (kapanış turu) | CLEANUP `DENY` satırı da JSON kanıt alanlarını (`httpStatus`, `code`, `kind`) taşır |
-| `e2e/live-multi-user.spec.ts` | **YENİ** — REAL BROWSER çok kullanıcılı oturum testi (kimlik yoksa SKIP) |
+| `e2e/live-multi-user.spec.ts` | **YENİ** — REAL BROWSER çok kullanıcılı oturum testi (kimlik yoksa SKIP); koşu #1 sonrası: modal kapanışı + `alert` yakalama + form geçerlilik kontrolü + detay sayfası doğrulaması + `E2E-` artık temizliği |
+| `scripts/live-validation/cleanup-live-test-data.sql` | `E2E-%` öneki de kapsama alındı (tarayıcı testinin ürettiği kayıtlar) |
 | `playwright.config.ts` | `E2E_BASE_URL` desteği: production/preview bundle'a karşı koşu (dev sunucusu kapanır) |
 | `docs/PHASE-7-LIVE-VALIDATION.md` | bu belge (koşu #4 tam matrisi, 4 FAIL'in kök nedeni, artık veri notu) |
 
@@ -552,6 +553,44 @@ npx playwright test e2e/live-multi-user.spec.ts --project=chromium
 ```
 
 Sonuç etiketi: **REAL BROWSER** (LIVE SUPABASE koşucusundan ayrıdır).
+
+#### Gerçek tarayıcı koşusu #1 (2026-09-25, kullanıcı makinesi) — FAILED (spec varsayımı)
+
+İlk koşu, kayıt sonrası **liste satırını** 30 sn boyunca aradı ve bulamadı:
+
+```
+Error: expect(locator).toBeVisible() failed
+Locator: getByRole('button', { name: 'E2E Tarayici muha5dlu' })
+  85 | await page.getByRole('button', { name: 'Danışanı Kaydet' }).click();
+> 87 | await expect(clientRow).toBeVisible({ timeout: 30_000 });
+```
+
+**Kök neden (uygulamada hata YOK, spec varsayımı yanlıştı):**
+`src/components/clinical/ClientListPage.tsx` → `handleSave`:
+
+```ts
+saveClient(clientToSave);
+setModalOpen(false);
+if (!editingClient) navigate(`/danisanlar/${clientId}`);   // ← yeni kayıtta DETAY sayfasına gider
+```
+
+Yani yeni danışan kaydedildiğinde uygulama **detay sayfasına** yönleniyor; liste tablosu o anda
+ekranda değil. Koşu ayrıca `alert()` yakalamadığı için kaydetme sessizce başarısız gibi göründü.
+
+**Düzeltmeler (spec'te):**
+
+1. Kaydetten sonra önce **modalın kapandığı** doğrulanır (`toHaveCount(0)`),
+2. `alert()` diyalogları yakalanır; kaydet sırasında uyarı çıkarsa test anında ve okunur bir
+   mesajla düşer (30 sn sessiz beklemek yok),
+3. kayıt öncesi formun `checkValidity()` sonucu kontrol edilir; geçersiz zorunlu alan varsa
+   id'leriyle raporlanır,
+4. uygulamanın gerçek davranışı doğrulanır: URL `/danisanlar/<id>` + detay başlığı (`h1`) görünür,
+5. sonra listeye dönülüp satır aranır (yerel depo temizliği kanıtı bu ekranda ölçülür),
+6. **self-healing temizlik**: listedeki `E2E-` önekli artıklar (başarısız koşulardan kalanlar)
+   testin başında arayüzden silinir; test sonunda kendi kaydını da siler.
+
+İlk başarısız koşudan kalan `E2E-MUHA5DLU` kaydı bu mekanizmayla (veya
+`cleanup-live-test-data.sql` ile — betik artık `E2E-%` önekini de kapsar) temizlenir.
 
 ### 6.6 PRODUCTION runbook (kendi makinenizde)
 

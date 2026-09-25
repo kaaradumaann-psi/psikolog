@@ -2,12 +2,12 @@
  * PHASE 7 / P0-8 — REAL BROWSER: canlı Supabase üzerinde çok kullanıcılı oturum testi.
  *
  * Ne ölçer (istenen matris):
- *   1) A girişi → A'nın verisi görünür
- *   2) Tarayıcı yerel deposu temizlenip sayfa yenilendiğinde veri YİNE görünür
- *      (verinin localStorage'dan değil sunucudan geldiğinin tarayıcı kanıtı)
- *   3) A çıkışı → B girişi → A'nın verisi GÖRÜNMEZ
- *   4) B çıkışı → A girişi → A'nın verisi geri gelir
- *   5) Test kaydı arayüzden silinir (temizlik)
+ *   1) A girişi → arayüzden danışan oluşturulur (uygulama kaydı sonrası DETAY sayfasına gider)
+ *   2) Tarayıcı yerel verisi (localStorage) temizlenip sayfa yenilendiğinde kayıt YİNE görünür
+ *      — verinin localStorage'dan değil Supabase'den geldiğinin tarayıcı kanıtı
+ *   3) A çıkışı → B girişi → A'nın kaydı GÖRÜNMEZ
+ *   4) B çıkışı → A girişi → kayıt geri gelir
+ *   5) Test kaydı arayüzden silinir; önceki başarısız koşulardan kalan `E2E-` artıkları da temizlenir
  *
  * Çalıştırma (gerçek Chromium gerekir):
  *   npx playwright install chromium
@@ -16,8 +16,13 @@
  *   LIVE_PSY_B_EMAIL=… LIVE_PSY_B_PASSWORD=… \
  *   npx playwright test e2e/live-multi-user.spec.ts --project=chromium
  *
- * Bu dosya, kimlik bilgileri verilmediğinde **SKIP** olur (asla PASS sayılmaz).
+ * Kimlik bilgileri verilmezse test **SKIP** olur (asla PASS sayılmaz).
  * Sonuç etiketi: REAL BROWSER — LOCAL/PGlite ve LIVE SUPABASE koşucularından AYRIDIR.
+ *
+ * NOT (koşu #1 düzeltmesi): `handleSave` yeni danışanda `navigate('/danisanlar/<id>')` yapar,
+ * bu yüzden kayıt sonrası liste satırı hemen görünmez. Spec artık önce detay sayfasını doğrular,
+ * sonra listeye dönüp satırı arar. Ayrıca kaydet sırasında çıkan `alert()` yakalanır ve
+ * testi anında anlamlı bir mesajla düşürür (sessiz 30 sn beklemek yerine).
  */
 import { test, expect, type Page } from '@playwright/test';
 
@@ -32,11 +37,21 @@ const LIVE = {
 
 const liveReady = Object.values(LIVE).every((value) => value.trim() !== '');
 const stamp = Date.now().toString(36);
-const CLIENTS = 'E2E-' + stamp.toUpperCase();
-const FIRST_NAME = 'E2E';
-const LAST_NAME = `Tarayici ${stamp}`;
+const FILE_PREFIX = 'E2E-';
+const FILE_NUMBER = `${FILE_PREFIX}${stamp.toUpperCase()}`;
+const FULL_NAME = `E2E Tarayici ${stamp}`;
 
 test.describe.configure({ mode: 'serial' });
+
+/** Sahnede açılan tarayıcı diyaloglarını yakalar; alert metinleri testi bilgilendirir. */
+function watchDialogs(page: Page) {
+  const alerts: string[] = [];
+  page.on('dialog', async (dialog) => {
+    if (dialog.type() === 'alert') alerts.push(dialog.message());
+    await dialog.accept();
+  });
+  return alerts;
+}
 
 async function login(page: Page, email: string, password: string) {
   await page.goto('/');
@@ -59,6 +74,25 @@ async function openClients(page: Page) {
   await expect(page.getByRole('heading', { name: 'Danışan Dosyaları' })).toBeVisible();
 }
 
+/** Bu testin ürettiği satır(lar) — `E2E-` protokol numarasıyla bulunur. */
+function testRows(page: Page) {
+  return page.locator('.client-table tbody tr').filter({ hasText: FILE_PREFIX });
+}
+
+/** Önceki başarısız koşulardan kalan `E2E-` artıklarını arayüzden temizler (self-healing). */
+async function deleteLeftovers(page: Page) {
+  for (let i = 0; i < 10; i += 1) {
+    const rows = testRows(page);
+    const count = await rows.count();
+    if (count === 0) return;
+    await rows.first().getByTitle('Danışanı sil').click();
+    await expect(page.locator('.client-table tbody tr').filter({ hasText: FILE_PREFIX })).toHaveCount(
+      Math.max(0, count - 1),
+      { timeout: 20_000 },
+    );
+  }
+}
+
 test.describe('REAL BROWSER — canlı Supabase çok kullanıcılı oturum', () => {
   test.skip(
     !liveReady,
@@ -68,60 +102,78 @@ test.describe('REAL BROWSER — canlı Supabase çok kullanıcılı oturum', () 
   test('A ekler → yerel depo temizlenince sunucudan geri gelir → çıkış → B göremez → A yeniden görür', async ({
     page,
   }) => {
-    test.setTimeout(180_000);
+    test.slow();
 
     // ---------------------------------------------------------------- 1) A girişi
+    const alerts = watchDialogs(page);
     await login(page, LIVE.aEmail, LIVE.aPassword);
 
-    // ---------------------------------------------------------------- 2) A kayıt oluşturur
+    // ---------------------------------------------------------------- 2) eski artıkları temizle
     await openClients(page);
+    await deleteLeftovers(page);
+
+    // ---------------------------------------------------------------- 3) A kayıt oluşturur
     await page.getByRole('button', { name: 'Yeni Danışan Kaydı' }).click();
     const dialog = page.getByRole('dialog', { name: 'Yeni Danışan Kaydı' });
     await expect(dialog).toBeVisible();
-    await page.locator('#client-file-number').fill(CLIENTS);
-    await page.locator('#client-first-name').fill(FIRST_NAME);
-    await page.locator('#client-last-name').fill(LAST_NAME);
+    await page.locator('#client-file-number').fill(FILE_NUMBER);
+    await page.locator('#client-first-name').fill('E2E');
+    await page.locator('#client-last-name').fill(`Tarayici ${stamp}`);
     await page.locator('#client-gender').selectOption('KADIN');
+
+    // Zorunlu alanlar dolu mu? (tarayıcı doğrulaması submit'i engelliyorsa burada net görürüz)
+    const invalidFields = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('form input, form select, form textarea'))
+        .filter((element) => !(element as HTMLInputElement).checkValidity())
+        .map((element) => (element as HTMLInputElement).id || (element as HTMLInputElement).name),
+    );
+    expect(invalidFields, `formda geçersiz zorunlu alanlar: ${invalidFields.join(', ')}`).toEqual([]);
+
     await page.getByRole('button', { name: 'Danışanı Kaydet' }).click();
-    const clientRow = page.getByRole('button', { name: `${FIRST_NAME} ${LAST_NAME}` });
+
+    // Kaydetme başarısızsa uygulama native alert verir; sessizce beklemek yerine burada düşelim.
+    await expect(dialog).toHaveCount(0, { timeout: 30_000 });
+    expect(alerts, `kaydet sırasında uyarı çıktı: ${alerts.join(' | ')}`).toEqual([]);
+
+    // Uygulama davranışı: yeni danışan kaydında DETAY sayfasına yönlendirir.
+    await expect(page).toHaveURL(/\/danisanlar\/[^/]+$/, { timeout: 30_000 });
+    await expect(page.getByRole('heading', { name: FULL_NAME })).toBeVisible({ timeout: 30_000 });
+
+    // ---------------------------------------------------------------- 4) listede görünür
+    await openClients(page);
+    const clientRow = page.getByRole('button', { name: FULL_NAME });
     await expect(clientRow).toBeVisible({ timeout: 30_000 });
 
-    // ---------------------------------------------------------------- 3) yerel depo temizliği
-    // Klinik veri localStorage'dan DEĞİL sunucudan gelmeli: yerel depo silinip
-    // sayfa yenilendiğinde kaydın yine görünmesi gerekir (bulut kalıcılığı kanıtı).
+    // ---------------------------------------------------------------- 5) yerel depo temizliği
+    // Klinik veri localStorage'dan DEĞİL sunucudan gelmeli: yerel depo silinip sayfa
+    // yenilendiğinde kaydın yine görünmesi gerekir (bulut kalıcılığı kanıtı).
+    await page.goto('/danisanlar');
     const localBefore = await page.evaluate(() => window.localStorage.length);
     await page.evaluate(() => window.localStorage.clear());
     await page.reload();
-    await expect(page.getByRole('button', { name: `${FIRST_NAME} ${LAST_NAME}` })).toBeVisible({
-      timeout: 30_000,
-    });
+    await expect(page.getByRole('button', { name: FULL_NAME })).toBeVisible({ timeout: 30_000 });
     const localAfter = await page.evaluate(() => window.localStorage.length);
     test.info().annotations.push({
       type: 'localStorage',
       description: `silinen anahtar sayısı: ${localBefore} (yenileme sonrası yeniden oluşan: ${localAfter})`,
     });
 
-    // ---------------------------------------------------------------- 4) çıkış → B
+    // ---------------------------------------------------------------- 6) çıkış → B
     await logout(page);
     await login(page, LIVE.bEmail, LIVE.bPassword);
     await openClients(page);
-    await expect(page.getByRole('button', { name: `${FIRST_NAME} ${LAST_NAME}` })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: FULL_NAME })).toHaveCount(0);
 
-    // ---------------------------------------------------------------- 5) B çıkış → A yeniden
+    // ---------------------------------------------------------------- 7) B çıkış → A yeniden
     await logout(page);
     await login(page, LIVE.aEmail, LIVE.aPassword);
     await openClients(page);
-    await expect(page.getByRole('button', { name: `${FIRST_NAME} ${LAST_NAME}` })).toBeVisible({
-      timeout: 30_000,
-    });
+    await expect(page.getByRole('button', { name: FULL_NAME })).toBeVisible({ timeout: 30_000 });
 
-    // ---------------------------------------------------------------- 6) temizlik (arayüzden)
-    page.on('dialog', (dialog) => void dialog.accept());
-    const row = page.locator('tr', { hasText: LAST_NAME });
+    // ---------------------------------------------------------------- 8) temizlik (arayüzden)
+    const row = page.locator('.client-table tbody tr').filter({ hasText: FILE_NUMBER });
     await row.getByTitle('Danışanı sil').click();
-    await expect(page.getByRole('button', { name: `${FIRST_NAME} ${LAST_NAME}` })).toHaveCount(0, {
-      timeout: 30_000,
-    });
+    await expect(page.getByRole('button', { name: FULL_NAME })).toHaveCount(0, { timeout: 30_000 });
 
     await logout(page);
   });

@@ -283,7 +283,7 @@ Kaynak-of-truth testi: localStorage temizlenip yeniden yüklenince veri Supabase
 | Canlı doğrulama seed SQL'i + emit-seed | **PASS** | `tests/liveValidationSeed.test.ts` (7 kontrol: atama, idempotency, sessiz geçmeme, admin yokluğu, placeholder tekilliği, e-posta doldurma + parola yazmama, eksik env'de çıkış kodu 2) |
 | Canlı şema/verify SQL'i | **PASS** | `tests/liveValidationVerifySql.test.ts` (1 kontrol: 25+ nesne + 11 migration) |
 | Canlı Supabase kiti (`scripts/live-validation/run.mjs`) | **Kısmi — güvenlik kanıtları yeşil, CLEANUP raporlaması bekliyor** | Koşu #5 (kullanıcı makinesi, tam matris): **64 PASS · 17 DENY · 2 FAIL** (2 FAIL = kilitli kaydın cascade silmeyi engellemesi; tasarım gereği) |
-| Tarayıcı (Playwright, gerçek Chromium) | **NOT RUN / BLOCKED** | Chromium ikili dosyası yok (`~/.cache/ms-playwright` boş); kullanıcı makinesinde koşulmadı |
+| Tarayıcı (Playwright, gerçek Chromium) | **FAILED (koşu #1) → spec düzeltildi, yeniden koşu bekliyor** | Sandbox'ta Chromium indirilemiyor (`cdn.playwright.dev` ECONNRESET). Kullanıcı makinesindeki ilk koşuda test, kayıt sonrası **liste satırını** bekledi; uygulama ise yeni danışanda `navigate('/danisanlar/<id>')` ile **detay sayfasına** gidiyor (`ClientListPage.handleSave`) → hata spec varsayımındaydı. Spec düzeltildi: modal kapanışı + `alert()` yakalama + form `checkValidity()` + detay `h1` doğrulaması + listeye dönüş + `E2E-` artık temizliği |
 | Üretim (canlı Supabase + dağıtım) | **NOT VERIFIED** | Production bundle + dağıtım ortamı doğrulaması yapılmadı |
 
 Toplam: `npm test` → **145 test, 145 PASS, 0 FAIL**. `npx tsc --noEmit` → **PASS**.
@@ -322,7 +322,12 @@ Toplam: `npm test` → **145 test, 145 PASS, 0 FAIL**. `npx tsc --noEmit` → **
    Storage A PASS / B DENY (`NoSuchKey`, `AccessDenied`, 0 satır) · çıkış izolasyonu DENY ·
    CLEANUP `DENY` (immutability) + `PASS` (kayıt yerinde) + `SKIP` (bakım).
    Bu katman kapandı; **REAL BROWSER ve PRODUCTION katmanları hâlâ açık** (aşağıda 2 ve 3).
-2. **Gerçek tarayıcı doğrulaması — NOT RUN (sandbox'ta BLOCKED).** Playwright ikilisi indirilemiyor
+2. **Gerçek tarayıcı doğrulaması — koşu #1 FAILED (spec varsayımı), düzeltildi; yeniden koşu bekliyor.**
+   Kullanıcı makinesindeki ilk koşuda test, kaydı oluşturduktan sonra **liste satırını** bekledi ve
+   bulamadı; kök neden uygulamada değil spec'te: `ClientListPage.handleSave` yeni danışanda
+   `navigate('/danisanlar/<id>')` yapar, yani kayıt sonrası **detay sayfası** açılır. Spec artık
+   modal kapanışı + `alert()` yakalama + form `checkValidity()` + detay sayfası (`h1`) doğrulaması +
+   listeye dönüp satır arama + `E2E-` artık temizliği yapıyor. Sandbox'ta ise Playwright ikilisi indirilemiyor
    (`npx playwright install chromium` → `Failed to download Chrome for Testing … ECONNRESET`,
    `cdn.playwright.dev:443` engelli). Spec ve runbook hazır: `e2e/live-multi-user.spec.ts`
    (A ekler → yerel depo temizlenir + yenileme → kayıt yine görünür → çıkış → B göremez →

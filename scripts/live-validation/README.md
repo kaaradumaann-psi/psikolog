@@ -192,8 +192,29 @@ gerçek HTTP/kod alanları; sır yok).
 
 ### Kapsam dışı (ayrı raporlanır)
 
-- **REAL BROWSER:** Playwright/Chromium koşusu gerekir (`npm run test:e2e`).
+- **REAL BROWSER:** gerçek Chromium koşusu gerekir. Bu kit için hazır spec:
+  `e2e/live-multi-user.spec.ts` (A ekler → yerel depo temizlenir + sayfa yenilir → kayıt yine
+  görünür → çıkış → B göremez → A yeniden görür → arayüzden siler).
+
+  ```bash
+  npx playwright install chromium
+  VITE_SUPABASE_URL=… VITE_SUPABASE_ANON_KEY=… \
+  LIVE_PSY_A_EMAIL=… LIVE_PSY_A_PASSWORD=… LIVE_PSY_B_EMAIL=… LIVE_PSY_B_PASSWORD=… \
+  npx playwright test e2e/live-multi-user.spec.ts --project=chromium
+  ```
 - **PRODUCTION:** production bundle + dağıtım ortamı doğrulaması gerekir.
+
+  ```bash
+  VITE_SUPABASE_URL=… VITE_SUPABASE_ANON_KEY=… npm run build
+  npm run preview
+  E2E_BASE_URL=http://localhost:4173 \
+  VITE_SUPABASE_URL=… VITE_SUPABASE_ANON_KEY=… \
+  LIVE_PSY_A_EMAIL=… LIVE_PSY_A_PASSWORD=… LIVE_PSY_B_EMAIL=… LIVE_PSY_B_PASSWORD=… \
+  npx playwright test --project=chromium
+  ```
+
+  `E2E_BASE_URL` verildiğinde dev sunucusu başlatılmaz; testler doğrudan o adrese koşar.
+  Statik kaynak incelemesi PRODUCTION PASS yerine geçmez.
 
 ## 5) Hata raporlama (P0-8 teşhis düzeltmesi)
 

@@ -1,25 +1,72 @@
 # PHASE 7 / P0-8 — LIVE VALIDATION Raporu
 
 Tarih: 2026-09-25 · Dal: `arena/01a0d937-psikolog`
-Durum: **LIVE SUPABASE = FAILED (koşu #5: 64 PASS / 17 DENY / 2 FAIL — kalan 2 FAIL
-kilit korumasının cascade'i engellemesi; tasarım gereği DENY/SKIP olarak raporlanacak) ·
-PHASE 7 COMPLETE DEĞİL**
+Durum: **LIVE SUPABASE = VERIFIED (koşu #6: 65 PASS · 18 DENY · 0 FAIL · 1 SKIP) ·
+PHASE 7 hâlâ COMPLETE DEĞİL — REAL BROWSER ve PRODUCTION katmanları açık**
 
 Bu belge yalnızca **canlı doğrulama** (P0-8) katmanını raporlar ve katmanları kesin olarak ayırır:
 
 | Katman | Sonuç | Kanıt |
 |---|---|---|
 | **LOCAL / PGlite** | **PASS** | `npm test` **145/145** (142 + 3 yeni emit-seed kontrolü), `phase7RlsMatrix` 14/14, `phase7LockChain` 11/11, `liveValidationSeed` 7/7, `liveValidationVerifySql` 1/1 |
-| **LIVE SUPABASE** | **FAILED — kısmi (güvenlik kanıtları yeşil)** | Koşu #5: 64 PASS · 17 DENY · 2 FAIL. Kalan 2 FAIL = kilitli kaydın cascade silmeyi engellemesi (§0.0) |
-| **REAL BROWSER** | **NOT RUN** | Playwright/Chromium ikilisi yok; kullanıcı makinesinde koşulmadı |
-| **PRODUCTION** | **NOT VERIFIED** | Production bundle + dağıtım ortamı doğrulaması yapılmadı |
+| **LIVE SUPABASE** | **VERIFIED** (REST/Auth/Storage düzeyinde) | **Koşu #6: 65 PASS · 18 DENY · 0 FAIL · 1 SKIP** — `liveSupabase: "VERIFIED"` (§0) |
+| **REAL BROWSER** | **NOT RUN** | Chromium ikilisi sandbox'ta indirilemiyor (`cdn.playwright.dev` ECONNRESET); spec + runbook hazır (§6.5) |
+| **PRODUCTION** | **NOT VERIFIED** | Production bundle + dağıtım ortamı koşusu yapılmadı; `E2E_BASE_URL` ile koşulabilir (§6.6) |
 
 > `PGlite PASS — Production NOT VERIFIED` **ile** `LIVE SUPABASE VERIFIED` aynı şey değildir.
 > PHASE 7 bu nedenle **COMPLETE değildir**.
 
 ---
 
-## 0. Koşu #5 — son koşu (kullanıcı makinesi, 2026-09-25T17:57:23Z)
+## 0. Koşu #6 — KAPANIŞ KOŞUSU: `LIVE SUPABASE: VERIFIED`
+(kullanıcı makinesi, 2026-09-25T18:03:09Z · `live-validation-result.json`)
+
+| Grup | PASS | DENY | FAIL | SKIP |
+|---|---|---|---|---|
+| AUTH | 12 | 0 | 0 | 0 |
+| SEMA | 9 | 0 | 0 | 0 |
+| CLINICAL DATA | 27 | 0 | 0 | 0 |
+| RLS | 7 | 12 | 0 | 0 |
+| PERSISTENCE | 1 | 0 | 0 | 0 |
+| SIGN/LOCK | 4 | 2 | 0 | 0 |
+| STORAGE | 3 | 2 | 0 | 0 |
+| LOGOUT | 2 | 1 | 0 | 0 |
+| CLEANUP | 1 | 1 | 0 | 1 |
+| **Toplam** | **65** | **18** | **0** | **1** |
+
+Koşucunun yazdığı etiketler:
+
+```
+LIVE SUPABASE       : VERIFIED (REST/Auth/Storage düzeyinde)
+REAL BROWSER        : NOT RUN — bu koşucu tarayıcı çalıştırmaz (Playwright ayrı koşulmalı)
+PRODUCTION          : NOT VERIFIED — bu koşucu production bundle üzerinden test yapmaz
+```
+
+Koşu #5'te FAIL yazan iki CLEANUP satırı, tasarım gereği beklendiği gibi raporlandı:
+
+| Kontrol | Sonuç | Anlamı |
+|---|---|---|
+| Kilitli klinik kayıt danışan silinmesini engelledi (DB düzeyinde immutability) | **DENY** | kilit trigger'ı cascade silmeyi reddetti (`400`/`P0001`) |
+| Kilitli kayıt hâlâ yerinde (immutability kanıtı) | **PASS** | kayıt korunuyor |
+| Sentetik zincir temizliği | **SKIP** | bakım adımı; kilitli kayıt silinemez (kilit trigger'ı ile korunuyor) |
+
+> Not: koşucu sürümü `e1203fe`; bu sonuç **davranış olarak** bu commit'i doğrular. Sonrasında
+> yalnız CLEANUP DENY satırının JSON kanıt alanları (`httpStatus`/`code`) zenginleştirildi;
+> **davranış değişmedi** (`--selftest` 13/13 + 5/5). İstenirse koşu tekrarlanabilir (~1 dk).
+
+### 0.1 `LIVE SUPABASE: VERIFIED` ne anlama geliyor — ve ne anlama gelmiyor
+
+**Kapsıyor (kanıtlı):** gerçek projede AUTH (A/B/admin + anon), canlı şema (PHASE 7 nesneleri +
+bucket), klinik veri zinciri (Client→Appointment→Session→Note→Anamnesis→Formulation→SafetyPlan→
+TestResult→Report), sunucu kalıcılığı, RLS sahiplik matrisi (A→A PASS · B→A DENY · admin kapsam ·
+anon DENY), imza/kilit/revizyon + `superseded_by`, Storage RLS, çıkış izolasyonu, temizlik davranışı.
+
+**Kapsamıyor:** tarayıcı düzeyi davranış (REAL BROWSER), production bundle/dağıtım ortamı
+(PRODUCTION), KVKK/hukuki beyan, yük/performans testleri.
+
+---
+
+## 0.2 Koşu #5 (kullanıcı makinesi, 2026-09-25T17:57:23Z)
 
 | Grup | PASS | DENY | FAIL | SKIP |
 |---|---|---|---|---|
@@ -79,7 +126,7 @@ kilit trigger'ları yalnız işlem süresince kapatılıp sonunda yeniden açıl
 
 ---
 
-## 0.1 Koşu #4 — İLK TAM MATRİS (kullanıcı makinesi, 2026-09-25T17:51:02Z)
+## 0.3 Koşu #4 — İLK TAM MATRİS (kullanıcı makinesi, 2026-09-25T17:51:02Z)
 
 Seed uygulandıktan sonraki koşu. **Rapor edilen tüm katmanlar gerçekten koşuldu:**
 
@@ -150,7 +197,7 @@ yalnız `clients.file_number like 'LIVE-%'` ve `%-live-check.txt` nesnelerini he
 
 ---
 
-## 0.2 Koşu #3 (kullanıcı makinesi)
+## 0.4 Koşu #3 (kullanıcı makinesi)
 
 | Grup | PASS | DENY | FAIL | SKIP |
 |---|---|---|---|---|
@@ -189,7 +236,7 @@ NOTICE olarak listeler**; sonunda atamayı kendisi doğrular (`SEED TAMAM` / ist
 
 ---
 
-## 0.3 Koşu #2 — gerçek sonuçlar (kullanıcı makinesi, 2026-09-25T17:38:05Z)
+## 0.5 Koşu #2 — gerçek sonuçlar (kullanıcı makinesi, 2026-09-25T17:38:05Z)
 
 Proje: `afvqznjqlrcoxoalkczd.supabase.co` · Komut: `node scripts/live-validation/run.mjs`
 
@@ -370,7 +417,7 @@ RLS politikalarında **hiçbir değişiklik yapılmadı**.
 
 ---
 
-## 3. Kurum / profil durumu (canlı — koşu #5 ile güncel)
+## 3. Kurum / profil durumu (canlı — koşu #6 ile güncel)
 
 | Kullanıcı | Giriş | Profil | Rol | `organization_id` |
 |---|---|---|---|---|
@@ -400,6 +447,9 @@ RLS politikalarında **hiçbir değişiklik yapılmadı**.
 | `scripts/live-validation/emit-seed.mjs` | **YENİ** — `.env.live` içindeki e-posta değerlerini seed şablonuna yerleştirip `live-seed.local.sql` üretir (parola okumaz/yazmaz, ekranda e-posta maskelenir) |
 | `scripts/live-validation/cleanup-live-test-data.sql` | **YENİ** — sentetik artık temizliği: önizleme (kilitli kayıt sayısı), **arşivle** (önerilen), uyarılı tam silme (trigger'lar işlem süresince kapalı, yalnız `LIVE-%` hedefi), trigger durumu doğrulaması |
 | `scripts/live-validation/run.mjs` (koşu #5 turu) | CLEANUP artık kilit korumasını tanır: kilitli kayıt → `DENY` + `Yerinde` `PASS` + `Temizlik` `SKIP` |
+| `scripts/live-validation/run.mjs` (kapanış turu) | CLEANUP `DENY` satırı da JSON kanıt alanlarını (`httpStatus`, `code`, `kind`) taşır |
+| `e2e/live-multi-user.spec.ts` | **YENİ** — REAL BROWSER çok kullanıcılı oturum testi (kimlik yoksa SKIP) |
+| `playwright.config.ts` | `E2E_BASE_URL` desteği: production/preview bundle'a karşı koşu (dev sunucusu kapanır) |
 | `docs/PHASE-7-LIVE-VALIDATION.md` | bu belge (koşu #4 tam matrisi, 4 FAIL'in kök nedeni, artık veri notu) |
 
 **Dokunulmayanlar:** RLS politikaları, migration dosyaları, uygulama kodu (feature/UI değişikliği yok),
@@ -456,7 +506,7 @@ Beklenen RLS davranışı (kanıt kodlarıyla):
 
 ## 6. Sonuç ve sonraki adım
 
-### 6.1 Şu ana kadar kanıtlanan (canlı, gerçek HTTP/kod)
+### 6.1 Kanıtlanan (canlı, gerçek HTTP/kod) — `LIVE SUPABASE: VERIFIED`
 
 | Kontrol | Sonuç |
 |---|---|
@@ -471,22 +521,56 @@ Beklenen RLS davranışı (kanıt kodlarıyla):
 | Çıkış izolasyonu + A yeniden giriş | **PASS/DENY** |
 | Temizlik | Kilitli kayıt nedeniyle **DENY + SKIP** (bakım adımı) |
 
-### 6.2 Kalan tek iş: CLEANUP raporlamasının canlıda doğrulanması
+### 6.2 Canlı katman kapandı
 
-`node scripts/live-validation/run.mjs` tekrar koşulur; beklenti **`FAIL 0`**
-(temizlik `DENY` + `SKIP` olarak raporlanır, çünkü zincirde kilitli bir klinik kayıt var).
-
-Bu koşu `FAIL 0` verdikten sonra: **LIVE SUPABASE = VERIFIED (REST/Auth/Storage düzeyinde)**.
-Bu belge ve `docs/PHASE-7-REPORT.md` §52-P0-8 bloğu ona göre kapatılır.
+`node scripts/live-validation/run.mjs` → **65 PASS · 18 DENY · 0 FAIL · 1 SKIP** ·
+`LIVE SUPABASE: VERIFIED` (koşu #6). Bu belge ve `docs/PHASE-7-REPORT.md` §52-P0-8 bloğu buna
+göre kapatıldı. Yeni bir canlı koşu, kod/migration değişikliğinden sonra tekrarlanmalıdır.
 
 ### 6.3 Kapsam dışı kalan katmanlar
 
-- **REAL BROWSER: NOT RUN** — gerçek Chromium/Playwright ile çok kullanıcılı oturum testi yapılmadı
-  (`npm run test:e2e`; Chromium ikilisi gerekir).
-- **PRODUCTION: NOT VERIFIED** — production bundle + dağıtım ortamı doğrulaması yapılmadı.
+- **REAL BROWSER: NOT RUN** — gerekçe: sandbox'ta Chromium indirilemiyor
+  (`npx playwright install chromium` → `Failed to download Chrome for Testing … ECONNRESET`,
+  `cdn.playwright.dev:443` engelli). Tarayıcı spec'i hazır: `e2e/live-multi-user.spec.ts` (§6.5).
+- **PRODUCTION: NOT VERIFIED** — production bundle + dağıtım ortamı koşusu yapılmadı; runbook §6.6.
   Statik kaynak incelemesi E2E PASS sayılmaz.
 
-### 6.4 İsteğe bağlı bakım
+### 6.5 REAL BROWSER runbook (kendi makinenizde)
+
+Yeni spec `e2e/live-multi-user.spec.ts` şunları ölçer: A girişi → A kaydı oluştur →
+**yerel depo temizlenip sayfa yenilenir → kayıt yine görünür (sunucu kalıcılığı kanıtı)** →
+A çıkışı → B girişi → **A kaydı görünmez** → B çıkışı → A girişi → **kayıt geri gelir** →
+arayüzden silme (temizlik). Kimlik bilgileri verilmezse test **SKIP** olur (asla PASS sayılmaz).
+
+```bash
+cd psikolog && npm ci
+npx playwright install chromium          # gerçek tarayıcı ikilisi
+VITE_SUPABASE_URL=… VITE_SUPABASE_ANON_KEY=… \
+LIVE_PSY_A_EMAIL=… LIVE_PSY_A_PASSWORD=… \
+LIVE_PSY_B_EMAIL=… LIVE_PSY_B_PASSWORD=… \
+npx playwright test e2e/live-multi-user.spec.ts --project=chromium
+```
+
+Sonuç etiketi: **REAL BROWSER** (LIVE SUPABASE koşucusundan ayrıdır).
+
+### 6.6 PRODUCTION runbook (kendi makinenizde)
+
+Production **bundle**'ı gerçek env ile derleyip önizleme sunucusuna karşı koşun
+(`playwright.config.ts` artık `E2E_BASE_URL` verilirse dev sunucusunu kapatır):
+
+```bash
+VITE_SUPABASE_URL=… VITE_SUPABASE_ANON_KEY=… npm run build   # production bundle
+npm run preview                                              # :4173 (dist)
+E2E_BASE_URL=http://localhost:4173 \
+VITE_SUPABASE_URL=… VITE_SUPABASE_ANON_KEY=… \
+LIVE_PSY_A_EMAIL=… LIVE_PSY_A_PASSWORD=… LIVE_PSY_B_EMAIL=… LIVE_PSY_B_PASSWORD=… \
+npx playwright test --project=chromium
+```
+
+Dağıtılmış ortam için: `E2E_BASE_URL=https://<production-host>` ile aynı komut.
+**Statik kaynak incelemesi PRODUCTION PASS sayılmaz**; yalnız gerçek bundle + gerçek tarayıcı koşusu sayılır.
+
+### 6.7 İsteğe bağlı bakım
 
 Sentetik artığı görünmez kılmak/ silmek için: `scripts/live-validation/cleanup-live-test-data.sql`
 — **§3 arşivle** (önerilen; klinik kayıtlar korunur) veya **§4 tam silme** (uyarılı).

@@ -314,15 +314,28 @@ Toplam: `npm test` → **145 test, 145 PASS, 0 FAIL**. `npx tsc --noEmit` → **
    Koşu #5'te `locked UPDATE/DELETE` ve storage `B read A` **DENY** oldu (kanıtlı). Kalan 2 FAIL
    yalnız **CLEANUP**: zincirdeki kilitli kayıt, danışan silinmesini cascade dahil engelliyor —
    **imza/kilit tasarımının istenen sonucu**; koşucu bunu `DENY` + `SKIP` raporlayacak şekilde
-   güncellendi. **Son bir koşu ile `FAIL 0` doğrulanmalı**; o doğrulama gelene kadar
-   **LIVE SUPABASE = FAILED** (PASS yazılmaz).
-2. **Gerçek tarayıcı doğrulaması — NOT RUN (sandbox'ta BLOCKED).** Playwright 1.63.0 kurulu ancak tarayıcı ikilisi yok
-   (`~/.cache/ms-playwright` boş; sistemde `chromium`/`google-chrome` yok) ve indirme adımı başarısız
-   ("Failed to download Chrome for Testing"). Bu yüzden responsive/erişilebilirlik ve uçtan uca
-   kullanıcı akışı tarayıcıda kanıtlanmadı; UI davranışı SSR/render ve store testleriyle sınırlı.
-3. **Üretim doğrulaması — NOT VERIFIED.** Dağıtım ortamına çıkılmadı; gerçek kullanıcı trafiğinde
-   çok kullanıcılı senaryo (A oluştur → çıkış → B giriş → görünmezlik → A giriş → görünürlük)
-   yalnızca RLS/store düzeyinde kanıtlandı.
+   güncellendi.
+   **KAPANIŞ (koşu #6): `LIVE SUPABASE = VERIFIED`** — **65 PASS · 18 DENY · 0 FAIL · 1 SKIP**.
+   Kanıt seti: AUTH 12/12 · SEMA 9/9 · klinik zincir 27/27 · kalıcılık 9/9 · RLS A→A PASS /
+   B→A DENY (0 satır) / B→A INSERT 403-42501 / admin kapsam PASS / anon 5/5 DENY ·
+   imza-kilit-revizyon + `superseded_by=rev2` · **kilitli UPDATE/DELETE trigger reddi (400/P0001)** ·
+   Storage A PASS / B DENY (`NoSuchKey`, `AccessDenied`, 0 satır) · çıkış izolasyonu DENY ·
+   CLEANUP `DENY` (immutability) + `PASS` (kayıt yerinde) + `SKIP` (bakım).
+   Bu katman kapandı; **REAL BROWSER ve PRODUCTION katmanları hâlâ açık** (aşağıda 2 ve 3).
+2. **Gerçek tarayıcı doğrulaması — NOT RUN (sandbox'ta BLOCKED).** Playwright ikilisi indirilemiyor
+   (`npx playwright install chromium` → `Failed to download Chrome for Testing … ECONNRESET`,
+   `cdn.playwright.dev:443` engelli). Spec ve runbook hazır: `e2e/live-multi-user.spec.ts`
+   (A ekler → yerel depo temizlenir + yenileme → kayıt yine görünür → çıkış → B göremez →
+   A yeniden görür) ve `docs/PHASE-7-LIVE-VALIDATION.md` §6.5. Bu nedenle responsive/erişilebilirlik
+   ve uçtan uca kullanıcı akışı gerçek tarayıcıda kanıtlanmadı; UI davranışı render ve store
+   testleriyle sınırlı. Bu katman **PASS sayılmaz** (yalnız gerçek tarayıcı koşusu PASS sayılır).
+3. **Üretim doğrulaması — NOT VERIFIED.** Runbook: `docs/PHASE-7-LIVE-VALIDATION.md` §6.6 —
+   gerçek env ile `npm run build` → `npm run preview` → `E2E_BASE_URL=http://localhost:4173
+   npx playwright test --project=chromium` (playwright.config artık `E2E_BASE_URL` verilirse dev
+   sunucusunu başlatmaz). **Statik kaynak incelemesi PASS sayılmaz.** Ayrıca dağıtım ortamına
+   çıkılmadı; gerçek kullanıcı trafiğinde çok kullanıcılı senaryo (A oluştur → çıkış → B giriş →
+   görünmezlik → A giriş → görünürlük) **canlı REST düzeyinde VERIFIED** (koşu #6), ancak
+   **production bundle + tarayıcı düzeyinde NOT VERIFIED**.
 4. **KVKK/VERBİS uyum beyanı yapılmadı** (teknik denetim kapsamı; hukuki beyan bu raporun dışındadır).
 
 ---

@@ -1021,12 +1021,14 @@ async function main() {
       for (const step of cleanupPlan({ deleted, errorKind: cleanupErrorKind, remainingRows })) {
         const detail =
           step.detail ??
-          (step.status === 'FAIL'
+          (step.status === 'FAIL' || step.status === 'DENY'
             ? cleanupErrorText
             : step.status === 'SKIP'
               ? 'kilitli klinik kayıt tasarım gereği silinemez — artık canlıda kalır (bkz. scripts/live-validation/cleanup-live-test-data.sql)'
               : '');
-        record('CLEANUP', step.name, step.status, detail, step.status === 'FAIL' ? cleanupMeta : {});
+        // Kanıt alanları: DENY satırı da gerçek HTTP durumu + PostgREST kodunu taşır.
+        const meta = step.status === 'FAIL' || step.status === 'DENY' ? cleanupMeta : {};
+        record('CLEANUP', step.name, step.status, detail, meta);
       }
     }
 

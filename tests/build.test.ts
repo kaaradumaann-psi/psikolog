@@ -62,3 +62,55 @@ test('production bundle cannot bypass authentication', () => {
   // Nothing may read the environment at runtime.
   assert.ok(!js.includes('import.meta.env'), 'import.meta.env must be statically replaced');
 });
+
+/**
+ * Executes the shipped bundle in a DOM (§21 of the P0.7 scope).
+ *
+ * The static checks above prove the compiled gate cannot return `local-dev`.
+ * This goes further: the exact files in `dist/assets/` are evaluated as ES
+ * modules inside a jsdom window, React mounts, and the access gate runs for
+ * real. With no Supabase configured at build time the workspace must refuse to
+ * open and must render no clinical surface at all.
+ *
+ * Runs in a child process because `vm.SourceTextModule` requires
+ * `--experimental-vm-modules`.
+ */
+test('production bundle executed in a DOM opens no clinical screen without auth', () => {
+  const raw = execFileSync(
+    process.execPath,
+    ['--experimental-vm-modules', 'tests/helpers/runProductionBundle.mjs'],
+    { encoding: 'utf8' },
+  );
+  const result = JSON.parse(raw) as {
+    entry: string;
+    text: string;
+    contains: Record<string, boolean>;
+    fetchCalls: string[];
+    consoleErrors: string[];
+    failed?: boolean;
+    error?: string;
+  };
+  assert.ok(!result.failed, `bundle did not execute: ${result.error}`);
+  assert.match(result.entry, /^assets\/index-.*\.js$/, 'the real entry chunk was executed');
+
+  // The refusal screen is what a build without backend config must show.
+  assert.equal(result.contains.notReady, true, 'not-ready screen must render');
+  assert.match(result.text, /kimlik doğrulama bağlantısı tanımlı değil/);
+
+  // Nothing clinical may render, and no login/registration surface either.
+  for (const surface of ['dashboard', 'clients', 'formulation', 'safetyPlan', 'reports', 'appointments', 'login', 'publicSignup']) {
+    assert.equal(result.contains[surface], false, `${surface} must not render without authentication`);
+  }
+
+  // The only network activity allowed is the bundle preloading its own chunks.
+  for (const url of result.fetchCalls) {
+    assert.match(url, /^https:\/\/psikolog\.invalid\/assets\/.+\.js$/, `unexpected request: ${url}`);
+  }
+  assert.equal(
+    result.fetchCalls.some((url) => url.includes('supabase.co')),
+    false,
+    'no request may be made to a Supabase endpoint',
+  );
+
+  assert.deepEqual(result.consoleErrors, [], 'the production bundle must not log errors on load');
+});

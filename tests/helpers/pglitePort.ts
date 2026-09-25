@@ -45,11 +45,37 @@ export type TestSession = {
   asAnon(): Promise<void>;
   asSuperuser(): Promise<void>;
   sql<T = Record<string, unknown>>(query: string, params?: unknown[]): Promise<T[]>;
+  /** Migration files applied so far, in filename order. */
+  appliedMigrations(): string[];
+  /**
+   * Apply the migration files that have not been applied yet, in filename order.
+   * This is what `supabase db push` does against a project that is behind.
+   */
+  applyRemainingMigrations(): Promise<void>;
+  /** Re-apply one migration file, simulating a repeated push. */
+  reapplyMigration(file: string): Promise<void>;
   close(): Promise<void>;
 };
 
-/** Boot PostgreSQL, install the Supabase shims the migrations expect, run them. */
-export async function createTestDatabase(): Promise<TestSession> {
+function migrationFiles(): string[] {
+  return readdirSync('supabase/migrations').sort();
+}
+
+function readMigration(file: string): string {
+  return readFileSync(`supabase/migrations/${file}`, 'utf8').replace(
+    'create extension if not exists pgcrypto;',
+    '',
+  );
+}
+
+/**
+ * Boot PostgreSQL, install the Supabase shims the migrations expect, run them.
+ *
+ * `upToMigration` stops after applying the named file (inclusive), so a test can
+ * put data into a database that only knows the older schema and then apply the
+ * newer migrations on top — the situation `supabase db push` creates.
+ */
+export async function createTestDatabase(options: { upToMigration?: string } = {}): Promise<TestSession> {
   const db = new PGlite();
 
   await db.exec(`
@@ -79,17 +105,32 @@ export async function createTestDatabase(): Promise<TestSession> {
     alter table storage.objects enable row level security;
   `);
 
-  for (const file of readdirSync('supabase/migrations').sort()) {
-    await db.exec(
-      readFileSync(`supabase/migrations/${file}`, 'utf8').replace(
-        'create extension if not exists pgcrypto;',
-        '',
-      ),
-    );
+  const applied: string[] = [];
+  const limit = options.upToMigration;
+  if (limit && !migrationFiles().includes(limit)) {
+    throw new Error(`Bilinmeyen migration: ${limit}`);
+  }
+  for (const file of migrationFiles()) {
+    await db.exec(readMigration(file));
+    applied.push(file);
+    if (file === limit) break;
   }
 
   return {
     db,
+    appliedMigrations: () => [...applied],
+    async applyRemainingMigrations() {
+      for (const file of migrationFiles()) {
+        if (applied.includes(file)) continue;
+        await db.exec(readMigration(file));
+        applied.push(file);
+      }
+    },
+    async reapplyMigration(file: string) {
+      if (!migrationFiles().includes(file)) throw new Error(`Bilinmeyen migration: ${file}`);
+      await db.exec(readMigration(file));
+      if (!applied.includes(file)) applied.push(file);
+    },
     async asUser(userId: string | null) {
       await db.exec('reset role');
       await db.query(`select set_config('request.jwt.claim.sub', $1, false)`, [userId ?? '']);

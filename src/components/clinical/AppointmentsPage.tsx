@@ -24,6 +24,8 @@ export function AppointmentsPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [pendingComplete, setPendingComplete] = useState<Appointment | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Appointment | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingApp, setEditingApp] = useState<Appointment | null>(null);
@@ -65,11 +67,13 @@ export function AppointmentsPage() {
       });
   }, [appointments, dateFilter, statusFilter]);
 
-  function openNewModal() {
+  function openNewModal(forClientId?: string) {
+    const selected = clients.find((client) => client.id === forClientId);
+    setSaveError(null);
     setEditingApp(null);
     setForm({
-      clientId: '',
-      clientName: '',
+      clientId: selected?.id ?? '',
+      clientName: selected ? `${selected.firstName} ${selected.lastName}` : '',
       date: clinicToday(),
       time: '14:00',
       durationMinutes: 50,
@@ -83,7 +87,20 @@ export function AppointmentsPage() {
     setModalOpen(true);
   }
 
+  // From a client file: use the existing appointment form with that client
+  // preselected. A foreign/removed ID is never accepted as a client.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('yeni') !== '1') return;
+    const requestedId = url.searchParams.get('danisan') ?? '';
+    url.searchParams.delete('yeni');
+    url.searchParams.delete('danisan');
+    window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+    if (!requestedId || clients.some((client) => client.id === requestedId)) openNewModal(requestedId);
+  }, [clients]);
+
   function openEditModal(a: Appointment) {
+    setSaveError(null);
     setEditingApp(a);
     setForm({ ...a });
     setModalOpen(true);
@@ -104,8 +121,9 @@ export function AppointmentsPage() {
 
   function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.clientId) {
-      alert('Lütfen bir danışan seçiniz.');
+    setSaveError(null);
+    if (!form.clientId || !clients.some((client) => client.id === form.clientId)) {
+      setSaveError('Kayıtlı bir danışan seçin.');
       return;
     }
 
@@ -128,8 +146,12 @@ export function AppointmentsPage() {
       createdAt: editingApp ? editingApp.createdAt : new Date().toISOString(),
     };
 
-    saveAppointment(appToSave);
-    setModalOpen(false);
+    try {
+      saveAppointment(appToSave);
+      setModalOpen(false);
+    } catch {
+      setSaveError('Randevu saklanamadı. Verileri silmeyin; senkronizasyon durumunu kontrol edip yeniden deneyin.');
+    }
   }
 
   /**
@@ -140,18 +162,30 @@ export function AppointmentsPage() {
   function confirmCompleteAppointment() {
     const appointment = pendingComplete;
     if (!appointment) return;
-    completeAppointmentWithSession(appointment);
-    setPendingComplete(null);
-    setEditingApp(null);
-    setModalOpen(false);
-    navigate(`/danisanlar/${appointment.clientId}?sekme=sessions`);
+    try {
+      completeAppointmentWithSession(appointment);
+      setActionError(null);
+      setEditingApp(null);
+      setModalOpen(false);
+      navigate(`/danisanlar/${appointment.clientId}?sekme=sessions`);
+    } catch {
+      setActionError('Görüşme tamamlanamadı. Verileri silmeyin; senkronizasyon durumunu kontrol edip yeniden deneyin.');
+    } finally {
+      setPendingComplete(null);
+    }
   }
 
   function confirmDeleteAppointment() {
     const appointment = pendingDelete;
     if (!appointment) return;
-    deleteAppointment(appointment.id);
-    setPendingDelete(null);
+    try {
+      deleteAppointment(appointment.id);
+      setActionError(null);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Randevu silinemedi.');
+    } finally {
+      setPendingDelete(null);
+    }
   }
 
   return (
@@ -167,12 +201,14 @@ export function AppointmentsPage() {
           <p>Danışan görüşmeleri, klinik seans saatleri ve randevu takibi.</p>
         </div>
         <div className="clinical-actions">
-          <button type="button" className="btn-primary" onClick={openNewModal}>
+          <button type="button" className="btn-primary" onClick={() => openNewModal()}>
             <Icon name="plus" size={16} />
             <span>Yeni Randevu Planla</span>
           </button>
         </div>
       </div>
+
+      {actionError && <p className="record-lock-error" role="alert">{actionError}</p>}
 
       {/* Görünüm ve Filtreler */}
       <div className="calendar-view-controls">
@@ -220,7 +256,7 @@ export function AppointmentsPage() {
             ) : clients.length === 0 ? (
               <button type="button" className="btn-primary btn-sm" onClick={() => navigate('/danisanlar?yeni=1')}>Önce danışan ekle</button>
             ) : (
-              <button type="button" className="btn-primary btn-sm" onClick={openNewModal}>Randevu ekle</button>
+              <button type="button" className="btn-primary btn-sm" onClick={() => openNewModal()}>Randevu ekle</button>
             )}
           </div>
         ) : (
@@ -317,16 +353,18 @@ export function AppointmentsPage() {
                       >
                         <Icon name="edit" size={13} />
                       </button>
-                      <button
-                        type="button"
-                        className="btn-secondary btn-sm"
-                        style={{ color: 'var(--danger)' }}
-                        title="Randevuyu sil"
-                        aria-label={`${app.clientName} randevusunu sil`}
-                        onClick={() => handleDelete(app.id)}
-                      >
-                        <Icon name="trash" size={13} />
-                      </button>
+                      {!sessionByAppointment.has(app.id) && (
+                        <button
+                          type="button"
+                          className="btn-secondary btn-sm"
+                          style={{ color: 'var(--danger)' }}
+                          title="Randevuyu sil"
+                          aria-label={`${app.clientName} randevusunu sil`}
+                          onClick={() => handleDelete(app.id)}
+                        >
+                          <Icon name="trash" size={13} />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -347,10 +385,12 @@ export function AppointmentsPage() {
             </div>
             <form onSubmit={handleSave}>
               <div className="clinical-modal-body">
+                {saveError && <p className="record-lock-error" role="alert">{saveError}</p>}
                 <div className="form-group">
                   <label>Danışan *</label>
                   <select
                     value={form.clientId || ''}
+                    disabled={Boolean(editingApp)}
                     onChange={e => {
                       const cl = clients.find(c => c.id === e.target.value);
                       setForm({

@@ -232,6 +232,45 @@ test('phase7 RLS: sahiplik matrisi ve tenant bütünlüğü', { timeout: 180000 
       assert.equal((await db.query(`select id from public.appointments where id=$1`, [APPT_A1])).rows.length, 0);
     });
 
+    await t.test('randevu/görev UPDATE: sahiplik kolu başkasının danışanına bağlayamaz', async () => {
+      await asUser(db, PSY_A2);
+      // Her iki kayıt A2'ye aittir; A2 aynı kurumdan A3'ün CLIENT_A2
+      // dosyasını sadece ID'sini bilerek ilişkilendirememelidir.
+      assert.equal(await denied(() => db.query(
+        `update public.appointments set client_id=$2 where id=$1 returning id`,
+        [APPT_A1, CLIENT_A2],
+      )), true, 'randevu başka psikoloğun danışanına taşınmamalı');
+      assert.equal(await denied(() => db.query(
+        `update public.tasks set client_id=$2 where id=$1 returning id`,
+        [TASK_A1, CLIENT_A2],
+      )), true, 'görev başka psikoloğun danışanına taşınmamalı');
+
+      // Yetki kontrolü sıkılaşsa da kendi danışanına düzenleme çalışmalı.
+      assert.equal((await db.query(
+        `update public.appointments set client_id=$2 where id=$1 returning id`,
+        [APPT_A1, CLIENT_A1],
+      )).rows.length, 1);
+      assert.equal((await db.query(
+        `update public.tasks set client_id=$2 where id=$1 returning id`,
+        [TASK_A1, CLIENT_A1],
+      )).rows.length, 1);
+    });
+
+    await t.test('eski/bozuk çapraz bağ: sahibine klinik metadata okunmaz', async () => {
+      await asService(db);
+      // Var olan hatalı bağlar silinmez, fakat A2'ye A3 dosyası gösterilmez.
+      await db.query(`update public.appointments set client_id=$2 where id=$1`, [APPT_A1, CLIENT_A2]);
+      await db.query(`update public.tasks set client_id=$2 where id=$1`, [TASK_A1, CLIENT_A2]);
+      await asUser(db, PSY_A2);
+      assert.equal((await db.query(`select id from public.appointments where id=$1`, [APPT_A1])).rows.length, 0);
+      assert.equal((await db.query(`select id from public.tasks where id=$1`, [TASK_A1])).rows.length, 0);
+      assert.equal(await denied(() => db.query(`delete from public.appointments where id=$1 returning id`, [APPT_A1])), true);
+      assert.equal(await denied(() => db.query(`delete from public.tasks where id=$1 returning id`, [TASK_A1])), true);
+      await asService(db);
+      await db.query(`update public.appointments set client_id=$2 where id=$1`, [APPT_A1, CLIENT_A1]);
+      await db.query(`update public.tasks set client_id=$2 where id=$1`, [TASK_A1, CLIENT_A1]);
+    });
+
     await t.test('profiles_insert_self: keyfî organization_id ile profil açılamaz', async () => {
       await asUser(db, NO_PROFILE);
       assert.equal(

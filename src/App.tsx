@@ -141,6 +141,22 @@ export default function App() {
     );
   }
   if (!supabaseConfig.configured) {
+    // The offline workspace is for local development only. A misconfigured
+    // production bundle must never accept clinical data in an anonymous,
+    // unencrypted browser cache instead of the Supabase source of truth.
+    if (import.meta.env.PROD) {
+      return (
+        <div className="auth-page">
+          <main className="auth-shell" role="alert">
+            <div className="auth-card">
+              <h1>Klinik çalışma alanı açılamadı</h1>
+              <p>Sunucu bağlantısı yapılandırılmamış. Klinik kayıt oluşturmayın; yöneticinizle iletişime geçin.</p>
+            </div>
+          </main>
+          <SiteFooter compact />
+        </div>
+      );
+    }
     return <WorkspaceShell user={LOCAL_USER} localMode onLogout={() => navigate('/')} />;
   }
   return <CloudGate />;
@@ -161,9 +177,18 @@ function CloudGate() {
         if (!cancelled) setUser(null);
       });
     const { data } = onAuthChange((_event, session) => {
-      void userFromSession(session).then((next) => {
-        if (!cancelled) setUser(next);
-      });
+      void userFromSession(session)
+        .then((next) => {
+          if (!cancelled) setUser(next);
+        })
+        .catch(() => {
+          // Expired/revoked session or profile failure: never keep showing the
+          // last user's clinical workspace while auth is uncertain.
+          if (!cancelled) {
+            setUser(null);
+            setError('Oturum doğrulanamadı. Lütfen yeniden giriş yapın.');
+          }
+        });
     });
     return () => {
       cancelled = true;

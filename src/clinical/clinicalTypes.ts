@@ -214,6 +214,7 @@ export interface ClinicalReport {
   revision?: number;
   amendmentOf?: string;
   amendmentReason?: string;
+  supersededBy?: string;
   signedAt?: string;
   lockedAt?: string;
   clientId?: string;

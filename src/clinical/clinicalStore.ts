@@ -13,7 +13,7 @@ import type {
   Scl90Result,
   ClinicalReport,
 } from './clinicalTypes';
-import { purgeClientPractice, recordAudit } from './practiceStore';
+import { getDocumentsByClient, getFormulations, getSafetyPlans, purgeClientPractice, recordAudit } from './practiceStore';
 import { MAX_CLIENTS, MAX_SESSIONS, reportStorageError } from './recordRules';
 import { cacheKey, cloudContext, queueWrite } from './cloud/sync';
 import type { ClinicalSnapshot } from './cloud/repository';
@@ -126,12 +126,24 @@ export function saveClient(client: Client): void {
   } else {
     list.unshift({ ...client, fileNumber, email, createdAt: now, updatedAt: now });
   }
-  setLocal(CLIENTS_KEY, list);
   queueWrite({ entity: 'client', op: 'upsert', value: client });
+  setLocal(CLIENTS_KEY, list);
   recordAudit({ action: 'save', entity: 'client', entityId: client.id, summary: `${client.firstName} ${client.lastName}` });
 }
 
 export function deleteClient(id: string): void {
+  // DB cascade is rejected by the immutable-record triggers if ANY historical
+  // child is locked. Check before touching even the local cache.
+  if (getSoapSessions().some((item) => item.clientId === id && item.status === 'locked') ||
+      getClinicalReports().some((item) => item.clientId === id && !!item.lockedAt) ||
+      getFormulations().some((item) => item.clientId === id && item.status === 'locked') ||
+      getSafetyPlans().some((item) => item.clientId === id && item.status === 'locked')) {
+    throw new Error('Kilitli klinik kayıtlar bulunan danışan dosyası silinemez. Arşivlemeyi tercih edin.');
+  }
+  if (cloudContext() && getDocumentsByClient(id).length) {
+    throw new Error('Danışanın belgeleri varken dosya silinemez. Belgeleri önce silin ve sunucu eşitlemesini bekleyin.');
+  }
+  queueWrite({ entity: 'client', op: 'delete', value: id });
   setLocal(CLIENTS_KEY, getClients().filter(c => c.id !== id));
   setLocal(SESSIONS_KEY, getSoapSessions().filter(s => s.clientId !== id));
   setLocal(APPOINTMENTS_KEY, getAppointments().filter(a => a.clientId !== id));
@@ -140,7 +152,6 @@ export function deleteClient(id: string): void {
   setLocal(SCL90_KEY, getScl90Tests().filter(t => t.clientId !== id));
   setLocal(REPORTS_KEY, getClinicalReports().filter(r => r.clientId !== id));
   purgeClientPractice(id);
-  queueWrite({ entity: 'client', op: 'delete', value: id });
   recordAudit({ action: 'delete', entity: 'client', entityId: id, summary: 'Danışan dosyası ve bağlı kayıtlar silindi' });
 }
 
@@ -163,8 +174,17 @@ export function saveSoapSession(session: SoapSession): void {
   const list = getSoapSessions();
   const idx = list.findIndex(s => s.id === session.id);
   const existing = idx >= 0 ? list[idx] : undefined;
+  // Cloud UPDATE intentionally never moves a record to another client. Reject
+  // the same move locally, otherwise the UI would show a different file from
+  // the server after an apparently successful save.
+  if (existing && existing.clientId !== session.clientId) {
+    throw new Error('Seans notunun danışan dosyası değiştirilemez.');
+  }
   if (existing?.status === 'locked') {
     throw new Error('Kilitli seans notu değiştirilemez. Düzeltme için yeni revizyon oluşturun.');
+  }
+  if (existing?.status === 'signed' && session.status !== 'signed') {
+    throw new Error('İmzalı kayıt taslağa çevrilemez.');
   }
   if (existing?.supersededBy) {
     throw new Error('Bu seans notu yeni bir revizyonla değiştirildi; eski sürüm düzenlenemez.');
@@ -175,8 +195,8 @@ export function saveSoapSession(session: SoapSession): void {
   } else {
     list.unshift({ ...session, createdAt: now, updatedAt: now });
   }
-  setLocal(SESSIONS_KEY, list);
   queueWrite({ entity: 'session', op: 'upsert', value: session });
+  setLocal(SESSIONS_KEY, list);
 }
 
 export function deleteSoapSession(id: string): void {
@@ -184,12 +204,15 @@ export function deleteSoapSession(id: string): void {
   if (current?.status === 'locked') {
     throw new Error('Kilitli seans notu silinemez. Düzeltme için yeni revizyon oluşturun.');
   }
+  if (current?.appointmentId || current?.amendmentOf) {
+    throw new Error('Randevuya veya revizyona bağlı seans notu silinemez; dosya zinciri korunur.');
+  }
   if (current?.supersededBy) {
     throw new Error('Revizyonla değiştirilmiş eski seans sürümü silinemez.');
   }
   const list = getSoapSessions().filter(s => s.id !== id);
-  setLocal(SESSIONS_KEY, list);
   queueWrite({ entity: 'session', op: 'delete', value: id });
+  setLocal(SESSIONS_KEY, list);
 }
 
 /**
@@ -204,8 +227,8 @@ export function signSoapSession(id: string): SoapSession | null {
   if (current.status === 'locked') throw new Error('Kilitli seans notu imzalanamaz.');
   const next: SoapSession = { ...current, status: 'signed', signedAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
   list[index] = next;
-  setLocal(SESSIONS_KEY, list);
   queueWrite({ entity: 'sign', op: 'sign', value: { table: 'sessions', id } });
+  setLocal(SESSIONS_KEY, list);
   recordAudit({ action: 'save', entity: 'session', entityId: id, summary: 'Seans notu imzalandı' });
   return next;
 }
@@ -225,8 +248,8 @@ export function lockSoapSession(id: string): SoapSession | null {
     updatedAt: now,
   };
   list[index] = next;
-  setLocal(SESSIONS_KEY, list);
   queueWrite({ entity: 'lock', op: 'lock', value: { table: 'sessions', id, signedAt: next.signedAt } });
+  setLocal(SESSIONS_KEY, list);
   recordAudit({ action: 'save', entity: 'session', entityId: id, summary: 'Seans notu imzalandı ve kilitlendi' });
   return next;
 }
@@ -254,6 +277,10 @@ export function createSessionRevision(sessionId: string, reason: string): SoapSe
     id: `sess_rev_${current.id}_${Date.now().toString(36)}`,
     amendmentOf: current.id,
     amendmentReason: trimmed,
+    // The source note keeps its appointment link. A second active row with
+    // the same appointment_id would violate the DB unique index before the
+    // AFTER INSERT superseding trigger can run.
+    appointmentId: undefined,
     revision: (current.revision ?? 1) + 1,
     status: 'draft',
     signedAt: undefined,
@@ -265,8 +292,8 @@ export function createSessionRevision(sessionId: string, reason: string): SoapSe
 
   list[index] = { ...current, supersededBy: revision.id };
   list.unshift(revision);
-  setLocal(SESSIONS_KEY, list);
   queueWrite({ entity: 'session', op: 'upsert', value: revision });
+  setLocal(SESSIONS_KEY, list);
   recordAudit({ action: 'save', entity: 'session', entityId: sessionId, summary: `Seans revizyonu oluşturuldu (${trimmed.slice(0, 80)})` });
   return revision;
 }
@@ -349,19 +376,25 @@ export function getAppointments(): Appointment[] {
 export function saveAppointment(appointment: Appointment): void {
   const list = getAppointments();
   const idx = list.findIndex(a => a.id === appointment.id);
+  if (idx >= 0 && list[idx]?.clientId !== appointment.clientId) {
+    throw new Error('Randevunun danışan dosyası değiştirilemez.');
+  }
   if (idx >= 0) {
     list[idx] = appointment;
   } else {
     list.push(appointment);
   }
-  setLocal(APPOINTMENTS_KEY, list);
   queueWrite({ entity: 'appointment', op: 'upsert', value: appointment });
+  setLocal(APPOINTMENTS_KEY, list);
 }
 
 export function deleteAppointment(id: string): void {
+  if (getSoapSessions().some((session) => session.appointmentId === id)) {
+    throw new Error('Seans notuna bağlı randevu silinemez; görüşme zinciri korunur.');
+  }
   const list = getAppointments().filter(a => a.id !== id);
-  setLocal(APPOINTMENTS_KEY, list);
   queueWrite({ entity: 'appointment', op: 'delete', value: id });
+  setLocal(APPOINTMENTS_KEY, list);
 }
 
 /* ------------------------------------------------------------------ */
@@ -374,6 +407,9 @@ export function getBeckDepressionTests(): BeckDepressionResult[] {
 }
 
 export function saveBeckDepressionTest(test: BeckDepressionResult): void {
+  if (cloudContext() && (!test.clientId || !getClientById(test.clientId))) {
+    throw new Error('Buluta kaydetmek için kayıtlı danışan dosyası seçin.');
+  }
   const list = getBeckDepressionTests();
   const idx = list.findIndex(t => t.id === test.id);
   if (idx >= 0) {
@@ -381,14 +417,14 @@ export function saveBeckDepressionTest(test: BeckDepressionResult): void {
   } else {
     list.unshift(test);
   }
-  setLocal(BDI_KEY, list);
   queueWrite({ entity: 'bdi', op: 'upsert', value: test });
+  setLocal(BDI_KEY, list);
 }
 
 export function deleteBeckDepressionTest(id: string): void {
   const list = getBeckDepressionTests().filter(t => t.id !== id);
-  setLocal(BDI_KEY, list);
   queueWrite({ entity: 'bdi', op: 'delete', value: id });
+  setLocal(BDI_KEY, list);
 }
 
 /* ------------------------------------------------------------------ */
@@ -401,6 +437,9 @@ export function getBeckAnxietyTests(): BeckAnxietyResult[] {
 }
 
 export function saveBeckAnxietyTest(test: BeckAnxietyResult): void {
+  if (cloudContext() && (!test.clientId || !getClientById(test.clientId))) {
+    throw new Error('Buluta kaydetmek için kayıtlı danışan dosyası seçin.');
+  }
   const list = getBeckAnxietyTests();
   const idx = list.findIndex(t => t.id === test.id);
   if (idx >= 0) {
@@ -408,14 +447,14 @@ export function saveBeckAnxietyTest(test: BeckAnxietyResult): void {
   } else {
     list.unshift(test);
   }
-  setLocal(BAI_KEY, list);
   queueWrite({ entity: 'bai', op: 'upsert', value: test });
+  setLocal(BAI_KEY, list);
 }
 
 export function deleteBeckAnxietyTest(id: string): void {
   const list = getBeckAnxietyTests().filter(t => t.id !== id);
-  setLocal(BAI_KEY, list);
   queueWrite({ entity: 'bai', op: 'delete', value: id });
+  setLocal(BAI_KEY, list);
 }
 
 /* ------------------------------------------------------------------ */
@@ -428,6 +467,9 @@ export function getScl90Tests(): Scl90Result[] {
 }
 
 export function saveScl90Test(test: Scl90Result): void {
+  if (cloudContext() && (!test.clientId || !getClientById(test.clientId))) {
+    throw new Error('Buluta kaydetmek için kayıtlı danışan dosyası seçin.');
+  }
   const list = getScl90Tests();
   const idx = list.findIndex(t => t.id === test.id);
   if (idx >= 0) {
@@ -435,14 +477,14 @@ export function saveScl90Test(test: Scl90Result): void {
   } else {
     list.unshift(test);
   }
-  setLocal(SCL90_KEY, list);
   queueWrite({ entity: 'scl90', op: 'upsert', value: test });
+  setLocal(SCL90_KEY, list);
 }
 
 export function deleteScl90Test(id: string): void {
   const list = getScl90Tests().filter(t => t.id !== id);
-  setLocal(SCL90_KEY, list);
   queueWrite({ entity: 'scl90', op: 'delete', value: id });
+  setLocal(SCL90_KEY, list);
 }
 
 /* ------------------------------------------------------------------ */
@@ -458,17 +500,25 @@ export function saveClinicalReport(report: ClinicalReport): void {
   const list = getClinicalReports();
   const idx = list.findIndex(r => r.id === report.id);
   const existing = idx >= 0 ? list[idx] : undefined;
+  if (cloudContext() && (!report.clientId || !getClientById(report.clientId))) {
+    throw new Error('Buluta kaydetmek için kayıtlı danışan dosyası seçin.');
+  }
+  if (existing?.clientId !== undefined && existing.clientId !== report.clientId) {
+    throw new Error('Raporun danışan dosyası değiştirilemez.');
+  }
   if (existing?.lockedAt) {
     throw new Error('Kilitli rapor değiştirilemez. Düzeltme için yeni revizyon oluşturun.');
   }
+  if (existing?.supersededBy) throw new Error('Eski rapor sürümü düzenlenemez.');
+  if (existing?.signedAt && report.status !== 'final') throw new Error('İmzalı rapor taslağa çevrilemez.');
   const now = new Date().toISOString();
   if (idx >= 0) {
     list[idx] = { ...report, updatedAt: now };
   } else {
     list.unshift({ ...report, createdAt: now, updatedAt: now });
   }
-  setLocal(REPORTS_KEY, list);
   queueWrite({ entity: 'report', op: 'upsert', value: report });
+  setLocal(REPORTS_KEY, list);
 }
 
 export function deleteClinicalReport(id: string): void {
@@ -476,9 +526,12 @@ export function deleteClinicalReport(id: string): void {
   if (current?.lockedAt) {
     throw new Error('Kilitli rapor silinemez. Düzeltme için yeni revizyon oluşturun.');
   }
+  if (current?.amendmentOf || current?.supersededBy) {
+    throw new Error('Revizyon zincirindeki rapor silinemez; dosya geçmişi korunur.');
+  }
   const list = getClinicalReports().filter(r => r.id !== id);
-  setLocal(REPORTS_KEY, list);
   queueWrite({ entity: 'report', op: 'delete', value: id });
+  setLocal(REPORTS_KEY, list);
 }
 
 /* ------------------------------------------------------------------ */
@@ -526,6 +579,7 @@ export function createClinicalReportRevision(id: string, reason: string): Clinic
   const current = list.find(r => r.id === id);
   if (!current) return null;
   if (!current.lockedAt) throw new Error('Revizyon yalnızca kilitli raporlar için oluşturulur.');
+  if (current.supersededBy) throw new Error('Bu raporun yeni bir revizyonu zaten var.');
   const trimmed = reason.trim();
   if (trimmed.length < 3) throw new Error('Revizyon nedeni en az 3 karakter olmalıdır.');
   const now = new Date().toISOString();
@@ -536,13 +590,16 @@ export function createClinicalReportRevision(id: string, reason: string): Clinic
     revision: (current.revision ?? 1) + 1,
     amendmentOf: current.id,
     amendmentReason: trimmed,
+    supersededBy: undefined,
     signedAt: undefined,
     lockedAt: undefined,
     createdAt: now,
     updatedAt: now,
   };
-  setLocal(REPORTS_KEY, [next, ...list]);
+  const oldIndex = list.findIndex((item) => item.id === current.id);
+  list[oldIndex] = { ...current, supersededBy: next.id };
   queueWrite({ entity: 'report', op: 'upsert', value: next });
+  setLocal(REPORTS_KEY, [next, ...list]);
   recordAudit({ action: 'save', entity: 'report', entityId: id, summary: `Rapor revizyonu oluşturuldu (${trimmed.slice(0, 80)})` });
   return next;
 }

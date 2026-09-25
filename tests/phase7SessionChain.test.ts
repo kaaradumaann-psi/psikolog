@@ -10,8 +10,11 @@ import {
   completeAppointmentWithSession,
   createClinicalReportRevision,
   createSessionRevision,
+  deleteAppointment,
+  deleteClient,
   deleteClinicalReport,
   deleteSoapSession,
+  getClients,
   getClinicalReports,
   lockClinicalReport,
   saveClinicalReport,
@@ -31,7 +34,9 @@ import {
   createFormulationRevision,
   createSafetyPlanRevision,
   getFormulation,
+  getFormulations,
   getSafetyPlan,
+  getSafetyPlans,
   lockFormulation,
   lockSafetyPlan,
   saveFormulation,
@@ -229,6 +234,8 @@ test('P0-5: kilitli seans notu düzenlenemez, revizyon yeni taslak açar ve eski
 
   const revision = createSessionRevision(session.id, 'Seans saatinde düzeltme')!;
   assert.equal(revision.status, 'draft');
+  assert.equal(revision.appointmentId, undefined, 'randevu bağlantısı eski, kilitli kaynak seansın üzerinde kalır');
+  assert.equal(getSoapSessions().find((item) => item.id === session.id)?.appointmentId, 'app_1');
   assert.equal(revision.amendmentOf, session.id);
   assert.equal(revision.amendmentReason, 'Seans saatinde düzeltme');
   assert.equal(revision.revision, (session.revision ?? 1) + 1);
@@ -277,8 +284,11 @@ test('P0-5: rapor imza/kilit/revizyon akışı ve kilitli rapor koruması', () =
   assert.equal(revision.amendmentOf, 'rep_1');
   assert.equal(revision.revision, 2);
   assert.equal(revision.lockedAt, undefined);
-  // Kilitli sürüm arşivde korunur.
+  // Kilitli sürüm arşivde korunur; tekrar dallanma ve zincir silme engellenir.
   assert.equal(getClinicalReports().find(item => item.id === 'rep_1')!.lockedAt, locked.lockedAt);
+  assert.equal(getClinicalReports().find(item => item.id === 'rep_1')!.supersededBy, revision.id);
+  assert.throws(() => createClinicalReportRevision('rep_1', 'İkinci paralel düzeltme'), /zaten var/);
+  assert.throws(() => deleteClinicalReport(revision.id), /Revizyon zincirindeki rapor/);
 });
 
 test('P0-5: formülasyon ve güvenlik planı imza/kilit/revizyon akışı', () => {
@@ -298,6 +308,15 @@ test('P0-5: formülasyon ve güvenlik planı imza/kilit/revizyon akışı', () =
   assert.equal(formulationRevision.status, 'draft');
   assert.equal(formulationRevision.amendmentOf, lockedFormulation.id);
   assert.equal(formulationRevision.revision, (lockedFormulation.revision ?? 1) + 1);
+  assert.equal(getFormulations().length, 2, 'eski kilitli sürüm önbellekten silinmez');
+  assert.equal(getFormulations().find((row) => row.id === lockedFormulation.id)?.supersededBy, formulationRevision.id);
+  assert.equal(getFormulation('cli_1')?.id, formulationRevision.id);
+  saveFormulation({ ...formulationRevision, modality: 'yeni yaklaşım' });
+  assert.equal(getFormulations().length, 2, 'düzenleme arşiv sürümünü kaldırmaz');
+  // Server pages are ordered by UUID, not by amendment date: either order
+  // must still select the active revision after a fresh snapshot is applied.
+  localStorage.setItem('psikolog_formulations_v2', JSON.stringify([...getFormulations()].reverse()));
+  assert.equal(getFormulation('cli_1')?.id, formulationRevision.id);
 
   const signedSafety = signSafetyPlan('cli_1')!;
   assert.equal(signedSafety.status, 'signed');
@@ -307,5 +326,42 @@ test('P0-5: formülasyon ve güvenlik planı imza/kilit/revizyon akışı', () =
 
   const safetyRevision = createSafetyPlanRevision('cli_1', 'Kriz hattı güncellendi')!;
   assert.equal(safetyRevision.amendmentOf, lockedSafety.id);
+  assert.equal(getSafetyPlans().length, 2);
+  assert.equal(getSafetyPlans().find((row) => row.id === lockedSafety.id)?.supersededBy, safetyRevision.id);
   assert.equal(getSafetyPlan('cli_1')!.id, safetyRevision.id);
+  localStorage.setItem('psikolog_safety_v2', JSON.stringify([...getSafetyPlans()].reverse()));
+  assert.equal(getSafetyPlan('cli_1')?.id, safetyRevision.id);
+});
+
+test('dosya bütünlüğü: mevcut randevu ve SOAP kaydı başka danışana taşınamaz', () => {
+  localStorage.clear();
+  saveClient(makeClient('cli_owner_a', 'HK-A'));
+  saveClient(makeClient('cli_owner_b', 'HK-B'));
+  const app = makeAppointment('app_owner_a', 'cli_owner_a', 'Ayşe Kaya', '2026-09-26');
+  saveAppointment(app);
+  assert.throws(() => saveAppointment({ ...app, clientId: 'cli_owner_b' }), /danışan dosyası değiştirilemez/);
+  assert.equal(getAppointments()[0]!.clientId, 'cli_owner_a');
+
+  const session = completeAppointmentWithSession(app);
+  assert.throws(() => saveSoapSession({ ...session, clientId: 'cli_owner_b' }), /danışan dosyası değiştirilemez/);
+  assert.equal(getSoapSessions()[0]!.clientId, 'cli_owner_a');
+  assert.equal(getSoapSessions()[0]!.appointmentId, app.id);
+});
+
+test('kilit ve bağlantı: dosya/bağlı randevu/bağlı seans yerelde silinmeden engellenir', () => {
+  localStorage.clear();
+  saveClient(makeClient('cli_protected', 'HK-PROTECTED'));
+  const app = makeAppointment('app_protected', 'cli_protected', 'Ayşe Kaya', '2026-09-26');
+  saveAppointment(app);
+  const session = completeAppointmentWithSession(app);
+  assert.throws(() => deleteSoapSession(session.id), /bağlı seans notu silinemez/);
+  assert.throws(() => deleteAppointment(app.id), /bağlı randevu silinemez/);
+  assert.equal(getAppointments().length, 1);
+  assert.equal(getSoapSessions().length, 1);
+
+  lockSoapSession(session.id);
+  assert.throws(() => deleteClient(app.clientId), /Kilitli klinik kayıtlar/);
+  assert.equal(getClients().length, 1, 'başarısız kaskadda danışan önbelleği silinmemeli');
+  assert.equal(getAppointments().length, 1);
+  assert.equal(getSoapSessions()[0]!.status, 'locked');
 });

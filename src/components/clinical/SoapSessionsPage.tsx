@@ -29,6 +29,8 @@ export function SoapSessionsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingSession, setEditingSession] = useState<SoapSession | null>(null);
   const [pendingDelete, setPendingDelete] = useState<SoapSession | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const [form, setForm] = useState<Partial<SoapSession>>({
     clientId: '',
@@ -77,6 +79,7 @@ export function SoapSessionsPage() {
   }, [sessions, search, clientFilter, riskFilter]);
 
   function openNewModal() {
+    setSaveError(null);
     setEditingSession(null);
     setForm({
       clientId: '',
@@ -101,6 +104,7 @@ export function SoapSessionsPage() {
 
   function openEditModal(s: SoapSession) {
     if (s.status === 'locked') return;
+    setSaveError(null);
     setEditingSession(s);
     setForm({ ...s });
     setModalOpen(true);
@@ -115,6 +119,9 @@ export function SoapSessionsPage() {
     if (!session) return;
     try {
       deleteSoapSession(session.id);
+      setActionError(null);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Seans notu silinemedi.');
     } finally {
       setPendingDelete(null);
     }
@@ -122,8 +129,9 @@ export function SoapSessionsPage() {
 
   function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.clientId) {
-      alert('Lütfen bir danışan seçiniz.');
+    setSaveError(null);
+    if (!form.clientId || !clients.some((client) => client.id === form.clientId)) {
+      setSaveError('Kayıtlı bir danışan seçin.');
       return;
     }
 
@@ -148,12 +156,22 @@ export function SoapSessionsPage() {
       homework: form.homework?.trim() || '',
       fee: Number(form.fee) || 0,
       paymentStatus: (form.paymentStatus as PaymentStatus) || 'paid',
+      appointmentId: editingSession?.appointmentId,
+      status: editingSession?.status ?? 'draft',
+      signedAt: editingSession?.signedAt,
+      revision: editingSession?.revision,
+      amendmentOf: editingSession?.amendmentOf,
+      amendmentReason: editingSession?.amendmentReason,
       createdAt: editingSession ? editingSession.createdAt : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
 
-    saveSoapSession(sessionToSave);
-    setModalOpen(false);
+    try {
+      saveSoapSession(sessionToSave);
+      setModalOpen(false);
+    } catch {
+      setSaveError('Seans notu saklanamadı. Verileri silmeyin; senkronizasyon durumunu kontrol edip yeniden deneyin.');
+    }
   }
 
   return (
@@ -176,6 +194,8 @@ export function SoapSessionsPage() {
           </button>
         </div>
       </div>
+
+      {actionError && <p className="record-lock-error" role="alert">{actionError}</p>}
 
       {/* Arama & Filtreleme */}
       <div className="search-filter-bar">
@@ -258,7 +278,7 @@ export function SoapSessionsPage() {
                       <Icon name="edit" size={14} />
                     </button>
                   )}
-                  {s.status !== 'locked' && (
+                  {s.status !== 'locked' && !s.appointmentId && !s.amendmentOf && !s.supersededBy && (
                     <button
                       type="button"
                       className="btn-secondary btn-sm"
@@ -334,11 +354,13 @@ export function SoapSessionsPage() {
             </div>
             <form onSubmit={handleSave}>
               <div className="clinical-modal-body">
+                {saveError && <p className="record-lock-error" role="alert">{saveError}</p>}
                 <div className="form-row-2">
                   <div className="form-group">
                     <label>Danışan *</label>
                     <select
                       value={form.clientId || ''}
+                      disabled={Boolean(editingSession)}
                       onChange={e => {
                         const cl = clients.find(c => c.id === e.target.value);
                         const prior = sessions.filter((session) => session.clientId === e.target.value);

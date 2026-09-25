@@ -11,6 +11,7 @@ import {
   saveScl90Test,
 } from '../../clinical/clinicalStore';
 import { clinicToday } from '../../clinical/recordRules';
+import { cloudContext } from '../../clinical/cloud/sync';
 import { asCompleteAnswers, emptyAnswers, parseOptionalAge } from '../../clinical/scaleIntake';
 import { Icon } from '../Icon';
 import { navigate } from '../../router';
@@ -27,6 +28,7 @@ export function Scl90Page() {
   const [answers, setAnswers] = useState(() => emptyAnswers(90));
   const [pageIndex, setPageIndex] = useState<number>(0); // 10'arlı sayfalar (0-8)
   const [toast, setToast] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   function handleClientSelect(id: string) {
     setSelectedClientId(id);
@@ -58,22 +60,17 @@ export function Scl90Page() {
   }, [completeAnswers, selectedClientId, clientName, clientGender, parsedAge, testDate]);
 
   function handleSave() {
-    if (!clientName.trim()) {
-      alert('Danışan adı gerekli. Varsayılan ad atanmaz.');
+    setSaveError(null);
+    setToast(null);
+    const cloud = Boolean(cloudContext());
+    if (cloud && !clients.some((client) => client.id === selectedClientId)) {
+      setSaveError('Bulutta kaydetmek için kayıtlı danışan dosyası seçin.');
       return;
     }
-    if (clientGender !== 'KADIN' && clientGender !== 'ERKEK') {
-      alert('Cinsiyet seçin. Varsayılan atanmaz.');
-      return;
-    }
-    if (parsedAge === null) {
-      alert('Yaş boş bırakılabilir; girildiyse 0–120 arası tam sayı olmalı.');
-      return;
-    }
-    if (!completeAnswers) {
-      alert('İşaretlenmeyen madde var. Boş madde 0 sayılmaz.');
-      return;
-    }
+    if (!clientName.trim()) { setSaveError('Danışan adı gerekli.'); return; }
+    if (clientGender !== 'KADIN' && clientGender !== 'ERKEK') { setSaveError('Cinsiyet seçin.'); return; }
+    if (parsedAge === null) { setSaveError('Yaş girildiyse 0–120 arası tam sayı olmalı.'); return; }
+    if (!completeAnswers) { setSaveError('İşaretlenmeyen madde var. Boş madde 0 sayılmaz.'); return; }
     const result = calculateScl90(completeAnswers, {
       clientId: selectedClientId || undefined,
       name: clientName.trim(),
@@ -81,9 +78,13 @@ export function Scl90Page() {
       age: parsedAge,
       testDate,
     });
-    saveScl90Test(result);
-    setToast('SCL-90-R testi başarıyla kaydedildi ✓');
-    setTimeout(() => setToast(null), 3000);
+    try {
+      saveScl90Test(result);
+      setToast(cloud ? 'Sonuç sunucuya gönderiliyor; durumu üstteki şeritten kontrol edin.' : 'Sonuç bu cihaza kaydedildi.');
+      setTimeout(() => setToast(null), 3000);
+    } catch {
+      setSaveError('Sonuç saklanamadı. Alan açıp tekrar deneyin; kayıt sunucuya gönderilmedi.');
+    }
   }
 
   const currentPageItems = SCL90_ITEMS.slice(pageIndex * 10, (pageIndex + 1) * 10);
@@ -122,8 +123,9 @@ export function Scl90Page() {
         </div>
       </div>
 
+      {saveError && <p className="record-lock-error" role="alert">{saveError}</p>}
       {toast && (
-        <div className="modern-table-card" style={{ background: 'var(--success-tint)', border: '1px solid var(--success-border)', color: 'var(--success)', padding: '12px 16px', marginBottom: 20 }}>
+        <div className="modern-table-card" role="status" style={{ background: 'var(--success-tint)', border: '1px solid var(--success-border)', color: 'var(--success)', padding: '12px 16px', marginBottom: 20 }}>
           {toast}
         </div>
       )}
@@ -138,7 +140,7 @@ export function Scl90Page() {
               value={selectedClientId}
               onChange={e => handleClientSelect(e.target.value)}
             >
-              <option value="">Doğrudan İsim Gir / Seçilmedi</option>
+              <option value="">{cloudContext() ? 'Danışan dosyası seçin' : 'Doğrudan İsim Gir / Seçilmedi'}</option>
               {clients.map(c => (
                 <option key={c.id} value={c.id}>
                   {c.firstName} {c.lastName} ({c.fileNumber})

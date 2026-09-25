@@ -80,12 +80,18 @@ function isUniqueViolation(error: unknown): boolean {
 export async function upsertRow(port: CloudPort, table: string, row: Row, match?: Record<string, unknown>): Promise<CloudRow> {
   try {
     const inserted = await port.insert(table, [row]);
-    return inserted[0] ?? row;
+    if (!inserted[0]) throw new Error('Kayıt sunucu tarafından doğrulanamadı.');
+    return inserted[0];
   } catch (error) {
     if (!isUniqueViolation(error)) throw error;
     const filter = match ?? { id: String(row.id ?? '') };
-    const updated = await port.update(table, row, filter as Record<string, string>);
-    return updated[0] ?? row;
+    // An administrator editing a psychologist's record must not take over its
+    // owner/creator, and a retry may not move a record to a different client.
+    const immutable = new Set(['id', 'created_by', 'owner_user_id', 'organization_id', 'client_id', 'test_administration_id']);
+    const patch = Object.fromEntries(Object.entries(row).filter(([column]) => !immutable.has(column)));
+    const updated = await port.update(table, patch, filter as Record<string, string>);
+    if (!updated[0]) throw new Error('Kayıt değişmedi: bulunamadı veya bu işlem için yetkiniz yok.');
+    return updated[0];
   }
 }
 
@@ -116,7 +122,13 @@ export async function loadSnapshot(port: CloudPort, ctx: CloudContext): Promise<
   const clientNames = new Map(clients.map((client) => [client.id, `${client.firstName} ${client.lastName}`]));
 
   const resultByAdministration = new Map<string, Row>();
-  for (const row of results) resultByAdministration.set(String(row.test_administration_id), row);
+  for (const row of results) {
+    const parentId = String(row.test_administration_id);
+    if (resultByAdministration.has(parentId)) {
+      throw new Error('Bir ölçek uygulamasına ait birden fazla sonuç var. Klinik kayıtları silmeyin; yöneticinizle görüşün.');
+    }
+    resultByAdministration.set(parentId, row);
+  }
 
   const bdi: BeckDepressionResult[] = [];
   const bai: BeckAnxietyResult[] = [];
@@ -126,7 +138,7 @@ export async function loadSnapshot(port: CloudPort, ctx: CloudContext): Promise<
     const resultRow = resultByAdministration.get(String(administration.id));
     if (!resultRow) continue;
     const decoded = decodeTestRow(
-      { ...resultRow, test_administration_id: administration.id },
+      { ...resultRow, test_administration_id: administration.id, client_id: administration.client_id },
       clientNames.get(String(administration.client_id)) ?? '',
     );
     if (!decoded) continue;
@@ -192,7 +204,22 @@ export async function pushTest(
 ): Promise<void> {
   const { administration, result: resultRow } = testToRows(kind, result, ctx);
   await upsertRow(port, TABLES.testAdministrations, administration);
-  await upsertRow(port, TABLES.testResults, resultRow, { test_administration_id: String(administration.id) });
+  const existing = await port.select(TABLES.testResults, { test_administration_id: String(administration.id) });
+  if (existing.length > 1) {
+    // Historical duplicate scores cannot be chosen or deleted automatically.
+    // Leave the outbox intact for review instead of silently picking one.
+    throw new Error('Bir ölçek uygulamasına ait birden fazla sonuç var. Klinik kayıtları silmeyin; yöneticinizle görüşün.');
+  }
+  if (existing.length === 1 && existing[0]?.id !== resultRow.id) {
+    // Older installations generated a fresh PK on every insert. Preserve its
+    // single existing row, updating only editable fields; never create a copy.
+    const updated = await port.update(TABLES.testResults,
+      { result_data: resultRow.result_data, summary: resultRow.summary },
+      { id: String(existing[0]?.id) });
+    if (!updated[0]) throw new Error('Ölçek sonucu sunucu tarafından doğrulanamadı.');
+    return;
+  }
+  await upsertRow(port, TABLES.testResults, resultRow);
 }
 
 export async function removeTest(port: CloudPort, id: string): Promise<void> {
@@ -231,29 +258,51 @@ export function documentStoragePath(ctx: CloudContext, document: PracticeDocumen
   return `${ctx.organizationId}/${clientId}/${documentId}-${safeName}`;
 }
 
+function ownedDocumentPath(ctx: CloudContext, document: PracticeDocument): string {
+  const path = document.storagePath ?? documentStoragePath(ctx, document);
+  if (!path.startsWith(`${ctx.organizationId}/${resolve(ctx, document.clientId)}/`)) {
+    throw new Error('Belge yolu bu danışan dosyasına ait değil.');
+  }
+  return path;
+}
+
 export async function pushDocument(port: CloudPort, ctx: CloudContext, document: PracticeDocument): Promise<void> {
-  const storagePath = document.storagePath ?? documentStoragePath(ctx, document);
-  if (document.dataUrl && port.upload && !document.storagePath) {
+  const storagePath = ownedDocumentPath(ctx, document);
+  if (!document.storagePath) {
+    if (!document.dataUrl || !port.upload) throw new Error('Belge okunamadı; sunucuya kaydedilmedi.');
     const blob = await (await fetch(document.dataUrl)).blob();
-    await port.upload(DOCUMENT_BUCKET, storagePath, blob, document.mimeType);
+    try {
+      await port.upload(DOCUMENT_BUCKET, storagePath, blob, document.mimeType);
+    } catch (error) {
+      // Upload may have succeeded but the metadata INSERT or response failed.
+      // A retry uses the same UUID/path; confirm the private object exists under
+      // this user's RLS instead of overwriting it with upsert:true.
+      if (!/already exists|duplicate|409/i.test(String((error as Error).message)) || !port.downloadUrl) throw error;
+      await port.downloadUrl(DOCUMENT_BUCKET, storagePath, 60);
+    }
   }
   await upsertRow(port, TABLES.documents, documentToRow(document, ctx, storagePath));
 }
 
+/** Only the private bucket can issue these short-lived links; no public URL. */
+export async function signedDocumentUrl(port: CloudPort, ctx: CloudContext, document: PracticeDocument): Promise<string> {
+  if (!document.storagePath || !port.downloadUrl) throw new Error('Belge sunucudan indirilemedi.');
+  return port.downloadUrl(DOCUMENT_BUCKET, ownedDocumentPath(ctx, document), 3600);
+}
+
 export async function removeDocument(port: CloudPort, ctx: CloudContext, document: PracticeDocument): Promise<void> {
+  const storagePath = ownedDocumentPath(ctx, document);
+  if (!port.removeObject) throw new Error('Belge kasasına ulaşılamadı.');
+  // Do not delete the only metadata reference while an object removal fails.
+  // If metadata DELETE fails, the durable outbox retries the same path.
+  await port.removeObject(DOCUMENT_BUCKET, storagePath);
   await port.remove(TABLES.documents, { id: resolve(ctx, document.id) });
-  const storagePath = document.storagePath ?? documentStoragePath(ctx, document);
-  if (port.removeObject) {
-    try {
-      await port.removeObject(DOCUMENT_BUCKET, storagePath);
-    } catch {
-      /* nesne zaten yoksa metadata silinmiş sayılır */
-    }
-  }
 }
 
 export async function pushFormulation(port: CloudPort, ctx: CloudContext, item: CaseFormulation): Promise<void> {
-  await upsertRow(port, TABLES.formulations, formulationToRow(item, ctx), { client_id: item.clientId });
+  // Several archived revisions can share client_id. A retry must update only
+  // this revision's PK, never all historical versions of a clinical record.
+  await upsertRow(port, TABLES.formulations, formulationToRow(item, ctx));
 }
 
 export async function removeFormulation(port: CloudPort, id: string): Promise<void> {
@@ -261,7 +310,7 @@ export async function removeFormulation(port: CloudPort, id: string): Promise<vo
 }
 
 export async function pushSafetyPlan(port: CloudPort, ctx: CloudContext, item: SafetyPlan): Promise<void> {
-  await upsertRow(port, TABLES.safetyPlans, safetyPlanToRow(item, ctx), { client_id: item.clientId });
+  await upsertRow(port, TABLES.safetyPlans, safetyPlanToRow(item, ctx));
 }
 
 export async function removeSafetyPlan(port: CloudPort, id: string): Promise<void> {
@@ -281,6 +330,10 @@ export async function markRecordStatus(
   userId: string,
   signedAt?: string,
 ): Promise<CloudRow> {
+  const existing = (await port.select(table, { id }))[0];
+  if (!existing) throw new Error('Kayıt bulunamadı veya bu işlem için yetkiniz yok.');
+  if (existing.status === status) return existing; // lost ACK / safe retry
+  if (existing.status === 'locked') throw new Error('Kilitli kayıt yeniden imzalanamaz.');
   const now = new Date().toISOString();
   const patch: Record<string, unknown> =
     status === 'signed'
@@ -306,5 +359,6 @@ export async function pushRevision(
   row: Row,
 ): Promise<CloudRow> {
   const inserted = await port.insert(table, [row]);
-  return inserted[0] ?? row;
+  if (!inserted[0]) throw new Error('Revizyon sunucu tarafından doğrulanamadı.');
+  return inserted[0];
 }

@@ -11,7 +11,8 @@ import type { PracticeDocument, PracticeNote, PracticeTask } from '../practiceSt
 import type { CaseFormulation, SafetyPlan } from '../casework';
 import type { RapidScreeningResult } from '../rapidScreening';
 import { loadSnapshot } from './repository';
-import { flushOutbox, queueWrite, syncPort, cloudContext, whenIdle } from './sync';
+import { resolve } from './rows';
+import { flushOutbox, queueWrite, syncPort, cloudContext, whenIdle, getSyncState } from './sync';
 
 export const LEGACY_KEYS = {
   clients: 'psikolog_clients_v2',
@@ -42,12 +43,14 @@ export type MigrationReport = {
 function readLegacy<T>(key: string): T[] {
   try {
     const raw = localStorage.getItem(key);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? (parsed as T[]) : [];
+    if (raw === null) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed as T[];
   } catch {
-    return [];
+    // A damaged legacy record is not an empty list. Never mark it verified
+    // and remove the only copy on the device.
   }
+  throw new Error(`Yerel ${key} verisi okunamadı. Silmeyin; önce verileri kurtarın.`);
 }
 
 /**
@@ -62,19 +65,30 @@ export async function migrateLocalDataToCloud(): Promise<MigrationReport> {
     return { ok: false, pushed, verified: [], missing: [], errors: ['Bulut bağlamı etkin değil.'] };
   }
 
-  const clients = readLegacy<Client>(LEGACY_KEYS.clients);
-  const sessions = readLegacy<SoapSession>(LEGACY_KEYS.sessions);
-  const appointments = readLegacy<Appointment>(LEGACY_KEYS.appointments);
-  const bdi = readLegacy<BeckDepressionResult>(LEGACY_KEYS.bdi);
-  const bai = readLegacy<BeckAnxietyResult>(LEGACY_KEYS.bai);
-  const scl90 = readLegacy<Scl90Result>(LEGACY_KEYS.scl90);
-  const reports = readLegacy<ClinicalReport>(LEGACY_KEYS.reports);
-  const notes = readLegacy<PracticeNote>(LEGACY_KEYS.notes);
-  const tasks = readLegacy<PracticeTask>(LEGACY_KEYS.tasks);
-  const documents = readLegacy<PracticeDocument>(LEGACY_KEYS.documents);
-  const screenings = readLegacy<RapidScreeningResult>(LEGACY_KEYS.screenings);
-  const formulations = readLegacy<CaseFormulation>(LEGACY_KEYS.formulations);
-  const safetyPlans = readLegacy<SafetyPlan>(LEGACY_KEYS.safetyPlans);
+  // Parse every collection before sending anything; if one is corrupt, stop
+  // without treating it as an empty set or offering to clear legacy storage.
+  let legacy;
+  try {
+    legacy = {
+      clients: readLegacy<Client>(LEGACY_KEYS.clients),
+      sessions: readLegacy<SoapSession>(LEGACY_KEYS.sessions),
+      appointments: readLegacy<Appointment>(LEGACY_KEYS.appointments),
+      bdi: readLegacy<BeckDepressionResult>(LEGACY_KEYS.bdi),
+      bai: readLegacy<BeckAnxietyResult>(LEGACY_KEYS.bai),
+      scl90: readLegacy<Scl90Result>(LEGACY_KEYS.scl90),
+      reports: readLegacy<ClinicalReport>(LEGACY_KEYS.reports),
+      notes: readLegacy<PracticeNote>(LEGACY_KEYS.notes),
+      tasks: readLegacy<PracticeTask>(LEGACY_KEYS.tasks),
+      documents: readLegacy<PracticeDocument>(LEGACY_KEYS.documents),
+      screenings: readLegacy<RapidScreeningResult>(LEGACY_KEYS.screenings),
+      formulations: readLegacy<CaseFormulation>(LEGACY_KEYS.formulations),
+      safetyPlans: readLegacy<SafetyPlan>(LEGACY_KEYS.safetyPlans),
+    };
+  } catch (error) {
+    return { ok: false, pushed, verified: [], missing: [], errors: [error instanceof Error ? error.message : 'Yerel veri okunamadı. Silmeyin.'] };
+  }
+  const { clients, sessions, appointments, bdi, bai, scl90, reports, notes, tasks,
+    documents, screenings, formulations, safetyPlans } = legacy;
 
   // 1) Ebeveynler önce: danışanlar → randevu/seans/ölçek/rapor → formülasyon/güvenlik.
   for (const client of clients) {
@@ -133,52 +147,55 @@ export async function migrateLocalDataToCloud(): Promise<MigrationReport> {
   await whenIdle();
   await flushOutbox();
   await whenIdle();
+  if (getSyncState().pending > 0) {
+    errors.push(`${getSyncState().pending} klinik kayıt hâlâ sunucuda doğrulanamadı; yerel veriyi silmeyin.`);
+  }
 
-  // 2) Doğrulama: sunucudaki satır sayısı yerel sayıdan az olamaz.
+  // 2) Doğrulama: yalnız toplam sayısı değil, her yerel kimliğin karşılığı
+  // sunucudaki yeniden okunan anlık görüntüde bulunmalı. Başka kayıtların
+  // varlığı eksik bir yerel klinik kaydı maskeleyemez.
+  const localRecords: Record<Entity, Array<{ id?: string; clientId?: string }>> = legacy;
   let cloudCounts: Record<string, number> = {};
+  let cloudIds: Partial<Record<Entity, Set<string>>> = {};
   try {
     const snapshot = await loadSnapshot(syncPort()!, ctx);
-    cloudCounts = {
-      clients: snapshot.clients.length,
-      sessions: snapshot.sessions.length,
-      appointments: snapshot.appointments.length,
-      bdi: snapshot.bdi.length,
-      bai: snapshot.bai.length,
-      scl90: snapshot.scl90.length,
-      reports: snapshot.reports.length,
-      notes: snapshot.notes.length,
-      tasks: snapshot.tasks.length,
-      documents: snapshot.documents.length,
-      screenings: snapshot.screenings.length,
-      formulations: snapshot.formulations.length,
-      safetyPlans: snapshot.safetyPlans.length,
+    const cloudRecords: Record<Entity, Array<{ id?: string }>> = {
+      clients: snapshot.clients,
+      sessions: snapshot.sessions,
+      appointments: snapshot.appointments,
+      bdi: snapshot.bdi,
+      bai: snapshot.bai,
+      scl90: snapshot.scl90,
+      reports: snapshot.reports,
+      notes: snapshot.notes,
+      tasks: snapshot.tasks,
+      documents: snapshot.documents,
+      screenings: snapshot.screenings,
+      formulations: snapshot.formulations,
+      safetyPlans: snapshot.safetyPlans,
     };
+    cloudCounts = Object.fromEntries(Object.entries(cloudRecords).map(([entity, rows]) => [entity, rows.length]));
+    cloudIds = Object.fromEntries(Object.entries(cloudRecords).map(([entity, rows]) => [
+      entity, new Set(rows.map((row) => row.id).filter((id): id is string => !!id)),
+    ]));
   } catch (error) {
     errors.push(error instanceof Error ? error.message : 'Doğrulama okuması başarısız.');
   }
 
-  const localCounts: Record<Entity, number> = {
-    clients: clients.length,
-    sessions: sessions.length,
-    appointments: appointments.length,
-    bdi: bdi.length,
-    bai: bai.length,
-    scl90: scl90.length,
-    reports: reports.length,
-    notes: notes.length,
-    tasks: tasks.length,
-    documents: documents.length,
-    screenings: screenings.length,
-    formulations: formulations.length,
-    safetyPlans: safetyPlans.length,
-  };
-
-  const verified = (Object.keys(localCounts) as Entity[]).map((entity) => ({
+  const verified = (Object.keys(localRecords) as Entity[]).map((entity) => ({
     entity,
-    local: localCounts[entity],
+    local: localRecords[entity].length,
     cloud: cloudCounts[entity] ?? 0,
   }));
-  const missing = verified.filter((item) => item.local > item.cloud).map((item) => item.entity);
+  const missing = verified.filter((item) => {
+    const ids = cloudIds[item.entity];
+    if (!ids) return item.local > 0;
+    return localRecords[item.entity].some((row) => {
+      const localId = row.id ?? (item.entity === 'formulations' ? `form_${row.clientId}`
+        : item.entity === 'safetyPlans' ? `safe_${row.clientId}` : '');
+      return !localId || !ids.has(resolve(ctx, localId));
+    });
+  }).map((item) => item.entity);
 
   return {
     ok: errors.length === 0 && missing.length === 0,

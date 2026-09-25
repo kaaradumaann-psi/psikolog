@@ -50,13 +50,16 @@ export function FormulationPanel({ clientId, safetyNeeded }: { clientId: string;
       window.setTimeout(() => setSaved(null), 3000);
       return;
     }
-    saveFormulation(formulation);
-    saveSafetyPlan(safety);
-    // "Kaydedildi" yalnız bulut yazımı gerçekten başarılı olduğunda gösterilir
-    // (bulut durumu üstteki senkronizasyon şeridinde izlenir).
-    if (!cloudContext()) setSaved('Kaydedildi');
-    else if (getSyncState().phase === 'error') setSaved(getSyncState().lastError ?? 'Sunucuya kaydedilemedi');
-    else setSaved('Sunucuya gönderildi — durum üstteki şeritte.');
+    try {
+      saveFormulation(formulation);
+      saveSafetyPlan(safety);
+      // Bulutta yerel yazım sunucu onayı değildir; şeritteki sonucu izleyin.
+      if (!cloudContext()) setSaved('Kaydedildi');
+      else if (getSyncState().phase === 'error') setSaved(getSyncState().lastError ?? 'Sunucuya kaydedilemedi');
+      else setSaved('Sunucuya gönderiliyor — durum üstteki şeritte.');
+    } catch {
+      setSaved('Kayıt tamamlanamadı. Alan açıp yeniden deneyin; sunucu durumunu üstteki şeritten kontrol edin.');
+    }
     window.setTimeout(() => setSaved(null), 3000);
   }
 

@@ -312,6 +312,7 @@ export function testToRows(
   ctx: CloudContext,
 ): { administration: Row; result: Row } {
   const clientId = 'clientId' in result ? result.clientId : undefined;
+  if (!clientId) throw new Error('Buluta kaydetmek için kayıtlı danışan dosyası seçin.');
   const date =
     kind === 'screening'
       ? (result as RapidScreeningResult).testDate
@@ -334,6 +335,9 @@ export function testToRows(
       created_by: ctx.userId,
     },
     result: {
+      // test_results has a separate UUID primary key but no unique constraint
+      // on test_administration_id. Give retries the same durable result ID.
+      id: resolve(ctx, `test_result_${result.id}`),
       test_administration_id: resolve(ctx, result.id),
       organization_id: ctx.organizationId,
       result_data: { kind, scale: definitionKey, ...result },
@@ -369,7 +373,14 @@ export function decodeTestRow(row: Row, clientName: string): DecodedTest | null 
   const data = jsonObject(row.result_data);
   const kind = text(data.kind) as TestKind | '';
   if (!kind) return null;
-  const value = { ...data, id: text(row.test_administration_id) || text(row.id), clientName } as Row;
+  // The JSON payload may contain a device-local client ID. The parent row is
+  // authoritative: another browser must attach this result to the cloud UUID.
+  const value = {
+    ...data,
+    id: text(row.test_administration_id) || text(row.id),
+    clientId: text(row.client_id) || undefined,
+    clientName,
+  } as Row;
   delete value.kind;
   if (kind === 'bdi') return { kind, value: value as unknown as BeckDepressionResult };
   if (kind === 'bai') return { kind, value: value as unknown as BeckAnxietyResult };
@@ -430,6 +441,7 @@ export function rowToReport(row: Row): ClinicalReport {
     revision: optionalNum(row.revision),
     amendmentOf: text(row.amendment_of) || undefined,
     amendmentReason: text(row.amendment_reason) || undefined,
+    supersededBy: text(row.superseded_by) || undefined,
     signedAt: text(row.signed_at) || undefined,
     lockedAt: text(row.locked_at) || undefined,
     createdAt: text(row.created_at),
@@ -548,7 +560,9 @@ export function rowToSettings(row: Row): Partial<PracticeSettings> {
 
 export function formulationToRow(item: CaseFormulation, ctx: CloudContext): Row {
   return {
-    id: item.id ? resolve(ctx, item.id) : crypto.randomUUID(),
+    // Old local forms may have no ID. Use the durable per-client mapping so
+    // migration retries do not create a second record for the same file.
+    id: resolve(ctx, item.id ?? `form_${item.clientId}`),
     client_id: resolve(ctx, item.clientId),
     organization_id: ctx.organizationId,
     created_by: ctx.userId,
@@ -576,6 +590,9 @@ export function rowToFormulation(row: Row): CaseFormulation {
     updatedAt: text(row.updated_at),
     status: (text(row.status) as CaseFormulation['status']) || 'draft',
     revision: optionalNum(row.revision),
+    amendmentOf: text(row.amendment_of) || undefined,
+    amendmentReason: text(row.amendment_reason) || undefined,
+    supersededBy: text(row.superseded_by) || undefined,
     signedAt: text(row.signed_at) || undefined,
     lockedAt: text(row.locked_at) || undefined,
   };
@@ -583,7 +600,7 @@ export function rowToFormulation(row: Row): CaseFormulation {
 
 export function safetyPlanToRow(item: SafetyPlan, ctx: CloudContext): Row {
   return {
-    id: item.id ? resolve(ctx, item.id) : crypto.randomUUID(),
+    id: resolve(ctx, item.id ?? `safe_${item.clientId}`),
     client_id: resolve(ctx, item.clientId),
     organization_id: ctx.organizationId,
     created_by: ctx.userId,
@@ -610,6 +627,9 @@ export function rowToSafetyPlan(row: Row): SafetyPlan {
     updatedAt: text(row.updated_at),
     status: (text(row.status) as SafetyPlan['status']) || 'draft',
     revision: optionalNum(row.revision),
+    amendmentOf: text(row.amendment_of) || undefined,
+    amendmentReason: text(row.amendment_reason) || undefined,
+    supersededBy: text(row.superseded_by) || undefined,
     signedAt: text(row.signed_at) || undefined,
     lockedAt: text(row.locked_at) || undefined,
   };

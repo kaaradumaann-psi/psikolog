@@ -173,9 +173,14 @@ export function ClinicalReportsPage() {
       updatedAt: new Date().toISOString(),
     } as ClinicalReport;
 
-    saveClinicalReport(updated);
-    setActiveReport(updated);
-    setIsEditing(false);
+    try {
+      saveClinicalReport(updated);
+      setLockError(null);
+      setActiveReport(updated);
+      setIsEditing(false);
+    } catch {
+      setLockError('Rapor saklanamadı. Verileri silmeyin; senkronizasyon durumunu kontrol edip yeniden deneyin.');
+    }
   }
 
   function startEdit(rep: ClinicalReport) {
@@ -321,7 +326,7 @@ export function ClinicalReportsPage() {
                         <span>Raporu Düzenle</span>
                       </button>
                     )}
-                    {!activeReport.lockedAt && (
+                    {!activeReport.lockedAt && !activeReport.amendmentOf && !activeReport.supersededBy && (
                       <button
                         type="button"
                         className="btn-secondary btn-sm"

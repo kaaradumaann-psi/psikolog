@@ -5,6 +5,7 @@ import {
   MAX_LOCAL_DOCUMENT_BYTES,
   deleteDocument,
   deleteNote,
+  documentDownloadUrl,
   getDocumentsByClient,
   getNotesByClient,
   newId,
@@ -15,11 +16,13 @@ import {
   type PracticeNote,
 } from '../../clinical/practiceStore';
 import { isSafeDocumentUrl } from '../../clinical/recordRules';
+import { cloudContext } from '../../clinical/cloud/sync';
 import { Icon } from '../Icon';
 
 export function ClientNotes({ clientId }: { clientId: string }) {
   const [notes, setNotes] = useState<PracticeNote[]>(() => getNotesByClient(clientId));
   const [draft, setDraft] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => subscribePracticeStore(() => setNotes(getNotesByClient(clientId))), [clientId]);
 
@@ -28,12 +31,31 @@ export function ClientNotes({ clientId }: { clientId: string }) {
     const content = draft.trim();
     if (!content) return;
     const now = new Date().toISOString();
-    saveNote({ id: newId('note'), clientId, content, pinned: false, createdAt: now, updatedAt: now });
-    setDraft('');
+    try {
+      saveNote({ id: newId('note'), clientId, content, pinned: false, createdAt: now, updatedAt: now });
+      setDraft('');
+      setError(null);
+    } catch {
+      setError('Not bu cihaza veya sunucu kuyruğuna kaydedilemedi. Metni koruyup yeniden deneyin.');
+    }
   }
 
   function togglePin(note: PracticeNote) {
-    saveNote({ ...note, pinned: !note.pinned, updatedAt: new Date().toISOString() });
+    try {
+      saveNote({ ...note, pinned: !note.pinned, updatedAt: new Date().toISOString() });
+      setError(null);
+    } catch {
+      setError('Not değişikliği saklanamadı. Lütfen yeniden deneyin.');
+    }
+  }
+
+  function onDeleteNote(id: string) {
+    try {
+      deleteNote(id);
+      setError(null);
+    } catch {
+      setError('Not silme isteği saklanamadı. Lütfen yeniden deneyin.');
+    }
   }
 
   return (
@@ -45,6 +67,7 @@ export function ClientNotes({ clientId }: { clientId: string }) {
           <button type="submit" className="btn-primary btn-sm">Notu kaydet</button>
         </div>
       </form>
+      {error && <p role="alert" style={{ color: 'var(--danger-ink)', fontSize: 13 }}>{error}</p>}
       {notes.length === 0 ? (
         <div className="empty-state-card"><h4>Not yok</h4><p>Sabitlenebilir kısa notlar dosyada kalır.</p></div>
       ) : (
@@ -54,7 +77,7 @@ export function ClientNotes({ clientId }: { clientId: string }) {
               <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{note.content}</p>
               <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
                 <button type="button" className="btn-secondary btn-sm" onClick={() => togglePin(note)}>{note.pinned ? 'Sabiti kaldır' : 'Sabitle'}</button>
-                <button type="button" className="btn-secondary btn-sm" onClick={() => deleteNote(note.id)}>Sil</button>
+                <button type="button" className="btn-secondary btn-sm" onClick={() => onDeleteNote(note.id)}>Sil</button>
               </div>
             </article>
           ))}
@@ -68,8 +91,42 @@ export function ClientDocuments({ clientId }: { clientId: string }) {
   const [docs, setDocs] = useState<PracticeDocument[]>(() => getDocumentsByClient(clientId));
   const [error, setError] = useState<string | null>(null);
   const [description, setDescription] = useState('');
+  const [downloading, setDownloading] = useState<string | null>(null);
+  const [readyLink, setReadyLink] = useState<{ id: string; url: string } | null>(null);
 
   useEffect(() => subscribePracticeStore(() => setDocs(getDocumentsByClient(clientId))), [clientId]);
+
+  function onDeleteDocument(id: string) {
+    try {
+      deleteDocument(id);
+      setError(null);
+    } catch {
+      setError('Belge silme isteği saklanamadı. Lütfen yeniden deneyin.');
+    }
+  }
+
+  async function onDownload(doc: PracticeDocument) {
+    setError(null);
+    setReadyLink(null);
+    setDownloading(doc.id);
+    try {
+      const url = await documentDownloadUrl(doc);
+      // Programmatic open is convenient; if a popup blocker prevents it the
+      // visible, short-lived link below still lets the user open the document.
+      const link = document.createElement('a');
+      link.href = url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setReadyLink({ id: doc.id, url });
+    } catch {
+      setError('Belge açılamadı. Bağlantıyı ve dosya yetkisini kontrol edin.');
+    } finally {
+      setDownloading(null);
+    }
+  }
 
   function onFile(file: File | undefined) {
     setError(null);
@@ -79,23 +136,32 @@ export function ClientDocuments({ clientId }: { clientId: string }) {
       return;
     }
     if (file.size > MAX_LOCAL_DOCUMENT_BYTES) {
-      setError('Yerel kasa 1.5 MB ile sınırlıdır. Daha büyük dosya için Supabase özel kovası kullanılır.');
+      setError('Bu ekranda belge sınırı 1.5 MB. Daha küçük bir dosya seçin.');
       return;
     }
     const reader = new FileReader();
+    reader.onerror = () => setError('Dosya okunamadı. Lütfen yeniden seçin.');
     reader.onload = () => {
-      const dataUrl = typeof reader.result === 'string' ? reader.result : undefined;
-      saveDocument({
-        id: newId('doc'),
-        clientId,
-        fileName: file.name.slice(0, 180),
-        mimeType: file.type,
-        sizeBytes: file.size,
-        description: description.trim() || undefined,
-        dataUrl,
-        createdAt: new Date().toISOString(),
-      });
-      setDescription('');
+      const dataUrl = typeof reader.result === 'string' ? reader.result : '';
+      if (!isSafeDocumentUrl(dataUrl)) {
+        setError('Belge içeriği güvenli biçimde okunamadı.');
+        return;
+      }
+      try {
+        saveDocument({
+          id: newId('doc'),
+          clientId,
+          fileName: file.name.slice(0, 180),
+          mimeType: file.type,
+          sizeBytes: file.size,
+          description: description.trim() || undefined,
+          dataUrl,
+          createdAt: new Date().toISOString(),
+        });
+        setDescription('');
+      } catch {
+        setError('Belge bu cihazda veya sunucu kuyruğunda saklanamadı. Tarayıcı verilerinizi silmeyin.');
+      }
     };
     reader.readAsDataURL(file);
   }
@@ -103,9 +169,11 @@ export function ClientDocuments({ clientId }: { clientId: string }) {
   return (
     <div>
       <div className="modern-table-card" style={{ padding: 16, marginBottom: 14 }}>
-        <strong>Cihaz içi belge kasası</strong>
+        <strong>{cloudContext() ? 'Özel belge kasası' : 'Cihaz içi belge kasası'}</strong>
         <p style={{ margin: '6px 0 12px', color: 'var(--soft)', fontSize: 13 }}>
-          Dosya bu tarayıcıda kalır, herkese açık bağlantı üretilmez. Bulut kurulursa belgeler özel kovada ve 1 saatlik imzalı URL ile okunur.
+          {cloudContext()
+            ? 'Belge özel sunucu kovasına gönderilir. İndirme için geçici, 1 saatlik bağlantı hazırlanır; herkese açık bağlantı yoktur.'
+            : 'Belge yalnız bu tarayıcıda kalır. Ortak cihazda saklamayın; düzenli yedek alın.'}
         </p>
         <label className="form-group">
           <span>Açıklama</span>
@@ -121,7 +189,7 @@ export function ClientDocuments({ clientId }: { clientId: string }) {
             onChange={(event) => onFile(event.target.files?.[0])}
           />
         </label>
-        {error && <p style={{ color: 'var(--danger-ink)', fontSize: 13 }}>{error}</p>}
+        {error && <p role="alert" style={{ color: 'var(--danger-ink)', fontSize: 13 }}>{error}</p>}
       </div>
       {docs.length === 0 ? (
         <div className="empty-state-card"><h4>Belge yok</h4><p>Onam, sevk veya dış yazışma ekleyebilirsiniz.</p></div>
@@ -134,10 +202,19 @@ export function ClientDocuments({ clientId }: { clientId: string }) {
                 <div style={{ fontSize: 12, color: 'var(--soft)' }}>{doc.mimeType} · {Math.ceil(doc.sizeBytes / 1024)} KB · {doc.description || 'Açıklama yok'}</div>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
-                {isSafeDocumentUrl(doc.dataUrl) && (
+                {isSafeDocumentUrl(doc.dataUrl) ? (
                   <a className="btn-secondary btn-sm" href={doc.dataUrl} download={doc.fileName}>İndir</a>
-                )}
-                <button type="button" className="btn-secondary btn-sm" onClick={() => deleteDocument(doc.id)}>Sil</button>
+                ) : doc.storagePath ? (
+                  <>
+                    <button type="button" className="btn-secondary btn-sm" disabled={downloading === doc.id} onClick={() => { void onDownload(doc); }}>
+                      {downloading === doc.id ? 'Hazırlanıyor…' : 'İndir'}
+                    </button>
+                    {readyLink?.id === doc.id && (
+                      <a className="btn-secondary btn-sm" href={readyLink.url} target="_blank" rel="noopener noreferrer">Bağlantıyı aç</a>
+                    )}
+                  </>
+                ) : null}
+                <button type="button" className="btn-secondary btn-sm" onClick={() => onDeleteDocument(doc.id)}>Sil</button>
               </div>
             </article>
           ))}

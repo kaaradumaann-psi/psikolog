@@ -30,6 +30,7 @@ export type CaseFormulation = {
   revision?: number;
   amendmentOf?: string;
   amendmentReason?: string;
+  supersededBy?: string;
   signedAt?: string;
   lockedAt?: string;
   modality: string;
@@ -49,6 +50,7 @@ export type SafetyPlan = {
   revision?: number;
   amendmentOf?: string;
   amendmentReason?: string;
+  supersededBy?: string;
   signedAt?: string;
   lockedAt?: string;
   warningSigns: string;
@@ -310,8 +312,8 @@ export function buildSessionPreps(snapshot: CaseSnapshot, date = snapshot.today)
     .map((appointment) => {
       const session = latestSession(snapshot.sessions, appointment.clientId);
       const scores = readingsForClient(appointment.clientId, snapshot);
-      const formulation = snapshot.formulations.find((item) => item.clientId === appointment.clientId);
-      const safety = snapshot.safetyPlans.find((item) => item.clientId === appointment.clientId);
+      const formulation = snapshot.formulations.find((item) => item.clientId === appointment.clientId && !item.supersededBy);
+      const safety = snapshot.safetyPlans.find((item) => item.clientId === appointment.clientId && !item.supersededBy);
       const riskLevel = session?.riskLevel ?? 'none';
       const flags = scores.filter((score) => score.flag);
       const rising = scores.filter(meaningfulRise);

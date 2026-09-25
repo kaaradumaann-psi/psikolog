@@ -25,9 +25,9 @@ import {
   whenIdle,
 } from '../src/clinical/cloud/sync';
 import { loadSnapshot } from '../src/clinical/cloud/repository';
-import { applyClinicalSnapshot, getClients, getSoapSessions, saveClient, saveSoapSession, lockSoapSession, getAppointments, saveAppointment, completeAppointmentWithSession } from '../src/clinical/clinicalStore';
-import { applyPracticeSnapshot, getFormulations, getTasks, saveFormulation, saveTask } from '../src/clinical/practiceStore';
-import { emptyFormulation } from '../src/clinical/casework';
+import { applyClinicalSnapshot, deleteClient, getClients, getSoapSessions, saveClient, saveSoapSession, signSoapSession, lockSoapSession, getAppointments, saveAppointment, completeAppointmentWithSession, saveBeckDepressionTest, getBeckDepressionTests } from '../src/clinical/clinicalStore';
+import { applyPracticeSnapshot, getFormulations, getTasks, saveFormulation, saveTask, saveScreening, getScreenings, saveDocument } from '../src/clinical/practiceStore';
+import { emptyFormulation, emptySafety } from '../src/clinical/casework';
 import { LEGACY_KEYS, migrateLocalDataToCloud, purgeLegacyKeysAfterVerifiedImport } from '../src/clinical/cloud/migrate';
 import type { Client, SoapSession } from '../src/clinical/clinicalTypes';
 
@@ -139,7 +139,8 @@ test('P0-2: yalnız uygulanmış sunucu anlık görüntüsü kapıyı açar; hat
   failCloudHydration(new Error('Sunucu yanıt vermedi'));
   assert.equal(getSyncState().phase, 'error');
   assert.equal(getSyncState().hydrated, false);
-  assert.equal(getSyncState().lastError, 'Sunucu yanıt vermedi');
+  assert.match(getSyncState().lastError ?? '', /Sunucu işlemi tamamlanamadı/);
+  assert.doesNotMatch(getSyncState().lastError ?? '', /PGRST|42501/);
   deactivateCloud();
   assert.equal(getSyncState().hydrated, false);
   assert.equal(getSyncState().userId, undefined);
@@ -267,6 +268,16 @@ test('P0-3: imza/kilit buluta status ve zaman damgası olarak yazılır', async 
   await whenIdle();
   saveSoapSession(session); // upsert yolu (23505 → update)
   await whenIdle();
+
+  signSoapSession('sess_1');
+  await whenIdle();
+  const signed = getSoapSessions()[0]!;
+  assert.throws(() => saveSoapSession({ ...signed, status: 'draft' }), /taslağa çevrilemez/);
+  saveSoapSession({ ...signed, subjective: 'imzalı düzeltme' });
+  await whenIdle();
+  assert.equal((await port.select('sessions'))[0]!.status, 'signed');
+  assert.equal((await port.select('sessions'))[0]!.signed_at, signed.signedAt);
+  assert.equal(getSoapSessions()[0]!.status, 'signed');
 
   lockSoapSession('sess_1');
   await whenIdle();
@@ -489,55 +500,65 @@ test('P0-7: belge yüklemesi Storage yolunu ve metadata satırını üretir; sil
 });
 
 /* -------------------------------------------------------------------------- */
-/* P0-2/REAL BROWSER koşu #2 — aktivasyon öncesi yazım sessizce DÜŞMEMELİ        */
+/* P0: kimliği bilinmeyen bir intent başka kullanıcının hesabına taşınmaz       */
 /* -------------------------------------------------------------------------- */
 
-test('P0-2: bulut aktivasyonu tamamlanmadan yapılan kayıt kuyruğa alınır (sessiz veri kaybı yok)', async () => {
+test('bulut kimliği bilinmeden yazma fail-closed: genel outbox başka kişiye devredilmez', async () => {
   localStorage.clear();
   const port = new MemoryPort();
-  // Sayfa yeni açıldı: bulut hesabı var ama aktivasyon (13 okuma) henüz bitmedi.
   bind(port);
   deactivateCloud();
   assert.equal(getSyncState().cloud, false);
-
-  saveClient(makeClient('cli_pre_activation', 'HK-PRE-1'));
-
-  // Sunucuya istek gitmedi ama kayıt kaybolmadı: kuyrukta bekliyor.
+  assert.throws(() => saveClient(makeClient('cli_pre_activation', 'HK-PRE-1')), /Bulut oturumu hazır değil/);
   assert.equal((await port.select('clients')).length, 0);
-  assert.equal(getSyncState().pending, 1);
-  assert.equal(getSyncState().phase, 'saving');
-  const baseOutbox = JSON.parse(localStorage.getItem('outbox') ?? '[]') as unknown[];
-  assert.equal(baseOutbox.length, 1, 'aktivasyon öncesi yazım kuyruğa alınmalı');
-  // Yerel görünürlük korunur (kullanıcı kaydı hemen görür).
-  assert.equal(getClients().length, 1);
+  assert.equal(localStorage.getItem('outbox'), null);
+  assert.equal(getSyncState().phase, 'error');
+
+  const oldUnscoped = JSON.stringify([{ id: crypto.randomUUID(), at: Date.now(), intent: {
+    entity: 'client', op: 'upsert', value: makeClient('cli_orphan'),
+  } }]);
+  localStorage.setItem('outbox', oldUnscoped);
+  bindCloud({ userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', organizationId: ORG }, port);
+  assert.equal(adoptBaseOutbox(), 0, 'kimlik doğrulanmadan yazılan eski intentin sahibi bilinemez');
+  assert.equal(await flushOutbox(), 0);
+  assert.equal((await port.select('clients')).length, 0);
+  assert.equal(localStorage.getItem('outbox'), oldUnscoped, 'eski intent de sessizce silinmez');
   deactivateCloud();
 });
 
-test('P0-2: aktivasyon tamamlanınca kuyruktaki kayıt sunucuya gönderilir ve kapsamlı kuyruk boşalır', async () => {
+test('kapsamlı outbox + UUID haritası çıkışta kalır, yalnız aynı hesap girince gönderilir', async () => {
   localStorage.clear();
   const port = new MemoryPort();
   bind(port);
-  deactivateCloud();
-  saveClient(makeClient('cli_pre_activation', 'HK-PRE-1'));
+  port.offline = true;
+  saveClient(makeClient('cli_pending', 'HK-PENDING-1'));
+  await whenIdle();
+  const outboxKey = cacheKey('outbox');
+  const mapKey = cacheKey('id-map');
+  const cacheClientKey = cacheKey('psikolog_clients_v2');
   assert.equal(getSyncState().pending, 1);
+  assert.ok(localStorage.getItem(outboxKey));
+  assert.ok(localStorage.getItem(mapKey));
+  deactivateCloud();
+  assert.ok(localStorage.getItem(outboxKey), 'offline kayıt logout sırasında kaybolmamalı');
+  assert.ok(localStorage.getItem(mapKey), 'UUID eşlemesi de yeniden denemeye kalmalı');
+  assert.equal(localStorage.getItem(cacheClientKey), null, 'görünen klinik cache kapatılmalı');
 
-  // Aktivasyon tamamlandı: bağlam kuruldu, kuyruk kapsamlı ad alanına taşınır.
-  bind(port);
-  const adopted = adoptBaseOutbox();
-  assert.equal(adopted, 1);
-  assert.equal(localStorage.getItem('outbox'), null, 'kapsamsız kuyruk temizlenmeli');
-
-  const sent = await flushOutbox();
-  assert.equal(sent, 1);
-  const rows = await port.select('clients');
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0]!.file_number, 'HK-PRE-1');
-  assert.equal(rows[0]!.owner_user_id, USER);
-  // Kuyruk boşaldı; ikinci aktarım kopya üretmez.
+  // B başka hesap/aynı kurum: A'nın outbox anahtarına erişmez.
+  port.offline = false;
+  bindCloud({ userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', organizationId: ORG }, port);
   assert.equal(getSyncState().pending, 0);
-  assert.equal(adoptBaseOutbox(), 0);
   assert.equal(await flushOutbox(), 0);
+  assert.equal((await port.select('clients')).length, 0);
+  deactivateCloud();
+
+  // A aynı hesap: idempotent UUID ile geri gönderilir.
+  bind(port);
+  assert.equal(getSyncState().pending, 1);
+  assert.equal(await flushOutbox(), 1);
+  assert.equal(getSyncState().pending, 0);
   assert.equal((await port.select('clients')).length, 1);
+  assert.equal((await port.select('clients'))[0]!.owner_user_id, USER);
   deactivateCloud();
 });
 
@@ -550,4 +571,334 @@ test('P0-2: bulutsuz (yerel) kurulumda kuyruk oluşmaz — davranış değişmez
   assert.equal(localStorage.getItem('outbox'), null);
   assert.equal(getSyncState().pending, 0);
   assert.equal(getClients().length, 1);
+});
+
+test('outbox: ikinci istek sırasında ağ koparsa kalan tüm intentler sırayla korunur', async () => {
+  localStorage.clear();
+  const port = new MemoryPort();
+  bind(port);
+  port.offline = true;
+  for (const id of ['one', 'two', 'three']) {
+    queueWrite({ entity: 'task', op: 'upsert', value: {
+      id: `task_${id}`, title: id, clientId: undefined, status: 'todo',
+      priority: 'medium', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    } });
+  }
+  await whenIdle();
+  assert.equal(getSyncState().pending, 3);
+  const outboxKey = cacheKey('outbox');
+
+  port.offline = false;
+  const originalInsert = port.insert.bind(port);
+  let attempt = 0;
+  port.insert = async (table, rows) => {
+    if (++attempt === 2) throw new Error('Failed to fetch');
+    return originalInsert(table, rows);
+  };
+  assert.equal(await flushOutbox(), 1);
+  assert.equal(getSyncState().phase, 'offline');
+  assert.equal(getSyncState().pending, 2);
+  assert.equal((JSON.parse(localStorage.getItem(outboxKey)!) as unknown[]).length, 2);
+
+  port.insert = originalInsert;
+  assert.equal(await flushOutbox(), 2);
+  assert.equal(getSyncState().phase, 'saved');
+  assert.equal((await port.select('tasks')).length, 3);
+  assert.equal(localStorage.getItem(outboxKey), null);
+  deactivateCloud();
+});
+
+test('outbox: RLS/hata kuyruktaki çocuğu geçirmez; hata ve tüm intentler görünür kalır', async () => {
+  localStorage.clear();
+  const port = new MemoryPort();
+  bind(port);
+  const realInsert = port.insert.bind(port);
+  port.insert = async () => { throw new Error('42501 row-level security'); };
+  queueWrite({ entity: 'client', op: 'upsert', value: makeClient('cli_parent') });
+  queueWrite({ entity: 'note', op: 'upsert', value: {
+    id: 'note_child', clientId: 'cli_parent', content: 'takip', pinned: false,
+    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+  } });
+  await whenIdle();
+  assert.equal(getSyncState().phase, 'error');
+  assert.equal(getSyncState().pending, 2);
+  assert.doesNotMatch(getSyncState().lastError ?? '', /42501|row-level/i);
+  assert.equal((await port.select('notes')).length, 0);
+  port.insert = realInsert;
+  assert.equal(await flushOutbox(), 2);
+  assert.equal((await port.select('notes')).length, 1);
+  deactivateCloud();
+});
+
+test('outbox: kota hatası gönderimden önce başarısız olur, mevcut kayıtlar kırpılmaz', async () => {
+  localStorage.clear();
+  const port = new MemoryPort();
+  bind(port);
+  const outboxKey = cacheKey('outbox');
+  const previousSet = localStorage.setItem.bind(localStorage);
+  localStorage.setItem = (key, value) => {
+    if (key === outboxKey) throw new DOMException('Quota exceeded', 'QuotaExceededError');
+    previousSet(key, value);
+  };
+  try {
+    assert.throws(() => queueWrite({ entity: 'client', op: 'upsert', value: makeClient('cli_quota') }), /bu cihaza yazılamadı/i);
+    assert.equal((await port.select('clients')).length, 0);
+    assert.equal(getSyncState().phase, 'error');
+  } finally {
+    localStorage.setItem = previousSet;
+    deactivateCloud();
+  }
+});
+
+test('outbox: yavaş A isteği B oturumuna geçse de B portu/UUID haritasına yazılmaz', async () => {
+  localStorage.clear();
+  const portA = new MemoryPort();
+  const portB = new MemoryPort();
+  let release!: () => void;
+  const waiting = new Promise<void>((resolve) => { release = resolve; });
+  const originalInsert = portA.insert.bind(portA);
+  portA.insert = async (table, rows) => {
+    await waiting;
+    return originalInsert(table, rows);
+  };
+  bind(portA);
+  const aPromise = queueWrite({ entity: 'client', op: 'upsert', value: makeClient('cli_slow_A', 'HK-SLOW-A') });
+  const aOutbox = cacheKey('outbox');
+  deactivateCloud();
+  bindCloud({ userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', organizationId: ORG }, portB);
+  const bPromise = queueWrite({ entity: 'client', op: 'upsert', value: makeClient('cli_fast_B', 'HK-FAST-B') });
+  release();
+  await Promise.all([aPromise, bPromise, whenIdle()]);
+  assert.equal((await portA.select('clients'))[0]!.file_number, 'HK-SLOW-A');
+  assert.equal((await portB.select('clients'))[0]!.file_number, 'HK-FAST-B');
+  assert.equal((await portA.select('clients'))[0]!.owner_user_id, USER);
+  assert.equal((await portB.select('clients'))[0]!.owner_user_id, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+  assert.equal(localStorage.getItem(aOutbox), null, 'yalnız sunucu onayından sonra A kuyruğu boşalmalı');
+  deactivateCloud();
+});
+
+test('yazım sırası: danışan → seans → kilit, ebeveyn sunucudayken ilerler', async () => {
+  localStorage.clear();
+  const port = new MemoryPort();
+  const originalInsert = port.insert.bind(port);
+  const order: string[] = [];
+  port.insert = async (table, rows) => {
+    if (table === 'clients') await new Promise((resolve) => setTimeout(resolve, 30));
+    if (table === 'sessions') {
+      const parent = await port.select('clients', { id: String(rows[0]?.client_id) });
+      if (parent.length === 0) throw new Error('23503 parent client missing');
+    }
+    order.push(table);
+    return originalInsert(table, rows);
+  };
+  const originalUpdate = port.update.bind(port);
+  port.update = async (table, patch, filter) => {
+    order.push(`update:${table}`);
+    return originalUpdate(table, patch, filter);
+  };
+  bind(port);
+  const now = new Date().toISOString();
+  saveClient(makeClient('cli_chain'));
+  saveSoapSession({
+    id: 'sess_chain', clientId: 'cli_chain', clientName: 'Ayşe Kaya', sessionNumber: 1,
+    date: '2026-09-25', startTime: '14:00', durationMinutes: 50,
+    sessionType: 'Bireysel Terapi', subjective: 'S', objective: 'O', assessment: 'A', plan: 'P',
+    riskLevel: 'none', riskNotes: '', homework: '', fee: 0, paymentStatus: 'pending',
+    createdAt: now, updatedAt: now,
+  });
+  lockSoapSession('sess_chain');
+  await whenIdle();
+  assert.equal(getSyncState().pending, 0, getSyncState().lastError);
+  assert.deepEqual(order.slice(0, 4), ['clients', 'anamneses', 'sessions', 'update:sessions']);
+  assert.equal((await port.select('sessions'))[0]!.status, 'locked');
+  deactivateCloud();
+});
+
+test('bulut ölçek/tarama: kayıtlı danışan olmadan yerel sonuç veya outbox oluşturulmaz', () => {
+  localStorage.clear();
+  bind(new MemoryPort());
+  assert.throws(
+    () => saveBeckDepressionTest({ id: 'bdi_orphan', clientId: undefined } as never),
+    /danışan dosyası seçin/,
+  );
+  assert.throws(
+    () => saveScreening({ id: 'screen_orphan', clientId: undefined } as never),
+    /danışan dosyası seçin/,
+  );
+  assert.equal(getBeckDepressionTests().length, 0);
+  assert.equal(getScreenings().length, 0);
+  assert.equal(getSyncState().pending, 0);
+  deactivateCloud();
+});
+
+test('migration: bozuk yerel koleksiyon boş sayılıp silinmez', async () => {
+  localStorage.clear();
+  const broken = '{bozuk klinik veri';
+  localStorage.setItem(LEGACY_KEYS.clients, broken);
+  bind(new MemoryPort());
+  const report = await migrateLocalDataToCloud();
+  assert.equal(report.ok, false);
+  assert.match(report.errors.join(' '), /okunamadı/);
+  assert.equal(report.pushed.clients, 0);
+  assert.equal(purgeLegacyKeysAfterVerifiedImport(report), false);
+  assert.equal(localStorage.getItem(LEGACY_KEYS.clients), broken);
+  deactivateCloud();
+});
+
+test('migration: aynı sayıdaki farklı sunucu kaydı eksik legacy dosyayı maskelemez', async () => {
+  localStorage.clear();
+  const port = new MemoryPort();
+  bind(port);
+  saveClient(makeClient('cli_unrelated', 'HK-EXISTING'));
+  await whenIdle();
+
+  localStorage.setItem(LEGACY_KEYS.clients, JSON.stringify([makeClient('cli_missing', 'HK-MISSING')]));
+  const originalInsert = port.insert.bind(port);
+  // This broken port ACKs the import but does not persist its clients row.
+  port.insert = async (table, rows) => table === 'clients' ? rows : originalInsert(table, rows);
+  const report = await migrateLocalDataToCloud();
+  assert.equal(report.ok, false, JSON.stringify(report));
+  assert.equal(report.verified.find((row) => row.entity === 'clients')?.cloud, 1);
+  assert.ok(report.missing.includes('clients'));
+  assert.equal(purgeLegacyKeysAfterVerifiedImport(report), false);
+  assert.ok(localStorage.getItem(LEGACY_KEYS.clients));
+  deactivateCloud();
+});
+
+test('migration: ID taşımayan eski formülasyon ve güvenlik planı tekrar aktarımda kopyalanmaz', async () => {
+  localStorage.clear();
+  localStorage.setItem(LEGACY_KEYS.clients, JSON.stringify([makeClient('cli_old', 'HK-OLD')]));
+  localStorage.setItem(LEGACY_KEYS.formulations, JSON.stringify([{ ...emptyFormulation('cli_old'), modality: 'BDT' }]));
+  localStorage.setItem(LEGACY_KEYS.safetyPlans, JSON.stringify([{ ...emptySafety('cli_old'), warningSigns: 'uykusuzluk' }]));
+  const port = new MemoryPort();
+  bind(port);
+  const first = await migrateLocalDataToCloud();
+  assert.equal(first.ok, true, JSON.stringify(first));
+  const formulationId = (await port.select('formulations'))[0]?.id;
+  const safetyId = (await port.select('safety_plans'))[0]?.id;
+  const second = await migrateLocalDataToCloud();
+  assert.equal(second.ok, true, JSON.stringify(second));
+  assert.deepEqual((await port.select('formulations')).map((row) => row.id), [formulationId]);
+  assert.deepEqual((await port.select('safety_plans')).map((row) => row.id), [safetyId]);
+  assert.equal(purgeLegacyKeysAfterVerifiedImport(second), true);
+  deactivateCloud();
+});
+
+test('ölçek sonucu: tekrar kaydetme ve eski rastgele PK tek sonuçta birleşir (LOCAL port)', async () => {
+  localStorage.clear();
+  const port = new MemoryPort();
+  bind(port);
+  saveClient(makeClient('cli_scale', 'HK-SCALE'));
+  const result = {
+    id: 'bdi_1', clientId: 'cli_scale', clientName: 'Ayşe Kaya',
+    testDate: '2026-09-26', totalScore: 9, severity: 'minimal',
+  } as never;
+  saveBeckDepressionTest(result);
+  await whenIdle();
+  const first = (await port.select('test_results'))[0]!;
+  assert.ok(first.id);
+  saveBeckDepressionTest({ ...result, totalScore: 10 });
+  await whenIdle();
+  assert.equal((await port.select('test_results')).length, 1);
+  assert.equal((await port.select('test_results'))[0]!.id, first.id);
+  assert.equal(((await port.select('test_results'))[0]!.result_data as { totalScore: number }).totalScore, 10);
+
+  // A legacy database already has a result for this administration but its PK
+  // predates deterministic IDs. A retry updates that row, not a second row.
+  await port.remove('test_results', { id: String(first.id) });
+  const legacyId = crypto.randomUUID();
+  await port.insert('test_results', [{ ...first, id: legacyId }]);
+  saveBeckDepressionTest({ ...result, totalScore: 11 });
+  await whenIdle();
+  const rows = await port.select('test_results');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]!.id, legacyId);
+  assert.equal((rows[0]!.result_data as { totalScore: number }).totalScore, 11);
+  deactivateCloud();
+});
+
+test('ölçek sonucu: eski yinelenen satırlar varsa belirsiz sonucu otomatik seçmez', async () => {
+  localStorage.clear();
+  const port = new MemoryPort();
+  bind(port);
+  saveClient(makeClient('cli_scale_dup', 'HK-SCALE-DUP'));
+  const result = { id: 'bdi_dup', clientId: 'cli_scale_dup', clientName: 'Ayşe Kaya',
+    testDate: '2026-09-26', totalScore: 9, severity: 'minimal' } as never;
+  saveBeckDepressionTest(result);
+  await whenIdle();
+  const first = (await port.select('test_results'))[0]!;
+  await port.insert('test_results', [{ ...first, id: crypto.randomUUID() }]);
+  saveBeckDepressionTest({ ...result, totalScore: 14 });
+  await whenIdle();
+  assert.equal(getSyncState().pending, 1, 'belirsiz yazım outbox’ta kalmalı');
+  assert.equal(getSyncState().phase, 'error');
+  assert.match(getSyncState().lastError ?? '', /birden fazla sonuç/i);
+  assert.equal((await port.select('test_results')).length, 2);
+  await assert.rejects(() => loadSnapshot(port, cloudContext()!), /birden fazla sonuç/i,
+    'belirsiz sonuç hidrasyon sırasında keyfî satıra dönüşmemeli');
+  deactivateCloud();
+});
+
+test('kota: outbox kalıcı yazılamazsa kullanıcıya görünen danışan önbelleği değişmez', async () => {
+  localStorage.clear();
+  const port = new MemoryPort();
+  bind(port);
+  const original = localStorage.setItem.bind(localStorage);
+  localStorage.setItem = (key: string, value: string) => {
+    if (key.endsWith(':outbox')) throw new DOMException('QuotaExceededError', 'QuotaExceededError');
+    original(key, value);
+  };
+  try {
+    assert.throws(() => saveClient(makeClient('cli_quota_store')), /bu cihaza yazılamadı/i);
+    assert.equal(getClients().length, 0, 'outbox başarısızken iyimser kaydı gösterme');
+    assert.equal(getSyncState().pending, 0);
+    assert.equal((await port.select('clients')).length, 0);
+  } finally {
+    localStorage.setItem = original;
+    deactivateCloud();
+  }
+});
+
+test('kota: imza kuyruğa yazılamazsa klinik taslak imzalanmış gibi görünmez', async () => {
+  localStorage.clear();
+  const port = new MemoryPort();
+  bind(port);
+  saveClient(makeClient('cli_sign_quota', 'HK-SIGN-QUOTA'));
+  saveSoapSession({
+    id: 'sess_sign_quota', clientId: 'cli_sign_quota', clientName: 'Ayşe Kaya', sessionNumber: 1,
+    date: '2026-09-26', startTime: '14:00', durationMinutes: 50, sessionType: 'Bireysel Terapi',
+    subjective: '', objective: '', assessment: '', plan: '', riskLevel: 'none',
+    paymentStatus: 'pending', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+  });
+  await whenIdle();
+  const original = localStorage.setItem.bind(localStorage);
+  localStorage.setItem = (key: string, value: string) => {
+    if (key.endsWith(':outbox')) throw new DOMException('QuotaExceededError', 'QuotaExceededError');
+    original(key, value);
+  };
+  try {
+    assert.throws(() => signSoapSession('sess_sign_quota'), /bu cihaza yazılamadı/i);
+    assert.equal(getSoapSessions()[0]!.status, undefined);
+    assert.equal((await port.select('sessions'))[0]!.status, 'draft');
+  } finally {
+    localStorage.setItem = original;
+    deactivateCloud();
+  }
+});
+
+test('belge bütünlüğü: bulut modunda belge varken danışanı yerelde dahi silemez', async () => {
+  localStorage.clear();
+  const port = new MemoryPort();
+  bind(port);
+  saveClient(makeClient('cli_with_document', 'HK-DOC'));
+  saveDocument({
+    id: 'doc_with_document', clientId: 'cli_with_document', fileName: 'onam.pdf',
+    mimeType: 'application/pdf', sizeBytes: 8, storagePath: `${ORG}/cli_with_document/onam.pdf`,
+    createdAt: new Date().toISOString(),
+  });
+  assert.throws(() => deleteClient('cli_with_document'), /belgeleri varken dosya silinemez/i);
+  assert.equal(getClients().length, 1);
+  await whenIdle();
+  assert.equal((await port.select('clients')).length, 1);
+  deactivateCloud();
 });

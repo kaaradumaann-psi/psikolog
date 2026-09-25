@@ -63,12 +63,12 @@ export async function profileForUser(userId: string): Promise<AuthenticatedUser>
       hint: (error as { hint?: string }).hint,
     });
     if (error.code === '42501' || /permission denied/i.test(error.message)) {
-      throw new Error('Profil okuma izni reddedildi (RLS). Lütfen admin ile iletişime geçin.');
+      throw new Error('Bu hesapla profil okunamadı. Lütfen yöneticinizle iletişime geçin.');
     }
     if (error.code === 'PGRST116' || /406/i.test(error.message)) {
-      throw new Error('Kullanıcı profili bulunamadı (PGRST116).');
+      throw new Error('Kullanıcı profili bulunamadı. Lütfen yöneticinizle iletişime geçin.');
     }
-    throw new Error(`Kullanıcı profili alınamadı: ${error.message} (kod: ${error.code || '—'})`);
+    throw new Error('Kullanıcı profili doğrulanamadı. Bağlantınızı kontrol edip tekrar deneyin.');
   }
   if (!data) {
     console.warn('[profileForUser] No profile row for userId:', userId, '— attempting self-heal insert');
@@ -91,13 +91,13 @@ export async function profileForUser(userId: string): Promise<AuthenticatedUser>
         .maybeSingle();
       if (insertError) {
         console.error('[profileForUser] self-heal insert failed:', insertError);
-        throw new Error('Kullanıcı profili bulunamadı — trigger çalışmamış olabilir. Lütfen admin panelinden profil oluşturun veya SQL ile backfill yapın.');
+        throw new Error('Kullanıcı profili bulunamadı. Lütfen yöneticinizle iletişime geçin.');
       }
       if (!inserted) throw new Error('Kullanıcı profili oluşturulamadı (insert null).');
       return profileFromRow(inserted as ProfileRow);
     } catch (e) {
       console.error('[profileForUser] self-heal failed:', e);
-      throw new Error('Kullanıcı profili bulunamadı — trigger çalışmamış olabilir. Lütfen admin panelinden profil oluşturun veya SQL ile backfill yapın.');
+      throw new Error('Kullanıcı profili bulunamadı. Lütfen yöneticinizle iletişime geçin.');
     }
   }
   return profileFromRow(data as ProfileRow);

@@ -5,8 +5,9 @@
 import type { CaseFormulation, SafetyPlan } from './casework';
 import type { RapidScreeningResult } from './rapidScreening';
 import { isSafeDocumentUrl, isSafeImageUrl, reportStorageError } from './recordRules';
-import { cacheKey, cloudContext, queueWrite } from './cloud/sync';
-import type { ClinicalSnapshot } from './cloud/repository';
+import { cacheKey, cloudContext, queueWrite, syncPort } from './cloud/sync';
+import { signedDocumentUrl, type ClinicalSnapshot } from './cloud/repository';
+import { supabaseConfig } from '../auth/supabaseClient';
 
 export type PracticeNote = {
   id: string;
@@ -212,14 +213,14 @@ export function getNotesByClient(clientId: string): PracticeNote[] {
 
 export function saveNote(note: PracticeNote): void {
   const list = getNotes().filter((item) => item.id !== note.id);
-  write(NOTES_KEY, [note, ...list]);
   queueWrite({ entity: 'note', op: 'upsert', value: note });
+  write(NOTES_KEY, [note, ...list]);
   recordAudit({ action: 'save', entity: 'note', entityId: note.id, summary: 'Klinik not kaydedildi' });
 }
 
 export function deleteNote(id: string): void {
-  write(NOTES_KEY, getNotes().filter((note) => note.id !== id));
   queueWrite({ entity: 'note', op: 'delete', value: id });
+  write(NOTES_KEY, getNotes().filter((note) => note.id !== id));
   recordAudit({ action: 'delete', entity: 'note', entityId: id, summary: 'Klinik not silindi' });
 }
 
@@ -229,14 +230,14 @@ export function getTasks(): PracticeTask[] {
 
 export function saveTask(task: PracticeTask): void {
   const list = getTasks().filter((item) => item.id !== task.id);
-  write(TASKS_KEY, [task, ...list]);
   queueWrite({ entity: 'task', op: 'upsert', value: task });
+  write(TASKS_KEY, [task, ...list]);
   recordAudit({ action: 'save', entity: 'task', entityId: task.id, summary: task.title });
 }
 
 export function deleteTask(id: string): void {
-  write(TASKS_KEY, getTasks().filter((task) => task.id !== id));
   queueWrite({ entity: 'task', op: 'delete', value: id });
+  write(TASKS_KEY, getTasks().filter((task) => task.id !== id));
   recordAudit({ action: 'delete', entity: 'task', entityId: id, summary: 'Görev silindi' });
 }
 
@@ -248,17 +249,33 @@ export function getDocumentsByClient(clientId: string): PracticeDocument[] {
   return getDocuments().filter((doc) => doc.clientId === clientId);
 }
 
+/** Private Storage link is requested only on click; never cached as a clinical record. */
+export async function documentDownloadUrl(doc: PracticeDocument): Promise<string> {
+  if (isSafeDocumentUrl(doc.dataUrl)) return doc.dataUrl!;
+  const ctx = cloudContext();
+  const port = syncPort();
+  if (!ctx || !port || !supabaseConfig.configured) throw new Error('Belge bu cihazda bulunamadı.');
+  const url = await signedDocumentUrl(port, ctx, doc);
+  const parsed = new URL(url);
+  if (parsed.origin !== new URL(supabaseConfig.url).origin ||
+      !parsed.pathname.startsWith('/storage/v1/object/sign/client-documents/') ||
+      !parsed.searchParams.has('token')) {
+    throw new Error('Güvenli belge bağlantısı doğrulanamadı.');
+  }
+  return url;
+}
+
 export function saveDocument(doc: PracticeDocument): void {
   const list = getDocuments().filter((item) => item.id !== doc.id);
-  write(DOCS_KEY, [doc, ...list]);
   queueWrite({ entity: 'document', op: 'upsert', value: doc });
+  write(DOCS_KEY, [doc, ...list]);
   recordAudit({ action: 'save', entity: 'document', entityId: doc.id, summary: doc.fileName });
 }
 
 export function deleteDocument(id: string): void {
   const removed = getDocuments().find((doc) => doc.id === id);
-  write(DOCS_KEY, getDocuments().filter((doc) => doc.id !== id));
   if (removed) queueWrite({ entity: 'document', op: 'delete', value: removed });
+  write(DOCS_KEY, getDocuments().filter((doc) => doc.id !== id));
   recordAudit({ action: 'delete', entity: 'document', entityId: id, summary: 'Belge silindi' });
 }
 
@@ -267,8 +284,8 @@ export function getSettings(): PracticeSettings {
 }
 
 export function saveSettings(settings: PracticeSettings): void {
-  write(SETTINGS_KEY, settings);
   queueWrite({ entity: 'settings', op: 'upsert', value: settings });
+  write(SETTINGS_KEY, settings);
   recordAudit({ action: 'save', entity: 'settings', entityId: 'practice', summary: 'Antet ve uygulama ayarları güncellendi' });
 }
 
@@ -277,9 +294,12 @@ export function getScreenings(): RapidScreeningResult[] {
 }
 
 export function saveScreening(result: RapidScreeningResult): void {
+  if (cloudContext() && !result.clientId) {
+    throw new Error('Buluta kaydetmek için kayıtlı danışan dosyası seçin.');
+  }
   const list = getScreenings().filter((item) => item.id !== result.id);
-  write(SCREEN_KEY, [result, ...list]);
   queueWrite({ entity: 'screening', op: 'upsert', value: result });
+  write(SCREEN_KEY, [result, ...list]);
   recordAudit({
     action: 'save',
     entity: 'screening',
@@ -289,8 +309,8 @@ export function saveScreening(result: RapidScreeningResult): void {
 }
 
 export function deleteScreening(id: string): void {
-  write(SCREEN_KEY, getScreenings().filter((item) => item.id !== id));
   queueWrite({ entity: 'screening', op: 'delete', value: id });
+  write(SCREEN_KEY, getScreenings().filter((item) => item.id !== id));
 }
 
 export function getFormulations(): CaseFormulation[] {
@@ -298,18 +318,31 @@ export function getFormulations(): CaseFormulation[] {
 }
 
 export function getFormulation(clientId: string): CaseFormulation | undefined {
-  return getFormulations().find((item) => item.clientId === clientId);
+  return getFormulations().find((item) => item.clientId === clientId && !item.supersededBy);
 }
 
 export function saveFormulation(item: CaseFormulation): void {
-  const existing = getFormulations().find((row) => row.clientId === item.clientId);
+  const records = getFormulations();
+  const existing = records.find((row) => row.clientId === item.clientId && !row.supersededBy);
   if (existing?.status === 'locked') {
     throw new Error('Kilitli formülasyon değiştirilemez. Düzeltme için yeni revizyon oluşturun.');
   }
-  const list = getFormulations().filter((row) => row.clientId !== item.clientId);
-  const next = { ...item, id: item.id ?? newId('form'), updatedAt: new Date().toISOString() };
-  write(FORM_KEY, [next, ...list]);
+  if (existing?.status === 'signed' && item.status !== 'signed') throw new Error('İmzalı kayıt taslağa çevrilemez.');
+  if (existing?.id && item.id && existing.id !== item.id) throw new Error('Eski formülasyon sürümü düzenlenemez.');
+  if (item.id && records.some((row) => row.id === item.id && row.clientId !== item.clientId)) {
+    throw new Error('Formülasyonun danışan dosyası değiştirilemez.');
+  }
+  const list = records.filter((row) => row.clientId !== item.clientId || row.supersededBy);
+  const next = {
+    ...item,
+    id: item.id ?? existing?.id ?? newId('form'),
+    amendmentOf: existing?.amendmentOf ?? item.amendmentOf,
+    amendmentReason: existing?.amendmentReason ?? item.amendmentReason,
+    signedAt: existing?.signedAt ?? item.signedAt,
+    updatedAt: new Date().toISOString(),
+  };
   queueWrite({ entity: 'formulation', op: 'upsert', value: next });
+  write(FORM_KEY, [next, ...list]);
   recordAudit({ action: 'save', entity: 'formulation', entityId: item.clientId, summary: 'Formülasyon güncellendi' });
 }
 
@@ -318,18 +351,31 @@ export function getSafetyPlans(): SafetyPlan[] {
 }
 
 export function getSafetyPlan(clientId: string): SafetyPlan | undefined {
-  return getSafetyPlans().find((item) => item.clientId === clientId);
+  return getSafetyPlans().find((item) => item.clientId === clientId && !item.supersededBy);
 }
 
 export function saveSafetyPlan(item: SafetyPlan): void {
-  const existing = getSafetyPlans().find((row) => row.clientId === item.clientId);
+  const records = getSafetyPlans();
+  const existing = records.find((row) => row.clientId === item.clientId && !row.supersededBy);
   if (existing?.status === 'locked') {
     throw new Error('Kilitli güvenlik planı değiştirilemez. Düzeltme için yeni revizyon oluşturun.');
   }
-  const list = getSafetyPlans().filter((row) => row.clientId !== item.clientId);
-  const next = { ...item, id: item.id ?? newId('safe'), updatedAt: new Date().toISOString() };
-  write(SAFETY_KEY, [next, ...list]);
+  if (existing?.status === 'signed' && item.status !== 'signed') throw new Error('İmzalı kayıt taslağa çevrilemez.');
+  if (existing?.id && item.id && existing.id !== item.id) throw new Error('Eski güvenlik planı sürümü düzenlenemez.');
+  if (item.id && records.some((row) => row.id === item.id && row.clientId !== item.clientId)) {
+    throw new Error('Güvenlik planının danışan dosyası değiştirilemez.');
+  }
+  const list = records.filter((row) => row.clientId !== item.clientId || row.supersededBy);
+  const next = {
+    ...item,
+    id: item.id ?? existing?.id ?? newId('safe'),
+    amendmentOf: existing?.amendmentOf ?? item.amendmentOf,
+    amendmentReason: existing?.amendmentReason ?? item.amendmentReason,
+    signedAt: existing?.signedAt ?? item.signedAt,
+    updatedAt: new Date().toISOString(),
+  };
   queueWrite({ entity: 'safety', op: 'upsert', value: next });
+  write(SAFETY_KEY, [next, ...list]);
   recordAudit({ action: 'save', entity: 'safety', entityId: item.clientId, summary: 'Güvenlik planı güncellendi' });
 }
 
@@ -405,6 +451,7 @@ type RecordWithStatus = {
   revision?: number;
   amendmentOf?: string;
   amendmentReason?: string;
+  supersededBy?: string;
   signedAt?: string;
   lockedAt?: string;
 };
@@ -417,10 +464,11 @@ function setRecordStatus<T extends RecordWithStatus>(
   table: string,
   auditEntity: string,
 ): T | null {
-  const index = items.findIndex((item) => item.clientId === clientId);
+  const index = items.findIndex((item) => item.clientId === clientId && !item.supersededBy);
   const current = items[index];
   if (!current) return null;
   if (current.status === 'locked' && status === 'signed') throw new Error('Kilitli kayıt yeniden imzalanamaz.');
+  if (current.status === status) return current;
   const now = new Date().toISOString();
   const next: T = {
     ...current,
@@ -431,13 +479,13 @@ function setRecordStatus<T extends RecordWithStatus>(
     lockedAt: status === 'locked' ? now : current.lockedAt,
   };
   items[index] = next;
-  write(key, items);
   const recordId = next.id ?? current.clientId;
   queueWrite(
     status === 'signed'
       ? { entity: 'sign', op: 'sign', value: { table, id: recordId } }
       : { entity: 'lock', op: 'lock', value: { table, id: recordId, signedAt: next.signedAt } },
   );
+  write(key, items);
   recordAudit({
     action: 'save',
     entity: auditEntity,
@@ -477,9 +525,10 @@ function createRecordRevision<T extends RecordWithStatus>(
   reason: string,
 ): T | null {
   const items = (JSON.parse(localStorage.getItem(cacheKey(key)) ?? 'null') as T[] | null) ?? [];
-  const current = items.find((item) => item.clientId === clientId);
+  const current = items.find((item) => item.clientId === clientId && !item.supersededBy);
   if (!current) return null;
   if (current.status !== 'locked') throw new Error('Revizyon yalnızca kilitli kayıtlar için oluşturulur.');
+  if (!current.id) throw new Error('Klinik kayıt kimliği eksik. Verileri silmeyin; yöneticinizle görüşün.');
   const trimmed = reason.trim();
   if (trimmed.length < 3) throw new Error('Revizyon nedeni en az 3 karakter olmalıdır.');
   const next: T = {
@@ -487,19 +536,20 @@ function createRecordRevision<T extends RecordWithStatus>(
     id: newId(entity === 'safety' ? 'safe' : 'form'),
     status: 'draft',
     revision: (current.revision ?? 1) + 1,
-    amendmentOf: current.id ?? current.clientId,
+    amendmentOf: current.id,
     amendmentReason: trimmed,
+    supersededBy: undefined,
     signedAt: undefined,
     lockedAt: undefined,
   };
-  const index = items.findIndex((item) => item.clientId === clientId);
-  items[index] = next;
-  write(key, items);
+  const index = items.findIndex((item) => item.clientId === clientId && !item.supersededBy);
+  items[index] = { ...current, supersededBy: next.id };
   queueWrite(
     entity === 'safety'
       ? { entity: 'safety', op: 'upsert', value: next as unknown as SafetyPlan }
       : { entity: 'formulation', op: 'upsert', value: next as unknown as CaseFormulation },
   );
+  write(key, [next, ...items]);
   recordAudit({
     action: 'save',
     entity: entity === 'safety' ? 'safety' : 'formulation',

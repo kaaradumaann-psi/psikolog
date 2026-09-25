@@ -8,11 +8,11 @@ import { applyPracticeSnapshot } from '../practiceStore';
 import { loadSnapshot, type ClinicalSnapshot } from './repository';
 import {
   activateCloud,
-  adoptBaseOutbox,
   cloudContext,
   deactivateCloud,
   failCloudHydration,
   flushOutbox,
+  getSyncState,
   isCloudConfigured,
   markCloudHydrated,
   remapSnapshotIds,
@@ -38,29 +38,26 @@ export function startClinicalCloud(user: AuthenticatedUser): Promise<ClinicalSna
     try {
       const snapshot = await activateCloud(user);
       if (currentGeneration !== generation) return null;
-      applyClinicalSnapshot(snapshot);
-      applyPracticeSnapshot(snapshot);
-      // The UI can open only after *both* stores reflect the server snapshot.
-      markCloudHydrated();
 
-      // Aktivasyon öncesi kuyruğa alınan yazımlar kapsamlı kuyruğa taşınır ve
-      // gönderilir; gerçekten gönderildiyse anlık görüntü tazelenir ki kayıt
-      // arayüzde hemen görünsün (sunucu tek doğruluk kaynağı).
-      adoptBaseOutbox();
-      const sent = await flushOutbox().catch(() => 0);
+      // Replay this user's durable queue *before* replacing the local cache
+      // with a server snapshot. If even one intent remains, opening the
+      // workspace would hide an unsent clinical record behind an empty list.
+      const sent = await flushOutbox();
       if (currentGeneration !== generation) return null;
-      if (sent > 0) {
-        const activePort = syncPort();
-        const activeContext = cloudContext();
-        if (activePort && activeContext) {
-          const refreshed = remapSnapshotIds(await loadSnapshot(activePort, activeContext));
-          if (currentGeneration !== generation) return null;
-          applyClinicalSnapshot(refreshed);
-          applyPracticeSnapshot(refreshed);
-          return refreshed;
-        }
+      if (getSyncState().pending > 0) {
+        throw new Error('Bekleyen klinik kayıtlar sunucuya gönderilemedi. Bu cihazdaki verileri silmeyin; yeniden deneyin veya yöneticinizle görüşün.');
       }
-      return snapshot;
+      const activePort = syncPort();
+      const activeContext = cloudContext();
+      const complete = sent > 0 && activePort && activeContext
+        ? remapSnapshotIds(await loadSnapshot(activePort, activeContext))
+        : snapshot;
+      if (currentGeneration !== generation) return null;
+      applyClinicalSnapshot(complete);
+      applyPracticeSnapshot(complete);
+      // The UI can open only after *both* stores reflect the complete server snapshot.
+      markCloudHydrated();
+      return complete;
     } catch (error) {
       if (currentGeneration === generation) {
         activeUserId = null;

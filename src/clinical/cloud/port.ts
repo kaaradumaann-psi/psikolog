@@ -27,13 +27,41 @@ function fail(message: string, code?: string): Error {
 export function createSupabasePort(client: SupabaseClient): CloudPort {
   return {
     async select(table, filter) {
-      let query = client.from(table).select('*');
-      for (const [column, value] of Object.entries(filter ?? {})) {
-        query = value === null ? query.is(column, null) : query.eq(column, value);
+      // PostgREST limits every response (often 1000 rows). One unpaged select
+      // silently truncates a clinical file and hydration then replaces its cache.
+      // Use the *actual* number returned as the next offset: deployments can set
+      // a lower max_rows than the requested page size.
+      const orderColumn = table === 'psychologist_settings' ? 'created_by' : 'id';
+      const rows: CloudRow[] = [];
+      let total: number | null = null;
+      while (true) {
+        let query = client.from(table).select('*', { count: 'exact' });
+        for (const [column, value] of Object.entries(filter ?? {})) {
+          query = value === null ? query.is(column, null) : query.eq(column, value);
+        }
+        const { data, count, error } = await query
+          .order(orderColumn, { ascending: true })
+          .range(rows.length, rows.length + 499);
+        if (error) throw fail(error.message, error.code);
+        if (typeof count !== 'number' || !Number.isSafeInteger(count) || count < 0 || (total !== null && count !== total)) {
+          throw fail('Klinik kayıtların tamamı doğrulanamadı. Lütfen yeniden deneyin.');
+        }
+        total = count;
+        const page = (data ?? []) as CloudRow[];
+        rows.push(...page);
+        if (rows.length === total) {
+          // A concurrent insertion/deletion during pagination must not silently
+          // turn duplicate/missing records into an apparently complete snapshot.
+          const ids = rows.map((row) => row[orderColumn]);
+          if (ids.some((id) => typeof id !== 'string') || new Set(ids).size !== rows.length) {
+            throw fail('Klinik kayıtların tamamı doğrulanamadı. Lütfen yeniden deneyin.');
+          }
+          return rows;
+        }
+        if (page.length === 0 || rows.length > total) {
+          throw fail('Klinik kayıtların tamamı doğrulanamadı. Lütfen yeniden deneyin.');
+        }
       }
-      const { data, error } = await query;
-      if (error) throw fail(error.message, error.code);
-      return (data ?? []) as CloudRow[];
     },
 
     async insert(table, rows) {
@@ -57,8 +85,11 @@ export function createSupabasePort(client: SupabaseClient): CloudPort {
       for (const [column, value] of Object.entries(filter)) {
         query = value === null ? query.is(column, null) : query.eq(column, value);
       }
-      const { error } = await query;
+      // RLS can silently turn DELETE into zero affected rows. Do not report a
+      // successful deletion if the server did not actually remove the record.
+      const { data, error } = await query.select('id');
       if (error) throw fail(error.message, error.code);
+      if (!data?.length) throw fail('Kayıt bulunamadı veya silme yetkiniz yok.');
     },
 
     async upload(bucket, path, file, contentType) {

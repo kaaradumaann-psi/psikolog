@@ -1,14 +1,15 @@
 # PHASE 7 / P0-8 — LIVE VALIDATION Raporu
 
 Tarih: 2026-09-25 · Dal: `arena/01a0d937-psikolog`
-Durum: **LIVE SUPABASE = FAILED (son koşu #3: 15 PASS / 2 DENY / 1 FAIL) · PHASE 7 COMPLETE DEĞİL**
+Durum: **LIVE SUPABASE = FAILED (koşu #4: 64 PASS / 14 DENY / 4 FAIL — 4 FAIL'in tamamı koşucu
+tarafındaki sınıflandırma/sıra hatası, güvenlik kanıtları YEŞİL) · PHASE 7 COMPLETE DEĞİL**
 
 Bu belge yalnızca **canlı doğrulama** (P0-8) katmanını raporlar ve katmanları kesin olarak ayırır:
 
 | Katman | Sonuç | Kanıt |
 |---|---|---|
 | **LOCAL / PGlite** | **PASS** | `npm test` **145/145** (142 + 3 yeni emit-seed kontrolü), `phase7RlsMatrix` 14/14, `phase7LockChain` 11/11, `liveValidationSeed` 7/7, `liveValidationVerifySql` 1/1 |
-| **LIVE SUPABASE** | **FAILED — kısmi** | Koşu #3: AUTH 6 PASS · SEMA 9 PASS · anon 2 DENY (kanıtlı) · **kurum ataması 1 FAIL (seed)** |
+| **LIVE SUPABASE** | **FAILED — kısmi (güvenlik kanıtları yeşil)** | Koşu #4 (tam matris): 64 PASS · 14 DENY · 4 FAIL. 4 FAIL = koşucu hatası (kilit reddi sınıflandırması, storage NoSuchKey, temizlik sırası) — §0.3 |
 | **REAL BROWSER** | **NOT RUN** | Playwright/Chromium ikilisi yok; kullanıcı makinesinde koşulmadı |
 | **PRODUCTION** | **NOT VERIFIED** | Production bundle + dağıtım ortamı doğrulaması yapılmadı |
 
@@ -17,7 +18,77 @@ Bu belge yalnızca **canlı doğrulama** (P0-8) katmanını raporlar ve katmanla
 
 ---
 
-## 0. Koşu #3 — son koşu (kullanıcı makinesi)
+## 0. Koşu #4 — İLK TAM MATRİS (kullanıcı makinesi, 2026-09-25T17:51:02Z)
+
+Seed uygulandıktan sonraki koşu. **Rapor edilen tüm katmanlar gerçekten koşuldu:**
+
+| Grup | PASS | DENY | FAIL | SKIP |
+|---|---|---|---|---|
+| AUTH | 12 | 0 | 0 | 0 |
+| SEMA | 9 | 0 | 0 | 0 |
+| CLINICAL DATA | 27 | 0 | 0 | 0 |
+| RLS | 7 | 12 | 0 | 0 |
+| PERSISTENCE | 1 | 0 | 0 | 0 |
+| SIGN/LOCK | 3 | 0 | 3 | 0 |
+| STORAGE | 3 | 2 | 1 | 0 |
+| LOGOUT | 2 | 1 | 0 | 0 |
+| CLEANUP | 0 | 0 | 1 | 0 |
+| **Toplam** | **64** | **14** | **4** | **0** |
+
+### 0.1 Kurum / rol ataması — artık TAMAM
+
+| Kullanıcı | Rol | `organization_id` |
+|---|---|---|
+| psikolog A | `PSYCHOLOG` | **var** |
+| psikolog B | `PSYCHOLOG` | **var** |
+| admin | `ADMIN` | **var** |
+
+### 0.2 Güvenlik kanıtları (hepsi gerçek HTTP/kod ile)
+
+| Kontrol | Sonuç | Gerçek kanıt |
+|---|---|---|
+| `anon → clients` SELECT / INSERT / UPDATE / DELETE (4 kontrol) | **DENY** | `HTTP 401` · `code=42501` · `permission denied for table clients` (GRANT katmanı) |
+| `anon → ana zincir danışan SELECT` | **DENY** | aynı gerekçe |
+| `B → A clients` SELECT / UPDATE / DELETE | **DENY** | `HTTP 200 · 0 satır` (RLS filtreledi — satır varken görünmedi) |
+| `B → A sessions SELECT` | **DENY** | `HTTP 200 · 0 satır` |
+| `B → A org'a clients INSERT` | **DENY** | `HTTP 403` · `code=42501` · `new row violates row-level security policy for table 'clients'` |
+| `A → A clients SELECT / UPDATE` | **PASS** | `HTTP 200 · 1 satır` |
+| `Admin → A clients SELECT (yetkili kapsam)` | **PASS** | `HTTP 200 · 1 satır` |
+| Storage `B read A` | **DENY** | `code=NoSuchKey` · `Object not found` (nesne sahibi olmayana görünmüyor) |
+| Storage `B update A` | **DENY** | `code=AccessDenied` · `new row violates row-level security policy` |
+| Storage `B delete A` | **DENY** | `HTTP 200 · 0 satır` (hiçbir nesne etkilenmedi) |
+| Storage `A upload / read / delete` | **PASS** | `HTTP 200` |
+| Kilitli kayıt UPDATE | **REDDEDİLDİ** (koşucu FAIL yazdı — §0.3) | `HTTP 400` · `code=P0001` · `"Kilitli klinik kayıt değiştirilemez. Düzeltme için yeni revizyon oluşturun."` |
+| Kilitli kayıt DELETE | **REDDEDİLDİ** (koşucu FAIL yazdı — §0.3) | `HTTP 400` · `code=P0001` · `"Kilitli klinik kayıt silinemez. …"` |
+| Amendment/Revision + `superseded_by` | **PASS** | yeni sürüm oluştu, eski satır `rev=2` ile işaretlendi |
+| Çıkış izolasyonu (B oturumunda A verisi) | **DENY** | `HTTP 200 · 0 satır` |
+| A yeniden giriş (danışan + not) | **PASS** | `HTTP 200 · 1 satır` (her ikisi) |
+
+### 0.3 Dört FAIL'in kök nedeni — hepsi koşucu tarafı, RLS/şema değil
+
+| # | FAIL | Neden | Düzeltme |
+|---|---|---|---|
+| 1 | `locked UPDATE` | DB trigger **doğru şekilde reddetti**; red `HTTP 400 + P0001` (raise_exception) olarak geldi. Sınıflandırıcı `P0001`'i tanımıyordu → `other` → FAIL | yeni `lock-deny` sınıfı: `P0001` + kilit/immutability metni → **DENY kanıtı**. İlgisiz `P0001` (örn. "Geçersiz seans tarihi") hâlâ `trigger-error` → FAIL |
+| 2 | `locked DELETE` | aynı kök neden (silme trigger'ı) | aynı düzeltme |
+| 3 | `B read A` (storage) | Storage, sahibi olmayan kullanıcıya `NoSuchKey / Object not found` döndürüyor — bu bir **DENY**, hata değil | yeni `not-found-deny` sınıfı → **DENY kanıtı** |
+| 4 | `CLEANUP` | Koşucu, `aAgain` oturumunu kapattıktan **sonra** silme denedi; istek `anon` rolüne düştü → `42501` (hint bunu doğruluyor: `GRANT … TO anon`) | temizlik artık **oturum açıkken** yapılıyor + silmenin gerçekten olduğu ayrıca doğrulanıyor (`Sentetik zincir gerçekten silindi`) |
+
+**Yorum:** Hiçbir FAIL "veri sızıntısı" veya "kilit korunmuyor" anlamına gelmiyor; aksine 1–3
+maddeleri korumanın **çalıştığını gösteren kanıtlar**. 4. madde ise koşucunun kendi sıra hatası.
+Düzeltmeler `--selftest` içine canlı koşudan alınan **birebir payload'larla** eklendi
+(`P0001` kilit mesajları, `NoSuchKey`) → ağ olmadan **13/13** doğrulanıyor.
+
+### 0.4 Artık veri (temizlik)
+
+Koşu #4'ün CLEANUP adımı reddedildiği için o koşunun sentetik zinciri canlıda **kaldı**
+(danışan `dcb30953…` ve bağlı kayıtları). Koşucu düzeltildiği için sonraki koşular kendi zincirini
+siler. Eski artıklar için `scripts/live-validation/cleanup-live-test-data.sql` eklendi:
+yalnız `clients.file_number like 'LIVE-%'` ve `%-live-check.txt` nesnelerini hedefler, önce
+ÖNİZLEME sorgularını çalıştırır, silme adımları yorumlu durur.
+
+---
+
+## 0.5 Koşu #3 (kullanıcı makinesi)
 
 | Grup | PASS | DENY | FAIL | SKIP |
 |---|---|---|---|---|
@@ -56,7 +127,7 @@ NOTICE olarak listeler**; sonunda atamayı kendisi doğrular (`SEED TAMAM` / ist
 
 ---
 
-## 0.3 Koşu #2 — gerçek sonuçlar (kullanıcı makinesi, 2026-09-25T17:38:05Z)
+## 0.6 Koşu #2 — gerçek sonuçlar (kullanıcı makinesi, 2026-09-25T17:38:05Z)
 
 Proje: `afvqznjqlrcoxoalkczd.supabase.co` · Komut: `node scripts/live-validation/run.mjs`
 
@@ -111,7 +182,7 @@ yapılmalıdır. Bu bir eksiklik değil, istenen güvenlik sınırıdır.
 
 ---
 
-## 1. Canlı koşu #1 — gerçek sonuçlar (kullanıcı makinesi, 2026-09-25T17:19:58Z)
+## 1. Koşu #1 — gerçek sonuçlar (kullanıcı makinesi, 2026-09-25T17:19:58Z)
 
 Proje: `afvqznjqlrcoxoalkczd.supabase.co` · Komut: `node scripts/live-validation/run.mjs`
 
@@ -237,13 +308,16 @@ RLS politikalarında **hiçbir değişiklik yapılmadı**.
 
 ---
 
-## 3. Kurum / profil durumu (canlı, koşu #1)
+## 3. Kurum / profil durumu (canlı — koşu #4 ile güncel)
 
 | Kullanıcı | Giriş | Profil | Rol | `organization_id` |
 |---|---|---|---|---|
-| psikolog A | PASS | var | `PSYCHOLOG` | **yok** (seed bekliyor) |
-| psikolog B | PASS | var | `PSYCHOLOG` | **yok** (seed bekliyor) |
-| admin | PASS | var | `PSYCHOLOG` | **yok** (seed bekliyor) |
+| psikolog A | PASS | var | `PSYCHOLOG` | **var** (koşu #4) |
+| psikolog B | PASS | var | `PSYCHOLOG` | **var** (koşu #4) |
+| admin | PASS | var | `ADMIN` | **var** (koşu #4) |
+
+> Koşu #1–#3 arasındaki `org=YOK` durumu seed'in uygulanmamasındandı; #4 ile kapandı.
+> `admin` rolünün #3'te `ADMIN` olması, seed çalışmadan önce **elle** değiştirildiğini gösterir.
 
 `organizations` tablosunun ve FK'nın canlıda var olup olmadığı §2.3'teki `semptom` +
 `verify-migrations.sql` çıktısıyla kesinleşecek (baz migration'da
@@ -262,7 +336,8 @@ RLS politikalarında **hiçbir değişiklik yapılmadı**.
 | `tests/liveValidationSeed.test.ts` | **YENİ** — seed SQL davranış testi (4 kontrol) |
 | `tests/liveValidationVerifySql.test.ts` | **YENİ** — verify SQL + migration geçmişi testi (1 kontrol) |
 | `scripts/live-validation/emit-seed.mjs` | **YENİ** — `.env.live` içindeki e-posta değerlerini seed şablonuna yerleştirip `live-seed.local.sql` üretir (parola okumaz/yazmaz, ekranda e-posta maskelenir) |
-| `docs/PHASE-7-LIVE-VALIDATION.md` | bu belge (koşu #2 sonuçları, anon kanıtları, seed gerekçesi) |
+| `scripts/live-validation/cleanup-live-test-data.sql` | **YENİ** — eski koşulardan kalan sentetik artıkları temizleme (önce önizleme; yalnız `LIVE-%` danışanlar + `%-live-check.txt` nesneleri) |
+| `docs/PHASE-7-LIVE-VALIDATION.md` | bu belge (koşu #4 tam matrisi, 4 FAIL'in kök nedeni, artık veri notu) |
 
 **Dokunulmayanlar:** RLS politikaları, migration dosyaları, uygulama kodu (feature/UI değişikliği yok),
 `src/**`, `supabase/migrations/**`.
@@ -291,8 +366,13 @@ npx supabase db push --include-all          # 11 dosya, tamamı non-destructive
 #    Beklenen: NOTICE "SEED TAMAM" + 3 satır "HAZIR" + sonuç "A ve B kurum ataması TAMAM"
 
 # 4) Koşu
-node scripts/live-validation/run.mjs --selftest   # 8/8 sınıflandırma (ağ yok)
+node scripts/live-validation/run.mjs --selftest   # 13/13 sınıflandırma (ağ yok)
 node scripts/live-validation/run.mjs              # tam canlı koşu
+```
+
+# 6) (Opsiyonel) eski koşulardan kalan artıklar
+#    SQL Editor: scripts/live-validation/cleanup-live-test-data.sql
+#    Önce önizleme sorgularını çalıştırın; silme adımları yorumlu durur.
 ```
 
 Beklenen RLS davranışı (kanıt kodlarıyla):
@@ -306,25 +386,32 @@ Beklenen RLS davranışı (kanıt kodlarıyla):
 | A→A SELECT/INSERT/UPDATE/DELETE | PASS | satır döner / etkilenir |
 | A→B, B→A | DENY | `0 satır` veya `42501` |
 | admin (kendi kapsamı) | PASS | satır döner |
-| locked UPDATE/DELETE | DENY | `0 satır` veya trigger hatası kodu |
+| locked UPDATE/DELETE | DENY | `HTTP 400 + P0001` (kilit trigger'ı) **veya** `0 satır` |
+| Storage `B read A` | DENY | `NoSuchKey / Object not found` **veya** `0 satır` |
 
 ---
 
 ## 6. Sonuç ve sonraki adım
 
-1. §5 adımları koşulur,
-2. `live-validation-result.json` gerçek kodlarla birlikte üretilir,
-3. sonuç bu belgeye ve `docs/PHASE-7-REPORT.md` §52-P0-8 bloğuna işlenir.
+1. Koşu #4'te görülen 4 koşucu hatası düzeltildi → `run.mjs --selftest` **13/13** (canlı payload'larla),
+2. §5 adımları koşulur → beklenti `FAIL 0`,
+3. `live-validation-result.json` gerçek kodlarla üretilir; sonuç bu belgeye ve
+   `docs/PHASE-7-REPORT.md` §52-P0-8 bloğuna işlenir.
 
-Koşu #2 sonrası **hâlâ koşulmamış** kontroller (kurum kapısı açılmadan çalışmazlar):
+Koşu #4 sonrası **koşulan**: AUTH, SEMA, klinik zincir (9/9 tip + kalıcılık), RLS matrisi,
+imza/kilit/revizyon, Storage, çıkış izolasyonu, temizlik denemesi.
 
-RLS matrisi (A→A SELECT/INSERT/UPDATE/DELETE, A→B, B→A, admin kapsamı), CLINICAL DATA zinciri
-(Client→Appointment→Session→Note→Anamnesis→Formulation→Safety Plan→Test Result→Report),
-PERSISTENCE, SIGN/LOCK/REVISION, STORAGE (A upload/read, B read/update/delete DENY), LOGOUT izolasyonu,
-CLEANUP.
+**Kalan tek iş — düzeltmelerin canlıda doğrulanması:** `node scripts/live-validation/run.mjs`
+tekrar koşulur; beklenti `FAIL 0`. Bu koşu aynı zamanda §0.4'teki artığı da temizler
+(veya `cleanup-live-test-data.sql` kullanılır).
 
-Bu tamamlanana kadar: `LIVE SUPABASE: FAILED` (asla PASS),
-`REAL BROWSER: NOT RUN`, `PRODUCTION: NOT VERIFIED` ve **PHASE 7 COMPLETE DEĞİLDİR**.
+**Bunun dışında kalan ve bu koşucunun kapsamı dışında olan katmanlar:**
+
+- **REAL BROWSER: NOT RUN** — gerçek Chromium/Playwright ile çok kullanıcılı oturum testi yapılmadı.
+- **PRODUCTION: NOT VERIFIED** — production bundle + dağıtım ortamı doğrulaması yapılmadı.
+
+`LIVE SUPABASE` için **PASS ancak yukarıdaki yeniden koşu `FAIL 0` verdikten sonra** yazılabilir;
+şu anki durum **FAILED** (raporlama hataları nedeniyle). **PHASE 7 COMPLETE DEĞİLDİR.**
 
 ---
 

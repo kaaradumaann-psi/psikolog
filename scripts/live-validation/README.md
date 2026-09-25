@@ -23,6 +23,9 @@ Sıra atlanırsa tipik belirtiler (canlı koşularda görüldü):
 | `SEMA` grubunda `missing-object` / `PGRST205` | Canlı şemada PHASE 7 nesneleri yok | §2 (`supabase db push --include-all`) |
 | `anon → clients ... → FAIL` + `[object Object]` | **(düzeltildi)** eski koşucu PostgREST hata nesnesini string'e çeviriyordu | Bu sürüm gerçek `HTTP status · code · message · details · hint` yazar |
 | `anon → clients ... → DENY` + `code=42501` (HTTP 401) | **Beklenen**: `anon` rolünün `public.*` tablolarında hiç yetkisi yok (GRANT katmanı reddi) | Yok — bu bir kanıttır |
+| `locked UPDATE/DELETE → DENY` + `HTTP 400 · code=P0001` | **Beklenen**: imza/kilit trigger'ı kaydı değiştirmiyor/silmiyor | Yok — bu bir kanıttır |
+| `B read A → DENY` + `code=NoSuchKey` | **Beklenen**: Storage nesnesi sahibi olmayana görünmüyor | Yok — bu bir kanıttır |
+| `CLEANUP → FAIL` (42501, hint `TO anon`) | Koşucu hatası: silme, oturum kapandıktan sonra denenmişti (düzeltildi) | Koşuyu güncel commit ile tekrarlayın |
 
 ### Koşucunun kendi yapamadığı tek şey: kurum ataması
 
@@ -167,7 +170,14 @@ gerçek HTTP/kod alanları; sır yok).
   amendment/revision PASS + eski sürümün `superseded_by` işaretlenmesi.
 - **STORAGE:** A upload/read PASS; B read/update/delete A DENY; A temizlik.
 - **LOGOUT:** A çıkış → B girişinde A verisi görünmez → A yeniden girişte veri geri gelir.
-- **CLEANUP:** sentetik zincir A tarafından silinir (cascade).
+- **CLEANUP:** sentetik zincir A tarafından silinir (cascade) — silme **oturum açıkken** yapılır
+  (çıkıştan sonra istek `anon` rolüne düşer ve 42501 alır) ve silindiği ayrıca doğrulanır.
+
+### Artık veri (opsiyonel)
+
+Eski koşulardan kalan sentetik kayıtlar varsa: `scripts/live-validation/cleanup-live-test-data.sql`
+(SQL Editor). Yalnızca `clients.file_number like 'LIVE-%'` ve `%-live-check.txt` nesnelerini hedefler;
+önce önizleme sorguları çalıştırılır, silme adımları yorumlu durur.
 
 ### Kapsam dışı (ayrı raporlanır)
 
@@ -190,4 +200,11 @@ Bu sürüm:
 - koşu sonunda `--- FAIL nedenleri (gerçek HTTP durumu / PostgREST kodu) ---` özetini basar,
 - anahtar/JWT benzeri dizeleri **ayıklayarak** yazar (`[gizlendi]`).
 
-Ağ olmadan doğrulanabilir: `node scripts/live-validation/run.mjs --selftest` (8/8 sınıflandırma kontrolü).
+Sınıflandırma kümeleri: `grant-deny` (42501 / GRANT katmanı), `rls-deny` (politika reddi),
+`lock-deny` (kilit trigger'ı: `P0001` + "değiştirilemez/silinemez"), `not-found-deny`
+(storage `NoSuchKey`), `missing-object` (şema), `auth`, `network`, `trigger-error`, `other`.
+DENY bekleyen kontroller için ilk dördü **kanıt** sayılır; `missing-object`/`auth`/`network` FAIL'dir.
+
+Ağ olmadan doğrulanabilir: `node scripts/live-validation/run.mjs --selftest`
+(**13/13** sınıflandırma kontrolü; canlı koşularda görülen birebir payload'larla — `P0001` kilit
+mesajları, `NoSuchKey` — ve ilgisiz bir `P0001`'in FAIL kalması kontrolü).

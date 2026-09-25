@@ -77,12 +77,12 @@ class DbError extends Error {
 
 function errorFacts(error) {
   const source = error ?? {};
-  const status =
-    typeof source.status === 'number'
-      ? source.status
-      : typeof source.statusCode === 'number'
-        ? source.statusCode
-        : null;
+  const asStatus = (value) => {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value))) return Number(value);
+    return null;
+  };
+  const status = asStatus(source.status) ?? asStatus(source.statusCode);
   return {
     code: clip(source.code, 40) || null,
     message: clip(source.message, 240) || '(mesaj yok)',
@@ -95,12 +95,30 @@ function errorFacts(error) {
 
 const MISSING_OBJECT_CODES = new Set(['42P01', '3F000', 'PGRST202', 'PGRST205', 'PGRST106']);
 
+/**
+ * Kilit/immutability trigger'ının reddi: PostgREST bunu HTTP 400 + code=P0001
+ * (raise_exception) ile döndürür — 0 satır DEĞİL, açık hata. DENY bekleyen
+ * kontroller için bu en güçlü kanıttır.
+ */
+const LOCK_DENY_PATTERN =
+  /kilitli|değiştirilemez|silinemez|immutable|cannot be (modified|deleted)|locked (record|clinical)/i;
+
+/** Storage'da nesne sahibi olmayan kullanıcı için dönen yanıt: 400/404 + NoSuchKey. */
+const STORAGE_MISSING_PATTERN = /NoSuchKey|Object not found|The resource was not found/i;
+
 function classifyError(error) {
   const facts = errorFacts(error);
   const text = `${facts.message} ${facts.details ?? ''} ${facts.hint ?? ''}`;
   if (facts.code && MISSING_OBJECT_CODES.has(facts.code)) return { kind: 'missing-object', facts };
   if (/schema cache|could not find the table|does not exist|unknown relation/i.test(text)) {
     return { kind: 'missing-object', facts };
+  }
+  if (facts.code === 'P0001' || LOCK_DENY_PATTERN.test(text)) {
+    if (LOCK_DENY_PATTERN.test(text)) return { kind: 'lock-deny', facts };
+    return { kind: 'trigger-error', facts };
+  }
+  if (STORAGE_MISSING_PATTERN.test(text)) {
+    return { kind: 'not-found-deny', facts };
   }
   if (/permission denied for (table|schema|relation|function|sequence)/i.test(text)) {
     // GRANT katmanı: rol (anon/authenticated) tabloda hiç yetkili değil → RLS politikasına ulaşılamaz.
@@ -118,10 +136,16 @@ function classifyError(error) {
   return { kind: 'other', facts };
 }
 
+/** Beklenen DENY sayılan hata sınıfları (hepsi gerçek kanıt taşır). */
+const DENY_KINDS = new Set(['rls-deny', 'grant-deny', 'lock-deny', 'not-found-deny']);
+
 const KIND_HINTS = {
   'missing-object': 'canlı şemada nesne bulunamadı → migration uygulanmamış ya da şema adı farklı',
   'grant-deny': 'GRANT katmanı reddi (rol tabloda yetkisiz) — DENY bekleyen kontroller için KANIT',
   'rls-deny': 'RLS politikası reddi — DENY bekleyen kontroller için KANIT',
+  'lock-deny': 'imza/kilit trigger reddi (kayıt değiştirilemez) — DENY bekleyen kontroller için KANIT',
+  'trigger-error': 'DB trigger hatası (beklenen reddetme değil) — incelemeli',
+  'not-found-deny': 'kaynak sahibi olmayan kullanıcıya görünmüyor (storage/RLS) — DENY bekleyen kontroller için KANIT',
   auth: 'anahtar/oturum reddi',
   network: 'ağ hatası (DNS/TLS/proxy)',
 };
@@ -214,7 +238,7 @@ async function probe(group, name, fn, expect) {
     return { denied, value, ok: status !== 'FAIL' };
   } catch (error) {
     const { kind, facts, text } = describeError(error);
-    const denied = kind === 'rls-deny' || kind === 'grant-deny';
+    const denied = DENY_KINDS.has(kind);
     const status = expect === 'PASS' ? 'FAIL' : denied ? 'DENY' : 'FAIL';
     record(group, name, status, text, { httpStatus: facts.status, code: facts.code, kind });
     return { denied, error, kind, ok: status !== 'FAIL' };
@@ -911,16 +935,34 @@ async function main() {
         return data;
       }, 'PASS');
     }
-    await aAgain.client.auth.signOut();
-  }
-
-  // --- temizlik: sentetik zincir silinir (yalnız A kendi verisini silebilir)
-  if (aAgain) {
+    // --- temizlik: oturum AÇIKKEN (çıkış sonrası istek anon rolüne düşer ve reddedilir)
     await probe('CLEANUP', 'A sentetik danışanı siler (cascade)', async () => {
-      const { data, error, status, statusText } = await aAgain.client.from('clients').delete().eq('id', chainA.clientId).select('id');
+      const { data, error, status, statusText } = await aAgain.client
+        .from('clients')
+        .delete()
+        .eq('id', chainA.clientId)
+        .select('id');
       if (error) throw new DbError(error, status, statusText);
       return data;
     }, 'PASS');
+
+    const { data: afterCleanup, error: afterCleanupError } = await aAgain.client
+      .from('clients')
+      .select('id')
+      .eq('id', chainA.clientId);
+    const chainGone = !afterCleanupError && (afterCleanup ?? []).length === 0;
+    record(
+      'CLEANUP',
+      'Sentetik zincir gerçekten silindi',
+      chainGone ? 'PASS' : 'FAIL',
+      chainGone
+        ? 'danışan ve bağlı kayıtlar yok (cascade)'
+        : afterCleanupError
+          ? describeError(new DbError(afterCleanupError, null, '')).text
+          : `hâlâ ${(afterCleanup ?? []).length} satır görünüyor`,
+    );
+
+    await aAgain.client.auth.signOut();
   }
 
   return finish();
@@ -950,6 +992,23 @@ async function selfTest() {
       },
       401,
       'Unauthorized',
+    ],
+    [
+      'Kilit trigger reddi (canlı koşu #4)',
+      {
+        message: 'Kilitli klinik kayıt değiştirilemez. Düzeltme için yeni revizyon oluşturun.',
+        details: null,
+        hint: null,
+        code: 'P0001',
+      },
+      400,
+      'Bad Request',
+    ],
+    [
+      'Storage NoSuchKey (canlı koşu #4)',
+      { message: 'Object not found', code: 'NoSuchKey', statusCode: '400' },
+      undefined,
+      '',
     ],
     [
       'PostgREST tablo yok',
@@ -1008,6 +1067,50 @@ async function selfTest() {
     ],
     ['Ağ hatası + DENY beklentisi', () => Promise.reject(new DbError({ message: 'TypeError: fetch failed' }, 0, '')), 'DENY', 'FAIL'],
     ['Auth reddi (401) + DENY beklentisi', () => Promise.reject(new DbError({ code: 'invalid_api_key', message: 'Invalid API key' }, 401, 'Unauthorized')), 'DENY', 'FAIL'],
+    [
+      'Kilit trigger reddi + DENY beklentisi (canlı koşu #4)',
+      () =>
+        Promise.reject(
+          new DbError(
+            {
+              code: 'P0001',
+              message: 'Kilitli klinik kayıt değiştirilemez. Düzeltme için yeni revizyon oluşturun.',
+            },
+            400,
+            'Bad Request',
+          ),
+        ),
+      'DENY',
+      'DENY',
+    ],
+    [
+      'Kilit trigger silme reddi + DENY beklentisi (canlı koşu #4)',
+      () =>
+        Promise.reject(
+          new DbError(
+            {
+              code: 'P0001',
+              message: 'Kilitli klinik kayıt silinemez. Düzeltme için yeni revizyon oluşturun.',
+            },
+            400,
+            'Bad Request',
+          ),
+        ),
+      'DENY',
+      'DENY',
+    ],
+    [
+      'Storage NoSuchKey + DENY beklentisi (canlı koşu #4)',
+      () => Promise.reject(new DbError({ code: 'NoSuchKey', message: 'Object not found', statusCode: '400' }, null, '')),
+      'DENY',
+      'DENY',
+    ],
+    [
+      'İlgisiz P0001 trigger hatası + DENY beklentisi',
+      () => Promise.reject(new DbError({ code: 'P0001', message: 'Geçersiz seans tarihi' }, 400, 'Bad Request')),
+      'DENY',
+      'FAIL',
+    ],
     ['PASS beklentisi karşılandı', () => Promise.resolve([{ id: 'y' }]), 'PASS', 'PASS'],
     [
       'PASS beklentisi RLS ile reddedildi',

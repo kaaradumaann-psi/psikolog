@@ -14,12 +14,15 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
-    strictPort: false,
+    // Playwright targets :5173; silently falling back to :5174 would test a stale server.
+    strictPort: true,
     allowedHosts: ['.e2b.app'],
   },
   preview: {
     host: '0.0.0.0',
     port: 4173,
+    // Fail if :4173 is already used instead of serving the new bundle on :4174.
+    strictPort: true,
     allowedHosts: ['.e2b.app'],
   },
   build: {

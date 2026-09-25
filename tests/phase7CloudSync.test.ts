@@ -18,6 +18,8 @@ import {
   deactivateCloud,
   flushOutbox,
   getSyncState,
+  failCloudHydration,
+  markCloudHydrated,
   queueWrite,
   toCloudId,
   whenIdle,
@@ -127,6 +129,21 @@ function makeClient(id: string, fileNumber = 'HK-2026-001'): Client {
 function bind(port: CloudPort): void {
   bindCloud({ userId: USER, organizationId: ORG, resolveId: toCloudId }, port);
 }
+
+test('P0-2: yalnız uygulanmış sunucu anlık görüntüsü kapıyı açar; hata boş çalışma alanı açmaz', () => {
+  localStorage.clear();
+  bind(new MemoryPort());
+  assert.equal(getSyncState().hydrated, true);
+  assert.equal(getSyncState().userId, USER);
+  markCloudHydrated();
+  failCloudHydration(new Error('Sunucu yanıt vermedi'));
+  assert.equal(getSyncState().phase, 'error');
+  assert.equal(getSyncState().hydrated, false);
+  assert.equal(getSyncState().lastError, 'Sunucu yanıt vermedi');
+  deactivateCloud();
+  assert.equal(getSyncState().hydrated, false);
+  assert.equal(getSyncState().userId, undefined);
+});
 
 test('P0-3: yerel kayıt buluta tek satır olarak yazılır, kimlikler UUID eşlenir', async () => {
   localStorage.clear();

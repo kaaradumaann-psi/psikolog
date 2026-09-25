@@ -4,6 +4,7 @@ import type { AuthenticatedUser } from './auth/authTypes';
 import { displayName } from './auth/userDisplay';
 import { supabaseConfig } from './auth/supabaseClient';
 import { startClinicalCloud, stopClinicalCloud } from './clinical/cloud/bootstrap';
+import { cloudGateStatus } from './clinical/cloud/gate';
 import { getSyncState, subscribeSync, type SyncState } from './clinical/cloud/sync';
 import { CloudSyncBanner } from './components/CloudSyncBanner';
 import { getSession, onAuthChange, signIn, signOut, userFromSession } from './auth/supabaseAuth';
@@ -254,29 +255,24 @@ function CloudGate() {
 function WorkspaceShell({ user, onLogout, localMode }: { user: AuthenticatedUser; onLogout: () => void; localMode: boolean }) {
   const route = useRoute();
   const [storageError, setStorageError] = useState<string | null>(null);
-  const [cloudError, setCloudError] = useState<string | null>(null);
   const [syncState, setSyncState] = useState<SyncState>(() => getSyncState());
 
   useEffect(() => subscribeSync(setSyncState), []);
 
   /**
-   * Bulut katmanı hazır olmadan klinik yazım kabul edilmez: aktivasyon
-   * tamamlanmadan yapılan kayıt sunucuya gönderilemez (veri kaybı). Bu yüzden
-   * içerik, sunucu anlık görüntüsü yüklenene kadar yükleniyor durumunda kalır.
-   * Hata durumunda çalışma alanı açılır; hata şeridi görünür kalır (P0-3).
+   * Bulut modunda boş/eskimiş yerel önbellek çalışma alanı gibi gösterilmez.
+   * Kapı yalnızca sunucu anlık görüntüsü her iki store'a uygulandıktan sonra açılır;
+   * yükleme hatası açık bir hata ekranıdır, yazılabilir boş bir çalışma alanı değil.
    */
-  const cloudLoading = !localMode && (!syncState.cloud || syncState.phase === 'loading');
+  const gate = cloudGateStatus(user.id, localMode, syncState);
+  const cloudLoadFailed = gate === 'error';
+  const cloudLoading = gate === 'loading';
 
   // Oturum açıldığında klinik veri Supabase'den yüklenir (tek doğruluk kaynağı).
   useEffect(() => {
     if (localMode) return;
-    let cancelled = false;
-    startClinicalCloud(user).catch((reason: unknown) => {
-      if (!cancelled) setCloudError(reason instanceof Error ? reason.message : 'Klinik veriler sunucudan yüklenemedi.');
-    });
-    return () => {
-      cancelled = true;
-    };
+    // Hata senkronizasyon durumuna yazılır; eski kullanıcının hata/önbelleği gösterilmez.
+    void startClinicalCloud(user).catch(() => {});
   }, [localMode, user]);
 
   useEffect(() => {
@@ -375,12 +371,23 @@ function WorkspaceShell({ user, onLogout, localMode }: { user: AuthenticatedUser
           </div>
         </header>
         <ConnectivityBanner />
-        {!localMode && !cloudLoading && <CloudSyncBanner />}
-        {cloudError && <p className="shell-alert" role="alert">{cloudError}</p>}
+        {!localMode && !cloudLoading && !cloudLoadFailed && <CloudSyncBanner />}
         {storageError && <p className="shell-alert" role="alert">{storageError}</p>}
-        <main className="app-main" id="main" tabIndex={-1}>
-          {cloudLoading ? (
-            <div className="empty-state-card" role="status" data-cloud-gate="loading">
+        <main
+          className="app-main"
+          id="main"
+          tabIndex={-1}
+          data-cloud-gate={gate}
+        >
+          {cloudLoadFailed ? (
+            <div className="empty-state-card" role="alert">
+              <Icon name="alert" size={28} />
+              <h4>Klinik kayıtlar yüklenemedi</h4>
+              <p>{syncState.lastError ?? 'Sunucudan veriler alınamadı. Bağlantınızı kontrol edin.'}</p>
+              <button type="button" className="btn-primary btn-sm" onClick={() => window.location.reload()}>Tekrar dene</button>
+            </div>
+          ) : cloudLoading ? (
+            <div className="empty-state-card" role="status">
               <Icon name="shield" size={28} />
               <h4>Klinik kayıtlar yükleniyor</h4>
               <p>Sunucudaki veriler hazırlanıyor. Hazır olmadan kayıt oluşturulmaz; bu sırada hiçbir veri cihazda tutulmaz.</p>

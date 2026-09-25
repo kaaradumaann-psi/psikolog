@@ -21,7 +21,11 @@ export type SyncPhase = 'inactive' | 'loading' | 'ready' | 'saving' | 'saved' | 
 
 export type SyncState = {
   cloud: boolean;
+  userId?: string;
   phase: SyncPhase;
+  // True only after the server snapshot has been applied to both local stores.
+  // A failed hydration must never be mistaken for an empty workspace.
+  hydrated: boolean;
   pending: number;
   lastError?: string;
   lastSavedAt?: string;
@@ -97,7 +101,7 @@ let port: CloudPort | null = null;
  * düşürülmemesi için kullanılır; yerel (bulutsuz) kurulumda false kalır.
  */
 let cloudExpected = isCloudConfigured();
-let state: SyncState = { cloud: false, phase: 'inactive', pending: 0 };
+let state: SyncState = { cloud: false, phase: 'inactive', hydrated: false, pending: 0 };
 const listeners = new Set<(next: SyncState) => void>();
 
 function emit(): void {
@@ -122,6 +126,17 @@ export function getSyncState(): SyncState {
 export function subscribeSync(listener: (next: SyncState) => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+/** Called only after the complete snapshot has reached both UI stores. */
+export function markCloudHydrated(): void {
+  if (context && state.userId === context.userId) setState({ hydrated: true });
+}
+
+/** Keep the workspace closed if the snapshot cannot be applied. */
+export function failCloudHydration(error: unknown): void {
+  const message = error instanceof Error ? error.message : 'Klinik veri yüklenemedi';
+  setState({ hydrated: false, phase: 'error', lastError: message });
 }
 
 export function cloudContext(): CloudContext | null {
@@ -398,26 +413,34 @@ export function canUseCloud(user: AuthenticatedUser | null): boolean {
 
 export async function activateCloud(user: AuthenticatedUser): Promise<repo.ClinicalSnapshot> {
   const client = supabase;
-  if (!user.organizationId) {
-    setState({ cloud: true, phase: 'error', lastError: 'Hesabınıza kurum atanmamış. Yöneticinizle iletişime geçin.' });
-    throw new Error('Hesabınıza kurum atanmamış.');
-  }
-  if (!isCloudConfigured() || !client) {
-    setState({ cloud: false, phase: 'inactive' });
+  if (!user.organizationId || !isCloudConfigured() || !client) {
+    // Even an invalid new login must invalidate the previous user's async hydration.
+    context = null;
+    port = null;
+    idMap = null;
+    if (!user.organizationId) {
+      setState({ cloud: true, userId: user.id, hydrated: false, phase: 'error', lastError: 'Hesabınıza kurum atanmamış. Yöneticinizle iletişime geçin.' });
+      throw new Error('Hesabınıza kurum atanmamış.');
+    }
+    setState({ cloud: false, userId: undefined, hydrated: false, phase: 'inactive' });
     throw new Error('Bulut yapılandırılmamış.');
   }
   idMap = null;
   cloudExpected = true;
-  context = { userId: user.id, organizationId: user.organizationId, resolveId: toCloudId };
-  port = createSupabasePort(client as never);
-  setState({ cloud: true, phase: 'loading', lastError: undefined, pending: readOutbox().length });
+  const nextContext: CloudContext = { userId: user.id, organizationId: user.organizationId, resolveId: toCloudId };
+  const nextPort = createSupabasePort(client);
+  context = nextContext;
+  port = nextPort;
+  setState({ cloud: true, userId: user.id, hydrated: false, phase: 'loading', lastError: undefined, pending: readOutbox().length });
   try {
-    const snapshot = remapSnapshotIds(await repo.loadSnapshot(port, context));
+    const loaded = await repo.loadSnapshot(nextPort, nextContext);
+    // A logout or a different login may have invalidated this request while it was in flight.
+    if (context !== nextContext) throw new Error('Bulut oturumu değişti.');
+    const snapshot = remapSnapshotIds(loaded);
     setState({ phase: 'ready' });
     return snapshot;
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Klinik veri yüklenemedi';
-    setState({ phase: 'error', lastError: message });
+    if (context === nextContext) failCloudHydration(error);
     throw error;
   }
 }
@@ -427,7 +450,7 @@ export function deactivateCloud(): void {
   idMap = null;
   context = null;
   port = null;
-  state = { cloud: false, phase: 'inactive', pending: 0 };
+  state = { cloud: false, phase: 'inactive', hydrated: false, pending: 0 };
   emit();
 }
 
@@ -436,11 +459,11 @@ export function bindCloud(nextContext: CloudContext, nextPort: CloudPort): void 
   cloudExpected = true;
   context = nextContext;
   port = nextPort;
-  setState({ cloud: true, phase: 'ready' });
+  setState({ cloud: true, userId: nextContext.userId, hydrated: true, phase: 'ready' });
 }
 
 export function unbindCloud(): void {
   context = null;
   port = null;
-  setState({ cloud: false, phase: 'inactive' });
+  setState({ cloud: false, userId: undefined, hydrated: false, phase: 'inactive' });
 }

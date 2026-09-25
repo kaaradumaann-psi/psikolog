@@ -450,7 +450,7 @@ RLS politikalarında **hiçbir değişiklik yapılmadı**.
 | `scripts/live-validation/cleanup-live-test-data.sql` | **YENİ** — sentetik artık temizliği: önizleme (kilitli kayıt sayısı), **arşivle** (önerilen), uyarılı tam silme (trigger'lar işlem süresince kapalı, yalnız `LIVE-%` hedefi), trigger durumu doğrulaması |
 | `scripts/live-validation/run.mjs` (koşu #5 turu) | CLEANUP artık kilit korumasını tanır: kilitli kayıt → `DENY` + `Yerinde` `PASS` + `Temizlik` `SKIP` |
 | `scripts/live-validation/run.mjs` (kapanış turu) | CLEANUP `DENY` satırı da JSON kanıt alanlarını (`httpStatus`, `code`, `kind`) taşır |
-| `e2e/live-multi-user.spec.ts` | **YENİ** — REAL BROWSER çok kullanıcılı oturum testi (kimlik yoksa SKIP); koşu #1: modal kapanışı + `alert` yakalama + form geçerlilik kontrolü + detay doğrulaması + `E2E-` artık temizliği; koşu #3: `ownRow`/`nameButton(exact)` (belirsiz locator kaldırıldı); koşu #4: kanıt **yalnız `POST /rest/v1/clients`** + yanıt gövdesinde dosya numarası + kaydetmeden önce `awaitBackendIdle` |
+| `e2e/live-multi-user.spec.ts` | **YENİ** — REAL BROWSER çok kullanıcılı oturum testi (kimlik yoksa SKIP); koşu #1: modal kapanışı + `alert` yakalama + form geçerlilik kontrolü + detay doğrulaması + `E2E-` artık temizliği; koşu #3: `ownRow`/`nameButton(exact)` (belirsiz locator kaldırıldı); koşu #4: kanıt **yalnız `POST /rest/v1/clients`** + yanıt gövdesinde dosya numarası. **Preview düzeltmesi:** tüm GET'lerin bitmesini bekleme kaldırıldı; başarılı POST'un yanıt gövdesi tamamlandıktan sonra bu koşunun dosya numarası eşleştirilir |
 | `scripts/live-validation/cleanup-live-test-data.sql` | `E2E-%` öneki de kapsama alındı (tarayıcı testinin ürettiği kayıtlar) |
 | `playwright.config.ts` | `E2E_BASE_URL` desteği: production/preview bundle'a karşı koşu (dev sunucusu kapanır) |
 | `e2e/critical.spec.ts` (koşu #5 düzeltmesi) | **çevrimdışı mod UI sözleşmesi**: ön koşulunu beyan eder — Supabase env varsa `test.skip` (bulut modunda çalışma alanı giriş kapısı arkasındadır) |
@@ -743,10 +743,11 @@ ikinci kullanıcı göremedi, sahibi yeniden gördü.
 **Koşuda görülen ölçüm kusuru (spec tarafı, düzeltildi):** artık temizliğinden uçuşta kalan
 `DELETE` istekleri, "kaydetten sonraki ilk 2xx yazım" olarak yakalandı ve anotasyon
 `bulut yazımı: DELETE → 204` yazdı (yanıltıcı). Kaydın gerçek kanıtı `POST → 201` ve
-yenileme sonrası geri gelmesiydi. Spec artık: (a) kaydetmeden önce bekleyen `/rest/v1`
-isteklerinin bitmesini bekler (`awaitBackendIdle`), (b) kanıt olarak **yalnız POST** kabul eder,
-(c) yanıt gövdesinde dosya numarasını (`E2E-…`) arar — böylece temizlik `DELETE`'leri veya
-güncellemeler kanıt yerine geçemez.
+yenileme sonrası geri gelmesiydi. Spec artık **yalnızca başarılı POST'un tam okunmuş yanıtında
+bu koşunun dosya numarasını (`E2E-…`) arar**; GET/DELETE'ler kanıt yerine geçemez. Tüm
+`/rest/v1` isteklerini sıfıra indiren `awaitBackendIdle`, preview'da 14 istek beklerken
+(önceki rapor yöntemleri göstermiyordu) testi yanlış yerde düşürdüğü için kaldırıldı. Sunucu anlık görüntüsü yüklenemezse
+`data-cloud-gate="error"` hata ekranı açılır, boş bir klinik çalışma alanı açılmaz.
 
 Bu koşu ayrıca PHASE 7'nin bulut yazma yolunu uçtan uca doğruladı: kayıt sahibine
 (`organization_id`/`owner_user_id`) bağlı yazıldı, aynı tarayıcıdaki başka kullanıcıya görünmedi
@@ -763,13 +764,37 @@ npm run preview                                              # :4173 (dist)
 E2E_BASE_URL=http://localhost:4173 \
 VITE_SUPABASE_URL=… VITE_SUPABASE_ANON_KEY=… \
 LIVE_PSY_A_EMAIL=… LIVE_PSY_A_PASSWORD=… LIVE_PSY_B_EMAIL=… LIVE_PSY_B_PASSWORD=… \
-npx playwright test e2e/live-multi-user.spec.ts --project=chromium   # ← PRODUCTION kanıtı
+npx playwright test e2e/live-multi-user.spec.ts --project=chromium   # ← PREVIEW bundle kanıtı
 ```
 
-> ⚠️ **Spec yolu vermeyin.** `npx playwright test --project=chromium` (yolsuz) hem çevrimdışı UI
+**Windows CMD** (derleme ve preview sunucusunu aynı ortamla başlatın, testi **ikinci** CMD'de çalıştırın):
+
+```bat
+rem VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY aynı canlı projeye ayarlı olmalı.
+rem npm run build, Vite .env.production varsa onu da okur; değişkenler derleme anında gömülür.
+npm run build
+npm run preview
+```
+
+```bat
+rem İkinci CMD: aynı VITE_SUPABASE_* ile LIVE_PSY_A/B_* test değişkenleri bu oturumda bulunmalı.
+set "E2E_BASE_URL=http://localhost:4173"
+npx playwright test e2e/live-multi-user.spec.ts --project=chromium --workers=1
+```
+
+PowerShell'de eşdeğeri: `$env:E2E_BASE_URL='http://localhost:4173'` ardından aynı `npx` komutu.
+`E2E_BASE_URL=http://localhost:4173 npx ...` sözdizimi **Windows CMD/PowerShell'de geçerli değildir**.
+`vite preview` sadece **son `npm run build` çıktısını (`dist/`)** sunar; `.env` değiştirildiyse yeniden derleyin.
+`vite.config.ts` artık `:4173` meşgulse `:4174`'e sessizce geçmez; eski sunucuya karşı
+başarılı/başarısız kanıt üretmek yerine açık hata verir. `E2E_BASE_URL` verilmezse
+Playwright `:5173` dev sunucusunu kullanır; dev PASS, preview PASS sayılmaz.
+Test artık gerçek tarayıcı origin'ini, `/assets/` üretim paketini ve derlemenin Supabase
+origin'ini doğrular; anon anahtarını, parolaları veya danışan verilerini çıktılamayın.
+
+> ⚠️ **Spec yolunu atlamayın.** `npx playwright test --project=chromium` (yolsuz) hem çevrimdışı UI
 > sözleşmesini (`e2e/critical.spec.ts`, 6 test) hem canlı spec'i koşar. Çevrimdışı suite'in ön koşulu
-> "Supabase env YOK"tur; production+bulut koşusunda bu tanım gereği ihlal edilir ve 5 test
-> "element not found" ile düşer (gerçek tarayıcı koşusu #5'te yaşandı — bkz. §6.5).
+> "Supabase env YOK"tur; production+bulut koşusunda bu tanım gereği ihlal edilir ve 6 test
+> SKIP olur (gerçek tarayıcı koşusu #5'te eski sürümde 5 test mod uyuşmazlığıyla düşmüştü — bkz. §6.5).
 
 Dağıtılmış ortam için: `E2E_BASE_URL=https://<production-host>` ile aynı komut.
 **Statik kaynak incelemesi PRODUCTION PASS sayılmaz**; yalnız gerçek bundle + gerçek tarayıcı koşusu sayılır.

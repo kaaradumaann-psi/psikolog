@@ -21,8 +21,14 @@
  * Sonuç etiketi: REAL BROWSER — LOCAL/PGlite ve LIVE SUPABASE koşucularından AYRIDIR.
  *
  * ---------------------------------------------------------------------------
- * KOŞU GEÇMİŞİ (spec tarafındaki düzeltmeler — uygulama DAVRANIŞI değiştirilmedi)
+ * KOŞU GEÇMİŞİ (eski koşuların kaydı; aşağıdaki önizleme düzeltmesi kapıyı da güçlendirir)
  * ---------------------------------------------------------------------------
+ * preview (:4173) — dev testinin geçmesine rağmen tüm /rest/v1 isteklerinin sıfırlanması
+ *          koşulu (awaitBackendIdle) 14 istekte takıldı (eski rapor HTTP yöntemlerini
+ *          göstermiyordu). POST kanıtı artık kendi dosya numarasıyla eşlendiği için
+ *          GET/DELETE'lerin global olarak bitmesi gerekmez.
+ *          Hazır kapısı yalnız başarıyla uygulanmış anlık görüntüde açılır; hata ekranı
+ *          ve derlenmiş Supabase/Playwright origin farkları ayrı teşhis edilir.
  * koşu #1 FAILED — kayıt sonrası liste satırı bekleniyordu; `ClientListPage.handleSave` yeni
  *          danışanda `navigate('/danisanlar/<id>')` yapar → spec önce DETAY sayfasını doğrular.
  * koşu #2 FAILED — kayıt detay sayfasında görünüyor, 33 sn sonra listede YOK (`element(s) not
@@ -40,8 +46,8 @@
  *          yenileme (kayıt sunucudan geri geldi) → B göremedi → A yeniden gördü → arayüzden silme.
  *          Ağ özeti: POST /rest/v1/clients → 201 (kayıt sunucuya yazıldı), başarısız istek yok.
  *          Koşuda ölçüm kusuru görüldü: artık temizliğinden uçuşta kalan DELETE'ler "ilk 2xx yazım"
- *          sanıldı. Bu yüzden kanıt artık **yalnız POST** ile ve yanıt gövdesinde dosya numarası
- *          aranarak ölçülür; kaydetmeden önce bekleyen isteklerin bitmesi beklenir.
+ *          sanıldı. Bu yüzden kanıt yalnız **POST** ile ve yanıt gövdesinde dosya numarası
+ *          aranarak ölçülür; eski tüm-REST boşta bekleme koşulu preview için kaldırıldı.
  * koşu #3 FAILED — kayıt bu kez listede GÖRÜNDÜ, ama satır 3 düğme ile eşleştiği için Playwright
  *          "strict mode violation" verdi (ad düğmesi + "… bilgilerini düzenle" + "… kaydını sil").
  *          Spec düzeltmesi: satır artık benzersiz protokol numarasıyla (`ownRow`), ad doğrulaması
@@ -51,7 +57,8 @@
  *          bu yüzden spec artık 2xx yazım yanıtını ZORUNLU kanıt olarak arar.
  */
 
-import { test, expect, type Page, type Request } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+import { watchBackend } from './support/backendTraffic';
 
 const LIVE = {
   url: process.env.VITE_SUPABASE_URL ?? '',
@@ -80,112 +87,35 @@ function watchDialogs(page: Page) {
   return alerts;
 }
 
-type RestCall = { method: string; url: string; status: number; ok: boolean; body: string };
-
-/**
- * REST/konsol kanıtı: kaydın sunucuya gidip gitmediğini ve düşen isteğin nedenini gösterir.
- * Yalnız `/rest/v1/clients` çağrıları izlenir (GET = hidrasyon okuması, POST/PATCH/DELETE = yazım).
- */
-function watchBackend(page: Page) {
-  const calls: RestCall[] = [];
-  const inFlight = new Map<Request, RestCall>();
-  const pending = new Set<Request>();
-  const failed: string[] = [];
-  const consoleErrors: string[] = [];
-
-  const settle = (request: Request) => {
-    pending.delete(request);
-  };
-
-  page.on('request', (request) => {
-    const url = request.url();
-    if (!url.includes('/rest/v1/')) return;
-    pending.add(request);
-    if (!url.includes('/rest/v1/clients')) return;
-    inFlight.set(request, { method: request.method(), url, status: 0, ok: false, body: '' });
-  });
-  page.on('response', (response) => {
-    settle(response.request());
-    const call = inFlight.get(response.request());
-    if (!call) return;
-    call.status = response.status();
-    call.ok = response.ok();
-    inFlight.delete(response.request());
-    calls.push(call);
-    void response
-      .text()
-      .then((text) => {
-        call.body = text.replace(/\s+/g, ' ').slice(0, 300);
-      })
-      .catch(() => {
-        call.body = '(gövde okunamadı)';
-      });
-  });
-  page.on('requestfailed', (request) => {
-    settle(request);
-    if (!request.url().includes('/rest/v1/')) return;
-    failed.push(`${request.method()} ${request.url()} → ${request.failure()?.errorText ?? 'bilinmeyen hata'}`);
-  });
-  page.on('pageerror', (error) => consoleErrors.push(`pageerror: ${error.message}`));
-  page.on('console', (message) => {
-    if (message.type() === 'error') consoleErrors.push(`console: ${message.text().slice(0, 300)}`);
-  });
-
-  const writes = () => calls.filter((call) => call.method !== 'GET');
-  /** Yalnız yeni kayıt yazımı — temizlik DELETE'leri veya güncellemeler kanıt yerine geçmez. */
-  const posts = () => calls.filter((call) => call.method === 'POST');
-  return {
-    calls,
-    writes,
-    posts,
-    failed,
-    consoleErrors,
-    pendingCount: () => pending.size,
-    hydrations: () => calls.filter((call) => call.method === 'GET').length,
-    summary: () =>
-      `REST(clients): ${calls.map((call) => `${call.method}→${call.status}`).join(', ') || 'istek yok'}` +
-      ` | hidrasyon okuması: ${calls.filter((call) => call.method === 'GET').length}` +
-      ` | POST→${calls.filter((call) => call.method === 'POST').map((call) => call.status).join(',') || 'yok'}` +
-      ` | bekleyen istek: ${pending.size}` +
-      ` | başarısız istek: ${failed.join(' | ') || '—'}`,
-  };
-}
-
-/**
- * Bekleyen `/rest/v1` istekleri bitene kadar bekler.
- * Koşu #4 dersi: artık temizliğinden kalan DELETE'ler uçuşta kalırsa, kaydetme
- * sonrası "ilk 2xx yazım" yanlışlıkla bir DELETE olabilir; kanıt ölçümü kayar.
- */
-async function awaitBackendIdle(backend: { pendingCount: () => number }) {
-  await expect
-    .poll(() => backend.pendingCount(), {
-      timeout: 20_000,
-      message: 'bekleyen /rest/v1 istekleri bitmedi (ağ kanıtı ölçülemez)',
-    })
-    .toBe(0);
-}
-
 /**
  * Kanıtın hangi ortama ait olduğunu yazar (koşu #6 dersi: rapor satırı ortamı göstermiyordu,
  * bu yüzden PRODUCTION kanıtı ayırt edilemedi). Karar `E2E_BASE_URL` ile gözlenen origin'e dayanır.
  */
 function environmentLabel(observedOrigin: string): string {
   const configured = (process.env.E2E_BASE_URL ?? '').trim();
-  const isPreviewPort = /:4173$/.test(observedOrigin);
-  const kind = configured
-    ? isPreviewPort
+  const kind = !configured || /:5173$/.test(observedOrigin)
+    ? 'dev sunucusu (Vite) — PRODUCTION kanıtı DEĞİLDİR'
+    : /:4173$/.test(observedOrigin)
       ? 'PRODUCTION/PREVIEW bundle (E2E_BASE_URL, :4173)'
-      : `PRODUCTION/uzak ortam (E2E_BASE_URL: ${configured})`
-    : 'dev sunucusu (Vite) — PRODUCTION kanıtı DEĞİLDİR';
+      : 'uzak ortam — production dağıtımı olduğunu ayrıca doğrulayın';
   return `ortam: ${kind} | gözlenen origin: ${observedOrigin} | E2E_BASE_URL: ${configured || 'yok'}`;
 }
 
-/** Uygulamanın kendi "bulut hazır" kapısı: sunucu anlık görüntüsü gelene kadar içerik render edilmez. */
-async function waitForCloudReady(page: Page) {
-  await expect(
-    page.locator('[data-cloud-gate="loading"]'),
-    'bulut verisi yüklenemedi (kapı açılmadı) — CloudSyncBanner/şerit metnine bakın',
-  ).toHaveCount(0, { timeout: 45_000 });
+/** "Loading bitti" hata da olabilir. Yalnız uygulanmış sunucu anlık görüntüsü hazır sayılır. */
+async function waitForCloudReady(page: Page, backend: ReturnType<typeof watchBackend>) {
+  try {
+    await page.waitForFunction(
+      () => ['ready', 'error'].includes(document.querySelector('main[data-cloud-gate]')?.getAttribute('data-cloud-gate') ?? ''),
+      null,
+      { timeout: 45_000 },
+    );
+  } catch {
+    throw new Error(`Bulut verisi hazır olmadı; bundle'ı yeniden derleyin veya ağ isteklerini inceleyin. ${backend.summary()}`);
+  }
+  const error = page.locator('main[data-cloud-gate="error"]');
+  if (await error.count()) {
+    throw new Error(`Bulut hidrasyonu başarısız (boş çalışma alanı açılamaz): ${(await error.innerText()).slice(0, 350)} | ${backend.summary()}`);
+  }
 }
 
 /** Senkronizasyon şeridinin ekrandaki gerçek metni (hata varsa burada görünür). */
@@ -224,9 +154,9 @@ async function logout(page: Page) {
   await expect(page.locator('#email')).toBeVisible({ timeout: 30_000 });
 }
 
-async function openClients(page: Page) {
+async function openClients(page: Page, backend: ReturnType<typeof watchBackend>) {
   await page.goto('/danisanlar');
-  await waitForCloudReady(page);
+  await waitForCloudReady(page, backend);
   await expect(page.getByRole('heading', { name: 'Danışan Dosyaları' })).toBeVisible({ timeout: 30_000 });
 }
 
@@ -275,21 +205,33 @@ test.describe('REAL BROWSER — canlı Supabase çok kullanıcılı oturum', () 
     test.slow();
 
     const alerts = watchDialogs(page);
-    const backend = watchBackend(page);
+    const backend = watchBackend(page, FILE_NUMBER);
 
     // ---------------------------------------------------------------- 1) A girişi
     await login(page, LIVE.aEmail, LIVE.aPassword);
 
     // ---------------------------------------------------------------- 2) hazırlık + eski artıklar
-    await openClients(page);
-    test.info().annotations.push({
-      type: 'ortam',
-      description: environmentLabel(await page.evaluate(() => window.location.origin)),
-    });
+    await openClients(page, backend);
+    const observedOrigin = await page.evaluate(() => window.location.origin);
+    if (process.env.E2E_BASE_URL) {
+      expect(observedOrigin, 'E2E_BASE_URL uygulanmadı; Playwright başka bir sunucuyu test ediyor').toBe(
+        new URL(process.env.E2E_BASE_URL).origin,
+      );
+      if (/:4173$/.test(observedOrigin)) {
+        const bundleScripts = await page.locator('script[type="module"][src]').evaluateAll((scripts) =>
+          scripts.map((script) => script.getAttribute('src') ?? ''),
+        );
+        expect(bundleScripts.some((src) => src.startsWith('/assets/')), '4173 üretim paketi değil; npm run build / preview kontrol edin').toBe(true);
+      }
+    }
+    expect(backend.origins(), 'Derlenmiş paketin Supabase URL\'si testteki VITE_SUPABASE_URL ile uyuşmuyor; aynı ortamla yeniden build edin').toEqual([
+      new URL(LIVE.url).origin,
+    ]);
+    test.info().annotations.push({ type: 'ortam', description: environmentLabel(observedOrigin) });
     test.info().annotations.push({ type: 'hidrasyon', description: backend.summary() });
     await deleteLeftovers(page);
-    // Artık silmelerinin yanıtları otursun: kaydetme kanıtı yalnız POST ile ölçülecek.
-    await awaitBackendIdle(backend);
+    // Eski DELETE veya GET isteklerinin tamamını beklemek gerekmez: aşağıdaki kanıt
+    // yalnız bu kaydın file_number'ını içeren başarılı POST yanıtından oluşur.
 
     // ---------------------------------------------------------------- 3) A kayıt oluşturur
     await page.getByRole('button', { name: 'Yeni Danışan Kaydı' }).click();
@@ -309,6 +251,7 @@ test.describe('REAL BROWSER — canlı Supabase çok kullanıcılı oturum', () 
     expect(invalidFields, `formda geçersiz zorunlu alanlar: ${invalidFields.join(', ')}`).toEqual([]);
 
     const postCursor = backend.posts().length;
+    const writeCursor = backend.writes().length;
     await page.getByRole('button', { name: 'Danışanı Kaydet' }).click();
 
     // Kaydetme başarısızsa uygulama native alert verir; sessizce beklemek yerine burada düşelim.
@@ -321,20 +264,23 @@ test.describe('REAL BROWSER — canlı Supabase çok kullanıcılı oturum', () 
     const bannerSnapshot = await syncBannerText(page);
     const storageSnapshot = await storageReport(page);
     const newPosts = () => backend.posts().slice(postCursor);
-    await expect
-      .poll(() => newPosts().filter((call) => call.status >= 200 && call.status < 300).length, {
-        timeout: 20_000,
-        message:
-          'kayıt sunucuya yazılmadı (POST /rest/v1/clients → 2xx yok). ' +
-          `Şerit: ${bannerSnapshot} | ${backend.summary()} | yerel depo: ${JSON.stringify(storageSnapshot)}`,
-      })
-      .toBeGreaterThan(0);
+    try {
+      await expect
+        .poll(() => newPosts().filter((call) => call.ok && call.containsOwnFileNumber).length, {
+          timeout: 20_000,
+          message: `bu kayda ait POST /rest/v1/clients → 2xx yanıtı yok (file_number=${FILE_NUMBER})`,
+        })
+        .toBeGreaterThan(0);
+    } catch (error) {
+      throw new Error(
+        `Sunucu yazımı kanıtlanamadı: ${backend.summary()} | şerit: ${await syncBannerText(page)}` +
+        ` | ilk şerit: ${bannerSnapshot} | yerel depo: ${JSON.stringify(storageSnapshot)}`,
+        { cause: error },
+      );
+    }
 
-    const post = newPosts().find((call) => call.status >= 200 && call.status < 300)!;
-    expect(
-      post.body,
-      `sunucu yanıtı oluşturulan kaydı içermiyor (file_number=${FILE_NUMBER}): ${post.body}`,
-    ).toContain(FILE_NUMBER);
+    const post = newPosts().find((call) => call.ok && call.containsOwnFileNumber)!;
+    expect(post.containsOwnFileNumber, 'Sunucu yanıtı bu testin dosya numarasını içermeli').toBe(true);
     const failedAfterSave = newPosts().filter((call) => call.status >= 400);
     test.info().annotations.push({
       type: 'bulut kaydı',
@@ -345,7 +291,7 @@ test.describe('REAL BROWSER — canlı Supabase çok kullanıcılı oturum', () 
     test.info().annotations.push({
       type: 'çağrı özeti',
       description:
-        `kaydetten sonra clients çağrıları: ${backend.writes().slice(postCursor).map((call) => `${call.method}→${call.status}`).join(', ') || 'yok'}` +
+        `kaydetten sonra clients çağrıları: ${backend.writes().slice(writeCursor).map((call) => `${call.method}→${call.status}`).join(', ') || 'yok'}` +
         ` | POST: ${newPosts().map((call) => call.status).join(',') || 'yok'}`,
     });
     if (failedAfterSave.length) {
@@ -360,7 +306,7 @@ test.describe('REAL BROWSER — canlı Supabase çok kullanıcılı oturum', () 
     await expect(page.getByRole('heading', { name: FULL_NAME, exact: true })).toBeVisible({ timeout: 30_000 });
 
     // ---------------------------------------------------------------- 4) listede görünür
-    await openClients(page);
+    await openClients(page, backend);
     await expect(ownRow(page), `liste satırı yok — ${backend.summary()}`).toBeVisible({ timeout: 30_000 });
     await expect(nameButton(page)).toBeVisible();
 
@@ -371,7 +317,7 @@ test.describe('REAL BROWSER — canlı Supabase çok kullanıcılı oturum', () 
     const localBefore = await page.evaluate(() => window.localStorage.length);
     await page.evaluate(() => window.localStorage.clear());
     await page.reload();
-    await waitForCloudReady(page);
+    await waitForCloudReady(page, backend);
     await expect(
       ownRow(page),
       'yerel depo temizlendikten sonra kayıt sunucudan geri gelmedi',
@@ -385,13 +331,13 @@ test.describe('REAL BROWSER — canlı Supabase çok kullanıcılı oturum', () 
     // ---------------------------------------------------------------- 6) çıkış → B
     await logout(page);
     await login(page, LIVE.bEmail, LIVE.bPassword);
-    await openClients(page);
+    await openClients(page, backend);
     await expect(ownRow(page)).toHaveCount(0);
 
     // ---------------------------------------------------------------- 7) B çıkış → A yeniden
     await logout(page);
     await login(page, LIVE.aEmail, LIVE.aPassword);
-    await openClients(page);
+    await openClients(page, backend);
     await expect(ownRow(page)).toBeVisible({ timeout: 30_000 });
 
     // ---------------------------------------------------------------- 8) temizlik (arayüzden)

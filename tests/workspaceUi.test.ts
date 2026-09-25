@@ -58,13 +58,10 @@ test('workspace navigation and empty states render on the main routes', async ()
   }
 });
 
-test('bulut katmanı hazır olmadan klinik içerik render edilmez (veri kaybı kapısı)', () => {
+test('bulut anlık görüntüsü uygulanmadan veya yükleme hatasında klinik içerik render edilmez', () => {
   const source = readFileSync('src/App.tsx', 'utf8');
-  // Kapı koşulu: bulut modunda ve sunucu anlık görüntüsü gelmemişse içerik yerine durum kartı.
-  assert.match(
-    source,
-    /const cloudLoading = !localMode && \(!syncState\.cloud \|\| syncState\.phase === 'loading'\)/,
-  );
-  assert.match(source, /data-cloud-gate="loading"/);
+  assert.match(source, /const gate = cloudGateStatus\(user\.id, localMode, syncState\)/);
+  assert.match(source, /data-cloud-gate=\{gate\}/);
   assert.match(source, /Klinik kayıtlar yükleniyor/);
+  assert.match(source, /Klinik kayıtlar yüklenemedi/);
 });

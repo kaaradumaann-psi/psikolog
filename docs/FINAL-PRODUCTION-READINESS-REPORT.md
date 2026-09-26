@@ -155,6 +155,19 @@ Düzeltmelerin önemli dosyaları: `src/clinical/cloud/*`, `src/clinical/{clinic
 
 **Sıradaki güvenli kapı sırası:** (1) Bu dalın migration'larını yedekli/staging Supabase'te gözden geçirip **gerçek veri silmeden** deploy et; üretim şemasını daha önceki tarihsel koşudan ayrı doğrula. (2) Gerçek A/B/admin/anon/expired-session JWT matrisi, private Storage path/signed URL ve negatif erişim; yalnız ayrılmış test kurumları/kayıtları. (3) Sürüm karşılaştırması ve çok parçalı işlem kurtarmasını geliştirip iki cihaz/iki sekme/offline testlerini geç. (4) Chromium bulunan yetkili makinede, geçerli public Supabase env ile production bundle'ı yeniden derle ve `npm run preview` üzerinde `E2E_BASE_URL=http://localhost:4173 npx playwright test e2e/live-multi-user.spec.ts --project=chromium` çalıştır; origin, `/assets/` bundle, başarılı kendi POST'u, serverdan geri okuma, B ret, A dönüş, ağ hatası, mobile/print kanıtlarını sakla. (5) Test bitince yalnız **o koşunun** disposable kayıtları temizle, gerçek klinik/production verisini toplu temizleme. Şifreleri/özel anahtarları repo veya rapora yazma.
 
+## 19a. 26 Eylül admin/kurum olayı güncellemesi (önceki PASS iddialarını genişletmez)
+
+`admin@gmail.com` için şikâyet edilen iki yazı iki ayrı mekanizmadan gelir: orgsuz kullanıcı klinik bulut kapısına giremez; genel “Çalışma alanı açılamadı” kartı React render sınırıdır, canlı bileşen zinciri olmadan aynı kök nedene bağlanamaz. Hesabın gerçek Auth/profil satırı **görülmedi**. Ayrıntılı inceleme, salt-okunur teşhis/ilk yetkili bootstrap ve güvenli kurum-psikolog atama prosedürü: [`ADMIN-ORGANIZATION-INCIDENT.md`](./ADMIN-ORGANIZATION-INCIDENT.md).
+
+| Bu değişiklik | Repo kanıtı | Canlı sınır |
+| --- | --- | --- |
+| `ADMIN` + null org, klinik kayıt yüklemeden yönetim kurulumu açar; yanlış role otomatik admin yetkisi vermez | `cloudWorkspaceEntry`, `AdminSetupPage`, hedefli SSR ve kapı testleri | Gerçek ADMIN oturumu/profil görülmedi; canlı login **BLOCKED**. |
+| Yeni hesap açmadan önce kurumu açıkça seçtirir; Edge mevcut org ID'sini doğrular, orgsuz `ORG_ADMIN`'i reddeder, `{profile}` zarfını bekler | `CloudAdminPanel`, `adminApi`, Edge sözleşme testleri (stub) | Canlı Auth trigger, Edge deploy, origin allowlist, gerçek ID/rol **BLOCKED**. |
+| Psikologun aynı kurum meslektaş profil/e-postasını okumasını engeller; kendi profili ve kurum yöneticisi/global admin okuması korunur | `20260926100000_scope_profile_read.sql`, PGlite eski policy ile FAIL → yeni policy ile PASS | Gerçek Supabase policy deploy ve A/B JWT matrisi **BLOCKED**. |
+| Render hata kartında yanlış “bu cihazdaki yedek” iddiası kaldırıldı | `ClinicErrorBoundary` kodu; SSR/React sınırı açıklaması | Gerçek hatanın stack'i ve browser sonucu bilinmiyor. |
+
+Bu revizyonda `npm test`: **196/196 PASS (yerel)**, `npm run typecheck`: **PASS**, `npm run build`: **PASS**. `npm run preview` ile `/` ve derlenmiş JS için HTTP **200 smoke** alındı; bu klinik uygulama E2E testi **değildir**. `.env.local` / canlı Supabase oturumları yok; `npx playwright install chromium` `cdn.playwright.dev:443 ECONNRESET` ile başarısız. Gerçek production bundle + gerçek Chromium + gerçek Supabase E2E **BLOCKED**; önceden kullanıcı tarafından bildirilen **dev PASS / preview FAIL** kapanmış sayılmaz. Eski rapordaki 186 PASS sayısı önceki revizyonun tarihsel sonucudur, yukarıdaki sayı bu revizyona aittir.
+
 ## 20. Nihai karar
 
 LOCAL test ve dar güvenlik düzeltmeleri olumlu olsa da **bu sürümün canlı migration/RLS/Storage davranışı**, **gerçek Chromium** ve **geçerli Supabase'e bağlı production preview E2E** henüz kanıtlanmadı; ayrıca cross-device çatışma ile Storage–metadata atomikliği açık. Yalnız LOCAL PASS sonucuyla klinik production onayı verilemez.

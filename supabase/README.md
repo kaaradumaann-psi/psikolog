@@ -34,17 +34,24 @@ RLS: her tabloda, anon revoke, security definer helpers `is_active_user()`, `is_
 
 Storage: private bucket `client-documents` — faz 2'de aktif, RLS + storage policies, no public URL.
 
-## 3. İlk Admin
+## 3. İlk Admin ve kurum kurulumu
 
-Public signup kapalı. İlk Admin Dashboard → Authentication → Users → Add user ile oluşturun. Trigger önce PSYCHOLOG olarak ekler. SQL Editor'da bir kez:
+Public signup kapalı. İlk yetkili kişi Dashboard → Authentication → Users → Add user ile oluşturulur. Auth kullanıcısı **ADMIN değildir**: `handle_new_auth_user` başlangıçta `PSYCHOLOG`, `organization_id = NULL` profili açar. **E-posta adresinin `admin@…` olması rol vermez.**
+
+Önce SQL Editor'da **salt-okunur** tanılama yapın (kendi gerçek e-postanızı kullanın):
 
 ```sql
-update public.profiles
-set role = 'ADMIN', active = true
-where email = 'ilk-admin@example.com';
+select u.id as auth_user_id, u.email, p.role, p.active,
+       p.organization_id, o.name as organization_name
+from auth.users u
+left join public.profiles p on p.id = u.id
+left join public.organizations o on o.id = p.organization_id
+where lower(u.email) = lower('first-admin@example.com');
 ```
 
-Sonra psikolog hesapları Admin paneli Edge Function üzerinden.
+Hesabın/projenin gerçekten size ait olduğunu ve `auth_user_id`'yi doğrulayın. İlk rol yükseltmesini **yalnız yetkili SQL Editor operatörü** yapar; web formu/anon anahtarından ADMIN rolü verilemez. Güvenli/id-kontrollü örnek ve eksik profil/migration senaryoları: [`docs/ADMIN-ORGANIZATION-INCIDENT.md`](../docs/ADMIN-ORGANIZATION-INCIDENT.md). Sonrasında ADMIN profili **kurumsuz da** kurum/hesap yönetimi ekranına girer; klinik dosyaya girmek için mevcut/yeni kurumu **açıkça seçerek** kendi profiline atar. Psikolog veya ORG_ADMIN hesabı yalnızca mevcut bir kuruma bağlı olarak oluşturulabilir. Gerçek admin'e `LIVE-TEST` seed dosyası uygulamayın.
+
+Bu adımlar gerçek veriyi silmez; rol/kurum değişikliklerinin canlı etkisi yetkili operatörce doğrulanmalıdır.
 
 ## 4. Edge Function — admin-users
 

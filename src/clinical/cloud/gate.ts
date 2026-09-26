@@ -1,4 +1,11 @@
+import type { AuthenticatedUser } from '../../auth/authTypes';
 import type { SyncState } from './sync';
+
+/** Only an authenticated platform ADMIN may manage orgs without a clinical
+ * tenant. Everyone else continues through the fail-closed clinical gate. */
+export function cloudWorkspaceEntry(user: Pick<AuthenticatedUser, 'role' | 'active' | 'organizationId'>): 'admin-setup' | 'clinical' {
+  return user.role === 'ADMIN' && user.active && !user.organizationId ? 'admin-setup' : 'clinical';
+}
 
 export type CloudGateStatus = 'local' | 'loading' | 'error' | 'ready';
 

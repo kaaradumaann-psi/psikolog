@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { supabaseConfig } from '../../auth/supabaseClient';
+import type { AuthenticatedUser } from '../../auth/authTypes';
 import { cloudContext } from '../../clinical/cloud/sync';
 import { DataManagementModal } from '../clinical/DataManagementModal';
 import {
@@ -32,7 +33,7 @@ function readAsset(file: File, onDone: (dataUrl: string) => void, onError: (mess
   reader.readAsDataURL(file);
 }
 
-export function SettingsPage({ canAdmin }: { canAdmin: boolean }) {
+export function SettingsPage({ canAdmin, user }: { canAdmin: boolean; user: AuthenticatedUser }) {
   const [settings, setSettings] = useState<PracticeSettings>(() => getSettings());
   const [backupOpen, setBackupOpen] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
@@ -129,7 +130,7 @@ export function SettingsPage({ canAdmin }: { canAdmin: boolean }) {
             Supabase tanımlı değil — çalışma alanı çevrimdışı önceliklidir. Kurumsal kurulum için <code>.env</code> içine yalnızca anon anahtar yazılır; hizmet rolü tarayıcıya girmez. Şema <code>supabase/migrations</code> altındadır.
           </p>
         )}
-        {canAdmin && supabaseConfig.configured && <CloudAdminPanel />}
+        {canAdmin && supabaseConfig.configured && <CloudAdminPanel user={user} />}
       </section>
       {backupOpen && <DataManagementModal onClose={() => setBackupOpen(false)} />}
     </div>

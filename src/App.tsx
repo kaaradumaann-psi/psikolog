@@ -4,7 +4,7 @@ import type { AuthenticatedUser } from './auth/authTypes';
 import { displayName } from './auth/userDisplay';
 import { supabaseConfig } from './auth/supabaseClient';
 import { startClinicalCloud, stopClinicalCloud } from './clinical/cloud/bootstrap';
-import { cloudGateStatus } from './clinical/cloud/gate';
+import { cloudGateStatus, cloudWorkspaceEntry } from './clinical/cloud/gate';
 import { getSyncState, subscribeSync, type SyncState } from './clinical/cloud/sync';
 import { CloudSyncBanner } from './components/CloudSyncBanner';
 import { getSession, onAuthChange, signIn, signOut, userFromSession } from './auth/supabaseAuth';
@@ -27,6 +27,7 @@ import { InfoPageShell } from './components/InfoPageShell';
 import { MobileNav } from './components/MobileNav';
 import { PrivacyPolicyPage } from './components/PrivacyPolicyPage';
 import { AuditPage } from './components/practice/AuditPage';
+import { AdminSetupPage } from './components/practice/AdminSetupPage';
 import { SettingsPage } from './components/practice/SettingsPage';
 import { TasksPage } from './components/practice/TasksPage';
 import { SiteFooter } from './components/SiteFooter';
@@ -209,6 +210,20 @@ function CloudGate() {
     }
   }
 
+  function onLogout() {
+    setError(null);
+    void signOut()
+      .then(() => {
+        stopClinicalCloud({ purge: true });
+        setUser(null);
+        navigate('/', { replace: true });
+      })
+      .catch(() => {
+        // Do not claim logout when the local Auth session may still exist.
+        setError('Oturum kapatılamadı. Klinik verileri açık bırakmayın; çıkışı yeniden deneyin.');
+      });
+  }
+
   if (user === undefined) {
     return (
       <div className="auth-page">
@@ -262,22 +277,25 @@ function CloudGate() {
       </div>
     );
   }
-  return (
-    <WorkspaceShell
-      user={user}
-      localMode={false}
-      onLogout={() => {
-        void signOut().finally(() => {
-          // Çıkışta kullanıcıya ait klinik cache/draft temizlenir (P0-6)
-          stopClinicalCloud({ purge: true });
-          navigate('/', { replace: true });
-        });
-      }}
-    />
-  );
+  if (cloudWorkspaceEntry(user) === 'admin-setup') {
+    return (
+      <AdminSetupPage
+        user={user}
+        onLogout={onLogout}
+        logoutError={error}
+        onOwnOrganizationAssigned={(organizationId) => {
+          setError(null);
+          setUser({ ...user, organizationId });
+        }}
+      />
+    );
+  }
+  return <WorkspaceShell user={user} localMode={false} onLogout={onLogout} authActionError={error} />;
 }
 
-function WorkspaceShell({ user, onLogout, localMode }: { user: AuthenticatedUser; onLogout: () => void; localMode: boolean }) {
+function WorkspaceShell({ user, onLogout, localMode, authActionError }: {
+  user: AuthenticatedUser; onLogout: () => void; localMode: boolean; authActionError?: string | null;
+}) {
   const route = useRoute();
   const [storageError, setStorageError] = useState<string | null>(null);
   const [syncState, setSyncState] = useState<SyncState>(() => getSyncState());
@@ -397,6 +415,7 @@ function WorkspaceShell({ user, onLogout, localMode }: { user: AuthenticatedUser
         </header>
         <ConnectivityBanner />
         {!localMode && !cloudLoading && !cloudLoadFailed && <CloudSyncBanner />}
+        {authActionError && <p className="shell-alert" role="alert">{authActionError}</p>}
         {storageError && <p className="shell-alert" role="alert">{storageError}</p>}
         <main
           className="app-main"
@@ -430,7 +449,7 @@ function WorkspaceShell({ user, onLogout, localMode }: { user: AuthenticatedUser
               {route.page === 'tarama' && <RapidScreeningPage />}
               {route.page === 'raporlar' && <ClinicalReportsPage />}
               {route.page === 'gorevler' && <TasksPage />}
-              {route.page === 'ayarlar' && <SettingsPage canAdmin={canAdmin} />}
+              {route.page === 'ayarlar' && <SettingsPage canAdmin={canAdmin} user={user} />}
               {route.page === 'denetim' && <AuditPage />}
               {route.page === 'home' && <Dashboard user={user} />}
             </>

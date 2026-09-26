@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
-import { getClients } from '../../clinical/clinicalStore';
+import { getClients, subscribeClinicalStore } from '../../clinical/clinicalStore';
 import {
   deleteTask,
   getTasks,
@@ -11,8 +11,10 @@ import {
   type TaskPriority,
   type TaskStatus,
 } from '../../clinical/practiceStore';
+import { clinicToday } from '../../clinical/recordRules';
 import { ClinicalDialog } from '../clinical/ClinicalDialog';
 import { Icon } from '../Icon';
+import { useConfirmDialog } from '../useConfirmDialog';
 
 const STATUS_LABEL: Record<TaskStatus, string> = {
   todo: 'Yapılacak',
@@ -25,44 +27,58 @@ export function TasksPage() {
   const [tasks, setTasks] = useState<PracticeTask[]>(() => getTasks());
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<'open' | 'all'>('open');
-  const clients = useMemo(() => getClients(), []);
+  const [clients, setClients] = useState(() => getClients());
+  const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({
     title: '',
     description: '',
     clientId: '',
-    dueDate: new Date().toISOString().slice(0, 10),
+    dueDate: clinicToday(),
     priority: 'medium' as TaskPriority,
   });
+  const { ask: askConfirm, dialog: confirmDialog } = useConfirmDialog();
 
   useEffect(() => subscribePracticeStore(() => setTasks(getTasks())), []);
+  useEffect(() => subscribeClinicalStore(() => setClients(getClients())), []);
 
   const visible = tasks.filter((task) => (filter === 'all' ? true : task.status === 'todo' || task.status === 'in_progress'));
 
-  function cycle(task: PracticeTask) {
-    const order: TaskStatus[] = ['todo', 'in_progress', 'done'];
-    const next = order[(order.indexOf(task.status) + 1) % order.length] ?? 'todo';
-    saveTask({ ...task, status: task.status === 'cancelled' ? 'todo' : next, updatedAt: new Date().toISOString() });
+  function changeStatus(task: PracticeTask, status: TaskStatus) {
+    try {
+      saveTask({ ...task, status, updatedAt: new Date().toISOString() });
+      setError(null);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Görev durumu kaydedilemedi.');
+    }
   }
 
   function onSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!form.title.trim()) return;
+    if (!form.title.trim()) {
+      setError('Görev başlığı boş olamaz.');
+      return;
+    }
     const client = clients.find((item) => item.id === form.clientId);
     const now = new Date().toISOString();
-    saveTask({
-      id: newId('task'),
-      title: form.title.trim(),
-      description: form.description.trim() || undefined,
-      clientId: client?.id,
-      clientName: client ? `${client.firstName} ${client.lastName}` : undefined,
-      dueDate: form.dueDate || undefined,
-      priority: form.priority,
-      status: 'todo',
-      createdAt: now,
-      updatedAt: now,
-    });
-    setForm({ ...form, title: '', description: '' });
-    setOpen(false);
+    try {
+      saveTask({
+        id: newId('task'),
+        title: form.title.trim(),
+        description: form.description.trim() || undefined,
+        clientId: client?.id,
+        clientName: client ? `${client.firstName} ${client.lastName}` : undefined,
+        dueDate: form.dueDate || undefined,
+        priority: form.priority,
+        status: 'todo',
+        createdAt: now,
+        updatedAt: now,
+      });
+      setError(null);
+      setForm({ ...form, title: '', description: '' });
+      setOpen(false);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Görev kaydedilemedi.');
+    }
   }
 
   return (
@@ -109,8 +125,33 @@ export function TasksPage() {
                 </div>
               </div>
               <div className="task-card-actions">
-                <button type="button" className="btn-secondary btn-sm" aria-label={`${task.title}: ${STATUS_LABEL[task.status]}. Durumu değiştir`} onClick={() => cycle(task)}>{STATUS_LABEL[task.status]} <Icon name="right" size={14} /></button>
-                <button type="button" className="btn-icon" aria-label={`${task.title} görevini sil`} onClick={() => { if (window.confirm('Bu görevi silmek istiyor musunuz?')) deleteTask(task.id); }}>
+                <label className="task-status-select">
+                  <span>Durum</span>
+                  <select
+                    aria-label={`${task.title} görevinin durumu`}
+                    value={task.status}
+                    onChange={(event) => changeStatus(task, event.target.value as TaskStatus)}
+                  >
+                    {(Object.keys(STATUS_LABEL) as TaskStatus[]).map((status) => (
+                      <option key={status} value={status}>
+                        {STATUS_LABEL[status]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className="btn-icon"
+                  aria-label={`${task.title} görevini sil`}
+                  onClick={() =>
+                    askConfirm({
+                      title: 'Görevi sil',
+                      description: `“${task.title}” görevi bu cihazdan silinir. Geri alınamaz.`,
+                      confirmLabel: 'Görevi sil',
+                      run: () => deleteTask(task.id),
+                    })
+                  }
+                >
                   <Icon name="trash" size={16} />
                 </button>
               </div>
@@ -119,6 +160,12 @@ export function TasksPage() {
         </div>
       )}
 
+      {error && !open && (
+        <p className="form-notice" role="alert">
+          <Icon name="alert" size={16} />
+          <span>{error}</span>
+        </p>
+      )}
       {open && (
         <ClinicalDialog titleId="task-dialog-title" onClose={() => setOpen(false)} onSubmit={onSubmit}>
             <div className="clinical-modal-head">
@@ -126,6 +173,12 @@ export function TasksPage() {
               <button type="button" className="btn-icon" onClick={() => setOpen(false)} aria-label="Kapat"><Icon name="close" size={18} /></button>
             </div>
             <div className="clinical-modal-body">
+              {error && (
+                <p className="form-notice" role="alert">
+                  <Icon name="alert" size={16} />
+                  <span>{error}</span>
+                </p>
+              )}
               <div className="form-group">
                 <label htmlFor="task-title">Başlık</label>
                 <input id="task-title" value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} maxLength={180} required />
@@ -164,6 +217,7 @@ export function TasksPage() {
             </div>
         </ClinicalDialog>
       )}
+      {confirmDialog}
     </div>
   );
 }

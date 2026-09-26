@@ -3,7 +3,8 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import { ClinicErrorBoundary } from './components/ClinicErrorBoundary';
 import { installLinkInterceptor } from './router';
-import { getClients } from './clinical/clinicalStore';
+import { supabaseConfig } from './auth/supabaseClient';
+import { configureStorageScope } from './clinical/storageScope';
 
 import './styles/screen.css';
 import './styles/auth.css';
@@ -17,7 +18,10 @@ import './styles/workspace.css';
 import './styles/responsive.css';
 
 installLinkInterceptor();
-getClients();
+// Bulut hesabı yoksa cihaz-yerel çalışma alanı kendi kapsamını kullanır.
+// Supabase bağlıysa kapsam oturum çözüldükten sonra App içinde bağlanır;
+// böylece oturum açılmadan hiçbir klinik kasa okunmaz.
+if (!supabaseConfig.configured) configureStorageScope('local');
 
 const root = document.getElementById('root');
 if (!root) throw new Error('Root element not found.');

@@ -4,6 +4,15 @@
  */
 import type { CaseFormulation, SafetyPlan } from './casework';
 import type { RapidScreeningResult } from './rapidScreening';
+import {
+  commitScopedWrites,
+  currentScope,
+  onScopeChange,
+  readScopedRaw,
+  watchCrossTab,
+  writeScopedRaw,
+  type PlannedWrite,
+} from './storageScope';
 import { isSafeDocumentUrl, isSafeImageUrl, reportStorageError } from './recordRules';
 
 export type PracticeNote = {
@@ -62,6 +71,8 @@ export type AuditEvent = {
   entity: string;
   entityId: string;
   summary: string;
+  /** Kaydı açan hesabın kapsamı. Cihazda kalır, dışarı gönderilmez. */
+  actor?: string;
 };
 
 export type PracticeBundle = {
@@ -87,14 +98,14 @@ export const ALLOWED_DOCUMENT_MIMES = [
 export const MAX_LOCAL_DOCUMENT_BYTES = 1_500_000;
 export const MAX_BRAND_ASSET_BYTES = 1_000_000;
 
-const NOTES_KEY = 'psikolog_notes_v2';
-const TASKS_KEY = 'psikolog_tasks_v2';
-const DOCS_KEY = 'psikolog_documents_v2';
-const SETTINGS_KEY = 'psikolog_settings_v2';
-const AUDIT_KEY = 'psikolog_audit_v2';
-const SCREEN_KEY = 'psikolog_screenings_v2';
-const FORM_KEY = 'psikolog_formulations_v2';
-const SAFETY_KEY = 'psikolog_safety_v2';
+const NOTES_KEY = 'notes';
+const TASKS_KEY = 'tasks';
+const DOCS_KEY = 'documents';
+const SETTINGS_KEY = 'settings';
+const AUDIT_KEY = 'audit';
+const SCREEN_KEY = 'screenings';
+const FORM_KEY = 'formulations';
+const SAFETY_KEY = 'safety';
 
 type Listener = () => void;
 const listeners = new Set<Listener>();
@@ -120,8 +131,8 @@ export function newId(prefix: string): string {
 
 function read<T>(key: string, fallback: T): T {
   try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
+    const raw = readScopedRaw(key);
+    if (raw === null) return fallback;
     return JSON.parse(raw) as T;
   } catch {
     return fallback;
@@ -130,13 +141,20 @@ function read<T>(key: string, fallback: T): T {
 
 function write<T>(key: string, value: T): void {
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    writeScopedRaw(key, JSON.stringify(value));
     notify();
-  } catch (error) {
+  } catch {
     reportStorageError();
     throw new Error('Kayıt bu cihaza yazılamadı. Depo dolu olabilir. Önce yedek indirin.');
   }
 }
+
+export function notifyPracticeStore(): void {
+  notify();
+}
+
+onScopeChange(() => notify());
+watchCrossTab(() => notify());
 
 export const DEFAULT_SETTINGS: PracticeSettings = {
   evaluatorName: 'Uzm. Psk. Halil Karaduman',
@@ -151,6 +169,7 @@ export const DEFAULT_SETTINGS: PracticeSettings = {
 
 const AUDIT_ACTIONS: Record<string, string> = {
   save: 'Kaydetme',
+  update: 'Güncelleme',
   delete: 'Silme',
   import: 'Geri yükleme',
   kaydetme: 'Kaydetme',
@@ -167,6 +186,10 @@ const AUDIT_ENTITIES: Record<string, string> = {
   formulation: 'Formülasyon',
   safety: 'Güvenlik planı',
   backup: 'Yedek',
+  session: 'Seans notu',
+  appointment: 'Randevu',
+  test: 'Ölçek sonucu',
+  report: 'Rapor',
   danışan: 'Danışan',
 };
 
@@ -187,6 +210,7 @@ export function recordAudit(input: { action: string; entity: string; entityId: s
     entity: auditEntityLabel(input.entity).slice(0, 40),
     entityId: input.entityId.slice(0, 80),
     summary: input.summary.slice(0, 240),
+    actor: currentScope() ?? undefined,
   };
   write(AUDIT_KEY, [event, ...list].slice(0, 200));
 }
@@ -276,6 +300,7 @@ export function saveScreening(result: RapidScreeningResult): void {
 
 export function deleteScreening(id: string): void {
   write(SCREEN_KEY, getScreenings().filter((item) => item.id !== id));
+  recordAudit({ action: 'delete', entity: 'screening', entityId: id, summary: 'Tarama sonucu silindi' });
 }
 
 export function getFormulations(): CaseFormulation[] {
@@ -319,46 +344,90 @@ export function exportPracticeData(): PracticeBundle {
   };
 }
 
-export function purgeClientPractice(clientId: string): void {
-  const all = clientId === '*';
-  const keep = (id: string | undefined) => !all && id !== clientId;
-  write(NOTES_KEY, getNotes().filter((item) => keep(item.clientId)));
-  write(TASKS_KEY, getTasks().filter((item) => keep(item.clientId)));
-  write(DOCS_KEY, getDocuments().filter((item) => keep(item.clientId)));
-  write(SCREEN_KEY, getScreenings().filter((item) => keep(item.clientId)));
-  write(FORM_KEY, getFormulations().filter((item) => keep(item.clientId)));
-  write(SAFETY_KEY, getSafetyPlans().filter((item) => keep(item.clientId)));
+/** Bir veya birkaç danışanın bağlı kayıtlarını tek yazım planına çevirir. */
+export function planPracticePurge(clientIds: string | string[]): PlannedWrite[] {
+  const ids = new Set(Array.isArray(clientIds) ? clientIds : [clientIds]);
+  const all = ids.has('*');
+  const keep = (id: string | undefined) => !all && !(id && ids.has(id));
+  return [
+    [NOTES_KEY, JSON.stringify(getNotes().filter((item) => keep(item.clientId)))],
+    [TASKS_KEY, JSON.stringify(getTasks().filter((item) => keep(item.clientId)))],
+    [DOCS_KEY, JSON.stringify(getDocuments().filter((item) => keep(item.clientId)))],
+    [SCREEN_KEY, JSON.stringify(getScreenings().filter((item) => keep(item.clientId)))],
+    [FORM_KEY, JSON.stringify(getFormulations().filter((item) => keep(item.clientId)))],
+    [SAFETY_KEY, JSON.stringify(getSafetyPlans().filter((item) => keep(item.clientId)))],
+  ];
 }
 
-export function importPracticeData(bundle: Partial<PracticeBundle> | null | undefined): void {
-  if (!bundle || typeof bundle !== 'object') return;
+/** Klinik kayıt temizliğiyle birlikte tek yazımda uygulanacak plan. */
+export function planPracticeClear(): PlannedWrite[] {
+  return [
+    [NOTES_KEY, '[]'],
+    [TASKS_KEY, '[]'],
+    [DOCS_KEY, '[]'],
+    [SCREEN_KEY, '[]'],
+    [FORM_KEY, '[]'],
+    [SAFETY_KEY, '[]'],
+  ];
+}
+
+export function purgeClientPractice(clientIds: string | string[]): void {
+  try {
+    commitScopedWrites(planPracticePurge(clientIds));
+  } catch {
+    // Kasa yazılamıyorsa danışan silme yine de tamamlanır; uyarı store katmanında verilir.
+    reportStorageError();
+  }
+  notify();
+}
+
+export function planPracticeImport(bundle: Partial<PracticeBundle> | null | undefined): PlannedWrite[] {
+  const plan: PlannedWrite[] = [];
+  if (!bundle || typeof bundle !== 'object') return plan;
   if (Array.isArray(bundle.notes)) {
     if (bundle.notes.length > 5000) throw new Error('Not listesi çok büyük.');
-    write(NOTES_KEY, bundle.notes);
+    for (const note of bundle.notes) {
+      if (!note || typeof note.clientId !== 'string' || typeof note.content !== 'string') throw new Error('Not kaydı bozuk.');
+    }
+    plan.push([NOTES_KEY, JSON.stringify(bundle.notes)]);
   }
   if (Array.isArray(bundle.tasks)) {
     if (bundle.tasks.length > 5000) throw new Error('Görev listesi çok büyük.');
-    write(TASKS_KEY, bundle.tasks);
+    for (const task of bundle.tasks) {
+      if (!task || typeof task.title !== 'string' || !task.title.trim()) throw new Error('Görev kaydı bozuk.');
+    }
+    plan.push([TASKS_KEY, JSON.stringify(bundle.tasks)]);
   }
   if (Array.isArray(bundle.documents)) {
     if (bundle.documents.length > 500) throw new Error('Belge listesi çok büyük.');
     for (const doc of bundle.documents) {
       if (doc.dataUrl && !isSafeDocumentUrl(doc.dataUrl)) throw new Error('Yedekte güvenli olmayan belge bağlantısı var.');
     }
-    write(DOCS_KEY, bundle.documents);
+    plan.push([DOCS_KEY, JSON.stringify(bundle.documents)]);
   }
-  if (Array.isArray(bundle.screenings)) write(SCREEN_KEY, bundle.screenings.slice(0, 5000));
-  if (Array.isArray(bundle.formulations)) write(FORM_KEY, bundle.formulations.slice(0, 2000));
-  if (Array.isArray(bundle.safetyPlans)) write(SAFETY_KEY, bundle.safetyPlans.slice(0, 2000));
+  if (Array.isArray(bundle.screenings)) plan.push([SCREEN_KEY, JSON.stringify(bundle.screenings.slice(0, 5000))]);
+  if (Array.isArray(bundle.formulations)) plan.push([FORM_KEY, JSON.stringify(bundle.formulations.slice(0, 2000))]);
+  if (Array.isArray(bundle.safetyPlans)) plan.push([SAFETY_KEY, JSON.stringify(bundle.safetyPlans.slice(0, 2000))]);
   if (bundle.settings && typeof bundle.settings === 'object') {
     const { logoDataUrl, signatureDataUrl, ...rest } = bundle.settings;
-    write(SETTINGS_KEY, {
-      ...DEFAULT_SETTINGS,
-      ...rest,
-      logoDataUrl: isSafeImageUrl(logoDataUrl) ? logoDataUrl : undefined,
-      signatureDataUrl: isSafeImageUrl(signatureDataUrl) ? signatureDataUrl : undefined,
-    });
+    plan.push([
+      SETTINGS_KEY,
+      JSON.stringify({
+        ...DEFAULT_SETTINGS,
+        ...rest,
+        logoDataUrl: isSafeImageUrl(logoDataUrl) ? logoDataUrl : undefined,
+        signatureDataUrl: isSafeImageUrl(signatureDataUrl) ? signatureDataUrl : undefined,
+      }),
+    ]);
   }
-  if (Array.isArray(bundle.audit)) write(AUDIT_KEY, bundle.audit.slice(0, 200));
+  if (Array.isArray(bundle.audit)) plan.push([AUDIT_KEY, JSON.stringify(bundle.audit.slice(0, 200))]);
+  return plan;
+}
+
+export function importPracticeData(bundle: Partial<PracticeBundle> | null | undefined): void {
+  const plan = planPracticeImport(bundle);
+  if (!plan.length) return;
+  commitScopedWrites(plan);
+  notify();
   recordAudit({ action: 'import', entity: 'backup', entityId: 'practice', summary: 'Uygulama verisi yedekten yüklendi' });
 }

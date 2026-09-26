@@ -1,7 +1,8 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Appointment, Client, SessionType, AppointmentStatus, PaymentStatus } from '../../clinical/clinicalTypes';
 import {
   getAppointments,
+  getSoapSessions,
   saveAppointment,
   deleteAppointment,
   getClients,
@@ -12,6 +13,25 @@ import { clinicToday } from '../../clinical/recordRules';
 import { ClinicalDialog } from './ClinicalDialog';
 import { Icon } from '../Icon';
 import { navigate } from '../../router';
+import { useConfirmDialog } from '../useConfirmDialog';
+
+const LOCATIONS = ['Klinik (Yüz Yüze)', 'Online (Görüntülü)', 'Dış Görüşme'] as const;
+
+type AppointmentLocation = (typeof LOCATIONS)[number];
+
+const STATUS_OPTIONS: { value: AppointmentStatus; label: string }[] = [
+  { value: 'scheduled', label: 'Planlandı (Bekliyor)' },
+  { value: 'completed', label: 'Tamamlandı' },
+  { value: 'cancelled', label: 'İptal Edildi' },
+  { value: 'noshow', label: 'Danışan Gelmedi' },
+];
+
+const STATUS_LABEL: Record<AppointmentStatus, string> = {
+  scheduled: 'Planlandı',
+  completed: 'Tamamlandı',
+  cancelled: 'İptal',
+  noshow: 'Gelmedi',
+};
 
 export function AppointmentsPage() {
   const [appointments, setAppointments] = useState<Appointment[]>(() => getAppointments());
@@ -21,6 +41,9 @@ export function AppointmentsPage() {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingApp, setEditingApp] = useState<Appointment | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const { ask: askConfirm, dialog: confirmDialog } = useConfirmDialog();
 
   const [form, setForm] = useState<Partial<Appointment>>({
     clientId: '',
@@ -58,11 +81,14 @@ export function AppointmentsPage() {
       });
   }, [appointments, dateFilter, statusFilter]);
 
-  function openNewModal() {
+  function openNewModal(prefillClientId = '') {
     setEditingApp(null);
+    setFormError(null);
+    setSaving(false);
+    const prefill = clients.find((client) => client.id === prefillClientId);
     setForm({
-      clientId: '',
-      clientName: '',
+      clientId: prefillClientId,
+      clientName: prefill ? `${prefill.firstName} ${prefill.lastName}` : '',
       date: clinicToday(),
       time: '14:00',
       durationMinutes: 50,
@@ -76,22 +102,61 @@ export function AppointmentsPage() {
     setModalOpen(true);
   }
 
+  // Danışan dosyasından "Randevu planla" ile gelince form seçili danışanla açılır.
+  useEffect(() => {
+    const clientId = new URLSearchParams(window.location.search).get('danisan');
+    if (!clientId) return;
+    if (!clients.some((client) => client.id === clientId)) return;
+    openNewModal(clientId);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('danisan');
+    window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+    // Açılışta bir kez çalışır.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function openEditModal(a: Appointment) {
     setEditingApp(a);
     setForm({ ...a });
+    setFormError(null);
+    setSaving(false);
     setModalOpen(true);
   }
 
-  function handleDelete(id: string) {
-    if (confirm('Bu randevu kaydını silmek istediğinize emin misiniz?')) {
-      deleteAppointment(id);
-    }
+  function handleDelete(app: Appointment) {
+    askConfirm({
+      title: 'Randevuyu sil',
+      description: `${app.clientName} · ${app.date} ${app.time} randevusu takvimden silinir. Seans notu kaydı buna bağlı değildir ve kalır.`,
+      confirmLabel: 'Randevuyu sil',
+      run: () => deleteAppointment(app.id),
+    });
   }
 
   function handleSave(e: React.FormEvent) {
     e.preventDefault();
+    if (saving) return;
     if (!form.clientId) {
-      alert('Lütfen bir danışan seçiniz.');
+      setFormError('Randevu hangi danışana ait? Listeden seçin.');
+      return;
+    }
+    const date = form.date || clinicToday();
+    if (date > clinicToday()) {
+      setFormError('Randevu tarihi geçmişte kalamaz; bugünden itibaren planlayın.');
+      return;
+    }
+    const time = form.time || '14:00';
+    // Aynı danışan için aynı güne aynı saatte ikinci randevu oluşturulmaz:
+    // çift tıklama ve yanlışlıkla kaydedilen çift kayıt burada durur.
+    const duplicate = appointments.some(
+      (item) =>
+        item.id !== form.id &&
+        item.clientId === form.clientId &&
+        item.date === date &&
+        item.time === time &&
+        item.status !== 'cancelled',
+    );
+    if (duplicate) {
+      setFormError(`${date} ${time} için bu danışanın randevusu zaten var. Çift kayıt oluşmasın diye kaydetmedik.`);
       return;
     }
 
@@ -102,11 +167,11 @@ export function AppointmentsPage() {
       id: editingApp ? editingApp.id : 'app_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 6),
       clientId: form.clientId,
       clientName,
-      date: form.date || clinicToday(),
-      time: form.time || '14:00',
+      date,
+      time,
       durationMinutes: Number(form.durationMinutes) || 50,
       sessionType: (form.sessionType as SessionType) || 'Bireysel Terapi',
-      location: form.location as 'Klinik (Yüz Yüze)' | 'Online (Görüntülü)' | 'Dış Görüşme' || 'Klinik (Yüz Yüze)',
+      location: (form.location as AppointmentLocation) || 'Klinik (Yüz Yüze)',
       status: (form.status as AppointmentStatus) || 'scheduled',
       notes: form.notes?.trim() || '',
       fee: Number(form.fee) || 0,
@@ -114,14 +179,35 @@ export function AppointmentsPage() {
       createdAt: editingApp ? editingApp.createdAt : new Date().toISOString(),
     };
 
-    saveAppointment(appToSave);
-    setModalOpen(false);
+    setSaving(true);
+    try {
+      saveAppointment(appToSave);
+      setFormError(null);
+      setModalOpen(false);
+    } catch (reason) {
+      setFormError(reason instanceof Error ? reason.message : 'Randevu kaydedilemedi.');
+    } finally {
+      setSaving(false);
+    }
   }
 
+  /**
+   * Görüşme tamamlandığında randevu kapatılır ve dosya, randevunun saat ve
+   * türüyle hazır bir seans notu formunda açılır. Seans otomatik yazılmaz:
+   * notu uzman yazar, böylece aynı randevu iki kez not üretmez.
+   */
   function completeAppointmentAndOpenFile(a: Appointment) {
     saveAppointment({ ...a, status: 'completed' });
-    navigate(`/danisanlar/${a.clientId}`);
+    navigate(`/danisanlar/${a.clientId}?sekme=sessions&randevu=${encodeURIComponent(a.id)}`);
   }
+
+  const sessionAppointments = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const session of getSoapSessions()) {
+      map.set(`${session.clientId}|${session.date}`, (map.get(`${session.clientId}|${session.date}`) ?? 0) + 1);
+    }
+    return map;
+  }, [appointments]);
 
   return (
     <div className="clinical-container">
@@ -136,7 +222,7 @@ export function AppointmentsPage() {
           <p>Danışan görüşmeleri, klinik seans saatleri ve randevu takibi.</p>
         </div>
         <div className="clinical-actions">
-          <button type="button" className="btn-primary" onClick={openNewModal}>
+          <button type="button" className="btn-primary" onClick={() => openNewModal()}>
             <Icon name="plus" size={16} />
             <span>Yeni Randevu Planla</span>
           </button>
@@ -189,7 +275,7 @@ export function AppointmentsPage() {
             ) : clients.length === 0 ? (
               <button type="button" className="btn-primary btn-sm" onClick={() => navigate('/danisanlar?yeni=1')}>Önce danışan ekle</button>
             ) : (
-              <button type="button" className="btn-primary btn-sm" onClick={openNewModal}>Randevu ekle</button>
+              <button type="button" className="btn-primary btn-sm" onClick={() => openNewModal()}>Randevu ekle</button>
             )}
           </div>
         ) : (
@@ -242,10 +328,7 @@ export function AppointmentsPage() {
                           : 'badge-followup'
                       }`}
                     >
-                      {app.status === 'scheduled' && 'Planlandı'}
-                      {app.status === 'completed' && 'Tamamlandı'}
-                      {app.status === 'cancelled' && 'İptal'}
-                      {app.status === 'noshow' && 'Gelmedi'}
+                      {STATUS_LABEL[app.status]}
                     </span>
                   </td>
                   <td data-label="Notlar">
@@ -259,11 +342,11 @@ export function AppointmentsPage() {
                         <button
                           type="button"
                           className="btn-primary btn-sm"
-                          title="Randevuyu tamamlandı olarak işaretle ve danışan dosyasını aç"
+                          title="Randevuyu tamamlandı işaretleyin; dosyada seans notu formu bu randevunun bilgileriyle açılır"
                           onClick={() => completeAppointmentAndOpenFile(app)}
                         >
                           <Icon name="checkCircle" size={13} />
-                          <span>Görüşmeyi tamamla</span>
+                          <span>{sessionAppointments.get(`${app.clientId}|${app.date}`) ? 'Tamamla' : 'Tamamla ve not yaz'}</span>
                         </button>
                       )}
                       <button
@@ -281,7 +364,7 @@ export function AppointmentsPage() {
                         style={{ color: 'var(--danger)' }}
                         title="Randevuyu sil"
                         aria-label={`${app.clientName} randevusunu sil`}
-                        onClick={() => handleDelete(app.id)}
+                        onClick={() => handleDelete(app)}
                       >
                         <Icon name="trash" size={13} />
                       </button>
@@ -294,6 +377,8 @@ export function AppointmentsPage() {
         )}
       </div>
 
+      {confirmDialog}
+
       {/* Modal */}
       {modalOpen && (
         <ClinicalDialog titleId="appointment-dialog-title" onClose={() => setModalOpen(false)}>
@@ -305,9 +390,16 @@ export function AppointmentsPage() {
             </div>
             <form onSubmit={handleSave}>
               <div className="clinical-modal-body">
+                {formError && (
+                  <p className="form-notice" role="alert">
+                    <Icon name="alert" size={16} />
+                    <span>{formError}</span>
+                  </p>
+                )}
                 <div className="form-group">
-                  <label>Danışan *</label>
+                  <label htmlFor="appointment-client">Danışan *</label>
                   <select
+                    id="appointment-client"
                     value={form.clientId || ''}
                     onChange={e => {
                       const cl = clients.find(c => c.id === e.target.value);
@@ -330,17 +422,20 @@ export function AppointmentsPage() {
 
                 <div className="form-row-2">
                   <div className="form-group">
-                    <label>Tarih *</label>
+                    <label htmlFor="appointment-date">Tarih *</label>
                     <input
+                      id="appointment-date"
                       type="date"
                       value={form.date || ''}
+                      min={clinicToday()}
                       onChange={e => setForm({ ...form, date: e.target.value })}
                       required
                     />
                   </div>
                   <div className="form-group">
-                    <label>Saat *</label>
+                    <label htmlFor="appointment-time">Saat *</label>
                     <input
+                      id="appointment-time"
                       type="time"
                       value={form.time || '14:00'}
                       onChange={e => setForm({ ...form, time: e.target.value })}
@@ -351,8 +446,9 @@ export function AppointmentsPage() {
 
                 <div className="form-row-2">
                   <div className="form-group">
-                    <label>Seans Türü</label>
+                    <label htmlFor="appointment-type">Seans Türü</label>
                     <select
+                      id="appointment-type"
                       value={form.sessionType || 'Bireysel Terapi'}
                       onChange={e => setForm({ ...form, sessionType: e.target.value as SessionType })}
                     >
@@ -366,36 +462,43 @@ export function AppointmentsPage() {
                     </select>
                   </div>
                   <div className="form-group">
-                    <label>Görüşme Yeri</label>
+                    <label htmlFor="appointment-location">Görüşme Yeri</label>
                     <select
+                      id="appointment-location"
                       value={form.location || 'Klinik (Yüz Yüze)'}
-                      onChange={e => setForm({ ...form, location: e.target.value as any })}
+                      onChange={e => setForm({ ...form, location: e.target.value as AppointmentLocation })}
                     >
-                      <option value="Klinik (Yüz Yüze)">Klinik (Yüz Yüze)</option>
-                      <option value="Online (Görüntülü)">Online (Görüntülü)</option>
-                      <option value="Dış Görüşme">Dış Görüşme</option>
+                      {LOCATIONS.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
                     </select>
                   </div>
                 </div>
 
                 <div className="form-row-2">
                   <div className="form-group">
-                    <label>Randevu Durumu</label>
+                    <label htmlFor="appointment-status">Randevu Durumu</label>
                     <select
+                      id="appointment-status"
                       value={form.status || 'scheduled'}
                       onChange={e => setForm({ ...form, status: e.target.value as AppointmentStatus })}
                     >
-                      <option value="scheduled">Planlandı (Bekliyor)</option>
-                      <option value="completed">Tamamlandı</option>
-                      <option value="cancelled">İptal Edildi</option>
-                      <option value="noshow">Danışan Gelmedi</option>
+                      {STATUS_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
                     </select>
                   </div>
                   <div className="form-group">
-                    <label>Seans Süresi (Dakika)</label>
+                    <label htmlFor="appointment-duration">Seans Süresi (Dakika)</label>
                     <input
+                      id="appointment-duration"
                       type="number"
                       min={15}
+                      max={600}
                       step={5}
                       value={form.durationMinutes || 50}
                       onChange={e => setForm({ ...form, durationMinutes: Number(e.target.value) })}
@@ -404,8 +507,9 @@ export function AppointmentsPage() {
                 </div>
 
                 <div className="form-group">
-                  <label>Randevu Notu / Hatırlatıcı</label>
+                  <label htmlFor="appointment-notes">Randevu Notu / Hatırlatıcı</label>
                   <textarea
+                    id="appointment-notes"
                     rows={2}
                     value={form.notes || ''}
                     onChange={e => setForm({ ...form, notes: e.target.value })}
@@ -414,12 +518,38 @@ export function AppointmentsPage() {
                 </div>
               </div>
 
+                <div className="form-row-2">
+                  <div className="form-group">
+                    <label htmlFor="appointment-fee">Ücret (TL)</label>
+                    <input
+                      id="appointment-fee"
+                      type="number"
+                      min={0}
+                      step={10}
+                      value={form.fee ?? 0}
+                      onChange={e => setForm({ ...form, fee: Number(e.target.value) })}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="appointment-payment">Ödeme durumu</label>
+                    <select
+                      id="appointment-payment"
+                      value={form.paymentStatus || 'pending'}
+                      onChange={e => setForm({ ...form, paymentStatus: e.target.value as PaymentStatus })}
+                    >
+                      <option value="pending">Ödeme bekliyor</option>
+                      <option value="paid">Tahsil edildi</option>
+                      <option value="waived">Ücret alınmayacak</option>
+                    </select>
+                  </div>
+              </div>
+
               <div className="clinical-modal-foot">
-                <button type="button" className="btn-secondary" onClick={() => setModalOpen(false)}>
+                <button type="button" className="btn-secondary" onClick={() => setModalOpen(false)} disabled={saving}>
                   Vazgeç
                 </button>
-                <button type="submit" className="btn-primary">
-                  {editingApp ? 'Randevuyu Güncelle' : 'Randevuyu Kaydet'}
+                <button type="submit" className="btn-primary" disabled={saving} aria-busy={saving}>
+                  {saving ? 'Kaydediliyor…' : editingApp ? 'Randevuyu Güncelle' : 'Randevuyu Kaydet'}
                 </button>
               </div>
             </form>

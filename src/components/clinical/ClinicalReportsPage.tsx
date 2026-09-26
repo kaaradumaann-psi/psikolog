@@ -20,12 +20,23 @@ import { getFormulation, getScreenings, getSettings } from '../../clinical/pract
 import { getSessionsByClientId } from '../../clinical/clinicalStore';
 import { clinicToday, isSafeImageUrl } from '../../clinical/recordRules';
 import { Icon } from '../Icon';
+import { useConfirmDialog } from '../useConfirmDialog';
 
 export function ClinicalReportsPage() {
   const [reports, setReports] = useState<ClinicalReport[]>(() => getClinicalReports());
   const [clients, setClients] = useState<Client[]>(() => getClients());
   const [reportClientId, setReportClientId] = useState('');
-  const [activeReport, setActiveReport] = useState<ClinicalReport | null>(() => reports[0] || null);
+  const [activeReport, setActiveReport] = useState<ClinicalReport | null>(() => {
+    const wanted = new URLSearchParams(window.location.search).get('rapor');
+    if (wanted) {
+      const found = reports.find((report) => report.id === wanted);
+      if (found) return found;
+    }
+    return reports[0] || null;
+  });
+  const [creating, setCreating] = useState(false);
+  const [listError, setListError] = useState<string | null>(null);
+  const { ask: askConfirm, dialog: confirmDialog } = useConfirmDialog();
   const [isEditing, setIsEditing] = useState(false);
 
   // Form State
@@ -57,11 +68,13 @@ export function ClinicalReportsPage() {
   }, [activeReport]);
 
   function handleCreateNew(type: ClinicalReportType = 'comprehensive') {
+    if (creating) return;
     const firstClient = clients.find((client) => client.id === reportClientId);
     if (!firstClient) {
-      alert('Rapor hangi danışana aitse onu seçin.');
+      setListError('Rapor hangi danışana aitse onu seçin.');
       return;
     }
+    setListError(null);
     const cName = `${firstClient.firstName} ${firstClient.lastName}`;
     const cId = firstClient.id;
 
@@ -152,22 +165,39 @@ export function ClinicalReportsPage() {
       updatedAt: new Date().toISOString(),
     };
 
-    saveClinicalReport(newDoc);
-    setActiveReport(newDoc);
-    setIsEditing(false);
+    setCreating(true);
+    try {
+      saveClinicalReport(newDoc);
+      setActiveReport(newDoc);
+      setIsEditing(false);
+    } catch (reason) {
+      setListError(reason instanceof Error ? reason.message : 'Rapor kaydedilemedi.');
+    } finally {
+      setCreating(false);
+    }
   }
 
   function handleSaveEdit() {
     if (!activeReport) return;
+    const sections = (reportForm.sections ?? activeReport.sections).map((section) => ({
+      ...section,
+      content: section.content.trim(),
+    }));
+    if (sections.some((section) => !section.content)) {
+      setListError('Boş bırakılan bölüm içeriği kaydedilmez; ya doldurun ya bölümü silin.');
+      return;
+    }
     const updated: ClinicalReport = {
       ...activeReport,
       ...reportForm,
+      sections,
       id: activeReport.id,
       updatedAt: new Date().toISOString(),
     } as ClinicalReport;
 
     saveClinicalReport(updated);
     setActiveReport(updated);
+    setListError(null);
     setIsEditing(false);
   }
 
@@ -177,13 +207,18 @@ export function ClinicalReportsPage() {
     setIsEditing(true);
   }
 
-  function handleDelete(id: string) {
-    if (confirm('Bu klinik raporu silmek istediğinize emin misiniz?')) {
-      deleteClinicalReport(id);
-      const remaining = reports.filter(r => r.id !== id);
-      setActiveReport(remaining[0] || null);
-      setIsEditing(false);
-    }
+  function handleDelete(report: ClinicalReport) {
+    askConfirm({
+      title: 'Klinik raporu sil',
+      description: `${report.reportTitle} (${report.reportDate}) raporu bu cihazdan silinir. Yazdırılmış nüshalar hariç geri alınamaz.`,
+      confirmLabel: 'Raporu sil',
+      run: () => {
+        deleteClinicalReport(report.id);
+        const remaining = reports.filter((item) => item.id !== report.id);
+        setActiveReport(remaining[0] || null);
+        setIsEditing(false);
+      },
+    });
   }
 
   return (
@@ -205,9 +240,9 @@ export function ClinicalReportsPage() {
             <span>A4 Raporu Yazdır</span>
           </button>
           <div style={{ display: 'inline-flex', gap: 6 }}>
-            <button type="button" className="btn-primary" onClick={() => handleCreateNew('comprehensive')}>
+            <button type="button" className="btn-primary" disabled={creating} aria-busy={creating} onClick={() => handleCreateNew('comprehensive')}>
               <Icon name="plus" size={16} />
-              <span>Yeni Kapsamlı Rapor</span>
+              <span>{creating ? 'Rapor hazırlanıyor…' : 'Yeni Kapsamlı Rapor'}</span>
             </button>
           </div>
         </div>
@@ -215,6 +250,12 @@ export function ClinicalReportsPage() {
 
       <div className="report-split">
         <div className="report-list btn-print-hide">
+          {listError && (
+            <p className="form-notice" role="alert">
+              <Icon name="alert" size={16} />
+              <span>{listError}</span>
+            </p>
+          )}
           <div className="report-list-label">Kayıtlı raporlar ({reports.length})</div>
 
           {reports.length === 0 ? (
@@ -249,16 +290,16 @@ export function ClinicalReportsPage() {
             </select>
           </label>
           <div className="report-create">
-            <button type="button" className="btn-secondary btn-full btn-sm" onClick={() => handleCreateNew('referral')}>
+            <button type="button" className="btn-secondary btn-full btn-sm" disabled={creating} onClick={() => handleCreateNew('referral')}>
               Psikiyatrik Sevk Raporu
             </button>
-            <button type="button" className="btn-secondary btn-full btn-sm" onClick={() => handleCreateNew('session_progress')}>
+            <button type="button" className="btn-secondary btn-full btn-sm" disabled={creating} onClick={() => handleCreateNew('session_progress')}>
               Seans İlerleme Raporu
             </button>
-            <button type="button" className="btn-secondary btn-full btn-sm" onClick={() => handleCreateNew('beck')}>
+            <button type="button" className="btn-secondary btn-full btn-sm" disabled={creating} onClick={() => handleCreateNew('beck')}>
               Beck Raporu
             </button>
-            <button type="button" className="btn-secondary btn-full btn-sm" onClick={() => handleCreateNew('scl90')}>
+            <button type="button" className="btn-secondary btn-full btn-sm" disabled={creating} onClick={() => handleCreateNew('scl90')}>
               SCL-90-R Raporu
             </button>
           </div>
@@ -289,7 +330,7 @@ export function ClinicalReportsPage() {
                       type="button"
                       className="btn-secondary btn-sm"
                       style={{ color: 'var(--danger)' }}
-                      onClick={() => handleDelete(activeReport.id)}
+                      onClick={() => handleDelete(activeReport)}
                     >
                       <Icon name="trash" size={14} />
                     </button>
@@ -415,13 +456,14 @@ export function ClinicalReportsPage() {
               <Icon name="fileText" size={40} />
               <h4>Görüntülenecek Rapor Yok</h4>
               <p>Soldaki menüden bir rapor seçebilir veya yeni bir klinik rapor oluşturabilirsiniz.</p>
-              <button type="button" className="btn-primary btn-sm" onClick={() => handleCreateNew('comprehensive')}>
+              <button type="button" className="btn-primary btn-sm" disabled={creating} onClick={() => handleCreateNew('comprehensive')}>
                 Kapsamlı Rapor Oluştur
               </button>
             </div>
           )}
         </div>
       </div>
+      {confirmDialog}
     </div>
   );
 }

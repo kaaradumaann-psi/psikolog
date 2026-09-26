@@ -4,6 +4,8 @@ import {
   ageFromBirthDate,
   isSafeDocumentUrl,
   isValidTc,
+  trIncludes,
+  trLower,
   nextFileNumber,
 } from '../src/clinical/recordRules.ts';
 
@@ -27,4 +29,14 @@ test('belge bağlantısı yalnızca izinli veri adresidir', () => {
   assert.equal(isSafeDocumentUrl('data:application/pdf;base64,QQ=='), true);
   assert.equal(isSafeDocumentUrl('javascript:alert(1)'), false);
   assert.equal(isSafeDocumentUrl('data:text/html,<script>'), false);
+});
+
+test('arama Türkçe İ/I/ı/ş eşlemesinde kaydı bulur', () => {
+  // toLowerCase() "İ" → "i̇" (birleşik nokta) yapar; ASCII "i" araması kaydı bulamaz.
+  assert.equal(trIncludes('İbrahim Şahin', 'ibrahim'), true);
+  assert.equal(trIncludes('İbrahim Şahin', 'İBRAHİM'), true);
+  assert.equal(trIncludes('ISLAK KAYIT', 'ıslak'), true);
+  assert.equal(trLower('İstANbul'), 'istanbul');
+  assert.equal(trIncludes(undefined, 'x'), false);
+  assert.equal('İbrahim'.toLowerCase().includes('ibrahim'.toLowerCase()), false, 'eski hatalı davranış geri geldi');
 });

@@ -607,3 +607,44 @@
   .workspace-sidebar { display: none !important; }
   .workspace-content { width: 100%; }
 }
+
+.task-status-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--soft);
+}
+
+.task-status-select select {
+  min-height: 36px;
+  font-size: 13px;
+}
+
+/* lazy rota sÄ±nÄ±rÄ±: ekran indirilirken boÅŸluk deÄŸil, durum gÃ¶sterilir */
+.route-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 200px;
+  justify-content: center;
+  color: var(--soft);
+  font-size: 14px;
+}
+
+.route-loading-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent, #205c48);
+  animation: route-loading-pulse 1s ease-in-out infinite;
+}
+
+@keyframes route-loading-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .route-loading-dot { animation: none; opacity: 0.8; }
+}

@@ -84,3 +84,18 @@ export function reportStorageError(): void {
     detail: 'Kayıt bu cihaza yazılamadı. Depo dolu olabilir. Önce yedek indirin, sonra yer açın.',
   }));
 }
+
+/**
+ * Türkçe eşleme: `toLowerCase()` "İ" → "i̇" (birleşik nokta) üretir; aramaya
+ * ASCII "i" yazan hekim kayıt bulamaz. Türkçe yerele göre küçültme "İ"→"i",
+ * "I"→"ı" yapar; hem alan hem sorgu aynı yoldan geçirilmelidir.
+ */
+export function trLower(value: string): string {
+  return value.toLocaleLowerCase('tr-TR');
+}
+
+/** Türkçe duyarlı `includes`: ikisi de normalize edilir. */
+export function trIncludes(haystack: string | undefined, needle: string): boolean {
+  if (!haystack) return false;
+  return trLower(haystack).includes(trLower(needle));
+}

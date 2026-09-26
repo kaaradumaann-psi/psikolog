@@ -14,6 +14,7 @@ export function ConfirmDialog({
   confirmLabel,
   busy = false,
   tone = 'danger',
+  error = null,
   onConfirm,
   onCancel,
 }: {
@@ -22,6 +23,7 @@ export function ConfirmDialog({
   confirmLabel: string;
   busy?: boolean;
   tone?: 'danger' | 'neutral';
+  error?: string | null;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -107,6 +109,12 @@ export function ConfirmDialog({
             <Icon name="close" size={18} />
           </button>
         </header>
+        {error && (
+          <p className="confirm-error" role="alert">
+            <Icon name="alert" size={15} />
+            <span>{error}</span>
+          </p>
+        )}
         <footer className="modal-footer confirm-footer">
           <button ref={cancelRef} type="button" className="btn-secondary" onClick={onCancel} disabled={busy}>
             Vazgeç

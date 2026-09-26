@@ -2,18 +2,16 @@ import { useState, useEffect, useMemo } from 'react';
 import type {
   Client,
   SoapSession,
+  Appointment,
   BeckDepressionResult,
   BeckAnxietyResult,
   Scl90Result,
   ClinicalReport,
-  RiskLevel,
-  SessionType,
-  PaymentStatus,
 } from '../../clinical/clinicalTypes';
 import {
   getClientById,
   getSessionsByClientId,
-  saveSoapSession,
+  getAppointments,
   deleteSoapSession,
   getBeckDepressionTests,
   getBeckAnxietyTests,
@@ -24,19 +22,20 @@ import {
 import { readingsForClient, measurementNote, safetyPlanIsEmpty } from '../../clinical/casework';
 import type { RapidScreeningResult } from '../../clinical/rapidScreening';
 import { getSafetyPlan, getScreenings, getSettings, subscribePracticeStore } from '../../clinical/practiceStore';
-import { clinicToday, maskTc } from '../../clinical/recordRules';
-import { ClinicalDialog } from './ClinicalDialog';
+import { maskTc } from '../../clinical/recordRules';
+import { SoapSessionDialog, draftFromAppointment } from './SoapSessionDialog';
 import { Icon } from '../Icon';
 import { FormulationPanel } from './FormulationPanel';
 import { ScoreChips } from './ScoreChips';
 import { ClientDocuments, ClientNotes } from '../practice/ClientRecordsPanel';
 import { navigate } from '../../router';
+import { useConfirmDialog } from '../useConfirmDialog';
 
 type Tab = 'overview' | 'sessions' | 'formulation' | 'tests' | 'progress' | 'reports' | 'notes' | 'documents';
 
 const FILE_SECTIONS: { id: Tab; label: string }[] = [
   { id: 'sessions', label: 'Seans notları' },
-  { id: 'formulation', label: 'Formülasyon' },
+  { id: 'formulation', label: 'Formülasyon ve güvenlik' },
   { id: 'tests', label: 'Ölçekler' },
   { id: 'progress', label: 'Gelişim' },
   { id: 'overview', label: 'Anamnez' },
@@ -45,15 +44,54 @@ const FILE_SECTIONS: { id: Tab; label: string }[] = [
   { id: 'reports', label: 'Raporlar' },
 ];
 
+const TAB_ALIASES: Record<string, Tab> = {
+  overview: 'overview',
+  anamnez: 'overview',
+  sessions: 'sessions',
+  seanslar: 'sessions',
+  formulation: 'formulation',
+  formulasyon: 'formulation',
+  tests: 'tests',
+  testler: 'tests',
+  progress: 'progress',
+  gelisim: 'progress',
+  reports: 'reports',
+  raporlar: 'reports',
+  notes: 'notes',
+  notlar: 'notes',
+  documents: 'documents',
+  belgeler: 'documents',
+};
+
+function paramsFromLocation() {
+  return new URLSearchParams(window.location.search);
+}
+
 function tabFromLocation(): Tab {
-  const sekme = new URLSearchParams(window.location.search).get('sekme');
-  const allowed: Tab[] = ['overview', 'sessions', 'formulation', 'tests', 'progress', 'reports', 'notes', 'documents'];
-  return allowed.includes(sekme as Tab) ? (sekme as Tab) : 'sessions';
+  const requested = paramsFromLocation().get('sekme');
+  return (requested && TAB_ALIASES[requested.toLocaleLowerCase('tr-TR')]) || 'sessions';
 }
 
 export function ClientDetailPage({ clientId }: { clientId: string }) {
   const [client, setClient] = useState<Client | undefined>(() => getClientById(clientId));
   const [activeTab, setActiveTab] = useState<Tab>(tabFromLocation);
+
+  // Sekme konumu adres çubuğunda tutulur: yenileme ve geri/ileri aynı yerde bırakır.
+  function changeTab(next: Tab) {
+    setActiveTab(next);
+    const params = paramsFromLocation();
+    params.set('sekme', next);
+    params.delete('randevu');
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}?${params.toString()}`);
+  }
+
+  // Randevudan gelinen akışta not formu randevu bağlamıyla açılır.
+  useEffect(() => {
+    const appointmentId = paramsFromLocation().get('randevu');
+    if (!appointmentId) return;
+    const appointment = getAppointments().find((item) => item.id === appointmentId);
+    if (appointment && appointment.clientId === clientId) setPendingAppointment(appointment);
+  }, [clientId]);
   const [sectionMenuOpen, setSectionMenuOpen] = useState(false);
 
   const [sessions, setSessions] = useState<SoapSession[]>(() => getSessionsByClientId(clientId));
@@ -64,24 +102,10 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
   const [screenings, setScreenings] = useState<RapidScreeningResult[]>([]);
 
   // SOAP modal state
-  const [soapModalOpen, setSoapModalOpen] = useState(false);
-  const [editingSession, setEditingSession] = useState<SoapSession | null>(null);
-  const [soapForm, setSoapForm] = useState<Partial<SoapSession>>({
-    sessionNumber: 1,
-    date: clinicToday(),
-    startTime: '14:00',
-    durationMinutes: 50,
-    sessionType: 'Bireysel Terapi',
-    subjective: '',
-    objective: '',
-    assessment: '',
-    plan: '',
-    riskLevel: 'none',
-    riskNotes: '',
-    homework: '',
-    fee: getSettings().defaultFee,
-    paymentStatus: 'pending',
-  });
+  const [soapOpen, setSoapOpen] = useState(false);
+  const [soapDraft, setSoapDraft] = useState<SoapSession | null>(null);
+  const [pendingAppointment, setPendingAppointment] = useState<Appointment | null>(null);
+  const { ask: askConfirm, dialog: confirmDialog } = useConfirmDialog();
 
   useEffect(() => {
     function refreshData() {
@@ -135,71 +159,41 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
   }
 
   function openNewSessionModal() {
-    const nextNum = (sessions.length > 0 ? Math.max(...sessions.map(s => s.sessionNumber)) + 1 : 1);
-    setEditingSession(null);
-    setSoapForm({
-      sessionNumber: nextNum,
-      date: clinicToday(),
-      startTime: '14:00',
-      durationMinutes: 50,
-      sessionType: 'Bireysel Terapi',
-      subjective: '',
-      objective: '',
-      assessment: '',
-      plan: '',
-      riskLevel: 'none',
-      riskNotes: '',
-      homework: '',
-      fee: getSettings().defaultFee,
-      paymentStatus: 'pending',
+    setSoapDraft(null);
+    setPendingAppointment(null);
+    setSoapOpen(true);
+  }
+
+  function openEditSessionModal(session: SoapSession) {
+    setSoapDraft(session);
+    setPendingAppointment(null);
+    setSoapOpen(true);
+  }
+
+  function requestDeleteSoap(session: SoapSession) {
+    askConfirm({
+      title: 'Seans notunu sil',
+      description: `#${session.sessionNumber} numaralı ${session.date} tarihli SOAP notu bu cihazdan silinir. Geri alınamaz.`,
+      confirmLabel: 'Seans notunu sil',
+      run: () => deleteSoapSession(session.id),
     });
-    setSoapModalOpen(true);
   }
 
-  function openEditSessionModal(s: SoapSession) {
-    setEditingSession(s);
-    setSoapForm({ ...s });
-    setSoapModalOpen(true);
+  function onSoapSaved() {
+    setSoapOpen(false);
+    setPendingAppointment(null);
+    changeTab('sessions');
   }
 
-  function handleSaveSoap(e: React.FormEvent) {
-    e.preventDefault();
-    if (!client) return;
-
-    const sessionToSave: SoapSession = {
-      id: editingSession ? editingSession.id : 'sess_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 6),
-      clientId: client.id,
-      clientName: `${client.firstName} ${client.lastName}`,
-      sessionNumber: Number(soapForm.sessionNumber) || 1,
-      date: soapForm.date || clinicToday(),
-      startTime: soapForm.startTime || '14:00',
-      durationMinutes: Number(soapForm.durationMinutes) || 50,
-      sessionType: (soapForm.sessionType as SessionType) || 'Bireysel Terapi',
-      subjective: soapForm.subjective?.trim() || '',
-      objective: soapForm.objective?.trim() || '',
-      assessment: soapForm.assessment?.trim() || '',
-      plan: soapForm.plan?.trim() || '',
-      riskLevel: (soapForm.riskLevel as RiskLevel) || 'none',
-      riskNotes: soapForm.riskNotes?.trim() || '',
-      homework: soapForm.homework?.trim() || '',
-      fee: Number(soapForm.fee) || 0,
-      paymentStatus: (soapForm.paymentStatus as PaymentStatus) || 'paid',
-      createdAt: editingSession ? editingSession.createdAt : new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    saveSoapSession(sessionToSave);
-    setSoapModalOpen(false);
-  }
-
-  function handleDeleteSoap(id: string) {
-    if (confirm('Bu seans notunu silmek istediğinize emin misiniz?')) {
-      deleteSoapSession(id);
-    }
-  }
+  const soapInitial = pendingAppointment
+    ? draftFromAppointment(pendingAppointment, sessions, getSettings().defaultFee)
+    : soapDraft;
 
   return (
     <div className="clinical-container">
+      <p className="print-section-caption" aria-hidden="true">
+        {client.firstName} {client.lastName} · Protokol {client.fileNumber} · Bölüm: {FILE_SECTIONS.find((section) => section.id === activeTab)?.label}
+      </p>
       {/* Üst Başlık & Geri Dön */}
       <div className="clinical-header">
         <div className="clinical-title-wrap">
@@ -221,9 +215,13 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
         </div>
 
         <div className="clinical-actions">
-          <button type="button" className="btn-secondary" onClick={() => window.print()}>
+          <button type="button" className="btn-secondary" onClick={() => navigate(`/takvim?danisan=${encodeURIComponent(client.id)}`)}>
+            <Icon name="calendar" size={16} />
+            <span>Randevu planla</span>
+          </button>
+          <button type="button" className="btn-secondary btn-print-hide" onClick={() => window.print()}>
             <Icon name="print" size={16} />
-            <span>Dosyayı Yazdır</span>
+            <span>Bu bölümü yazdır</span>
           </button>
           <button type="button" className="btn-primary" onClick={openNewSessionModal}>
             <Icon name="plus" size={16} />
@@ -254,16 +252,21 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
                 : 'Henüz seans notu yok.'}
             </p>
           </div>
-          <button type="button" className="btn-secondary btn-sm" onClick={() => setActiveTab('formulation')}>Formülasyon</button>
+          <button type="button" className="btn-secondary btn-sm" onClick={() => changeTab('formulation')}>Formülasyon</button>
         </div>
         <ScoreChips readings={readings} />
         {readings.length === 0 && (
-          <button type="button" className="btn-secondary btn-sm" onClick={() => setActiveTab('tests')}>
+          <button type="button" className="btn-secondary btn-sm" onClick={() => changeTab('tests')}>
             Ölçek başlat
           </button>
         )}
         {safetyNeeded && safetyPlanIsEmpty(getSafetyPlan(client.id)) && (
-          <p className="safety-callout">Güvenlik uyarısı var, plan boş.</p>
+          <p className="safety-callout">
+            <span>Güvenlik uyarısı var, plan boş.</span>
+            <button type="button" className="btn-secondary btn-sm" onClick={() => changeTab('formulation')}>
+              Güvenlik planını doldur
+            </button>
+          </p>
         )}
       </section>
 
@@ -280,7 +283,19 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
           <small>{sectionMenuOpen ? 'Kapat' : 'Bölümler'}</small>
         </button>
         {sectionMenuOpen && (
-          <div className="file-section-panel" id="file-section-panel" role="menu">
+          <div
+            className="file-section-panel"
+            id="file-section-panel"
+            role="group"
+            aria-label="Dosya bölümü seç"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                event.stopPropagation();
+                setSectionMenuOpen(false);
+                (event.currentTarget.querySelector('button') as HTMLButtonElement | null)?.focus();
+              }
+            }}
+          >
             {FILE_SECTIONS.map((section) => {
               const count = section.id === 'sessions'
                 ? sessions.length
@@ -293,10 +308,10 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
                 <button
                   key={section.id}
                   type="button"
-                  role="menuitem"
+                  aria-current={activeTab === section.id ? 'true' : undefined}
                   className={activeTab === section.id ? 'is-current' : ''}
                   onClick={() => {
-                    setActiveTab(section.id);
+                    changeTab(section.id);
                     setSectionMenuOpen(false);
                   }}
                 >
@@ -347,7 +362,7 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
                       <button type="button" className="btn-secondary btn-sm" onClick={() => openEditSessionModal(s)}>
                         <Icon name="edit" size={14} />
                       </button>
-                      <button type="button" className="btn-secondary btn-sm" style={{ color: 'var(--danger)' }} onClick={() => handleDeleteSoap(s.id)}>
+                      <button type="button" className="btn-secondary btn-sm" style={{ color: 'var(--danger)' }} onClick={() => requestDeleteSoap(s)}>
                         <Icon name="trash" size={14} />
                       </button>
                     </div>
@@ -701,7 +716,7 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
                     <strong style={{ fontSize: 15 }}>{r.reportTitle}</strong>
                     <div style={{ fontSize: 12, color: 'var(--soft)' }}>Tarih: {r.reportDate} · Değerlendiren: {r.evaluator}</div>
                   </div>
-                  <button type="button" className="btn-secondary btn-sm" onClick={() => navigate('/raporlar')}>
+                  <button type="button" className="btn-secondary btn-sm" onClick={() => navigate(`/raporlar?rapor=${encodeURIComponent(r.id)}`)}>
                     <Icon name="eye" size={14} />
                     <span>İncele</span>
                   </button>
@@ -712,161 +727,16 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
         </div>
       )}
 
-      {/* SOAP Modal */}
-      {soapModalOpen && (
-        <ClinicalDialog titleId="client-session-dialog-title" onClose={() => setSoapModalOpen(false)} wide>
-            <div className="clinical-modal-head">
-              <h3 id="client-session-dialog-title">{editingSession ? 'SOAP Seans Notunu Düzenle' : `Yeni Seans Notu (SOAP) — ${client.firstName} ${client.lastName}`}</h3>
-              <button type="button" className="btn-icon" aria-label="Pencereyi kapat" onClick={() => setSoapModalOpen(false)}>
-                <Icon name="close" size={20} />
-              </button>
-            </div>
-            <form onSubmit={handleSaveSoap}>
-              <div className="clinical-modal-body">
-                <div className="form-row-2">
-                  <div className="form-group">
-                    <label>Seans No</label>
-                    <input
-                      type="number"
-                      min={1}
-                      value={soapForm.sessionNumber || 1}
-                      onChange={e => setSoapForm({ ...soapForm, sessionNumber: Number(e.target.value) })}
-                      required
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Seans Türü</label>
-                    <select
-                      value={soapForm.sessionType || 'Bireysel Terapi'}
-                      onChange={e => setSoapForm({ ...soapForm, sessionType: e.target.value as SessionType })}
-                    >
-                      <option value="Bireysel Terapi">Bireysel Terapi</option>
-                      <option value="Çift / Aile Terapisi">Çift / Aile Terapisi</option>
-                      <option value="İlk Görüşme / Anamnez">İlk Görüşme / Anamnez</option>
-                      <option value="Psikolojik Değerlendirme">Psikolojik Değerlendirme</option>
-                      <option value="Kriz Müdahalesi">Kriz Müdahalesi</option>
-                      <option value="Online Terapi">Online Terapi</option>
-                      <option value="Takip Seansı">Takip Seansı</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="form-row-2">
-                  <div className="form-group">
-                    <label>Tarih</label>
-                    <input
-                      type="date"
-                      value={soapForm.date || ''}
-                      onChange={e => setSoapForm({ ...soapForm, date: e.target.value })}
-                      required
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Başlangıç Saati &amp; Süre (dk)</label>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <input
-                        type="time"
-                        value={soapForm.startTime || '14:00'}
-                        onChange={e => setSoapForm({ ...soapForm, startTime: e.target.value })}
-                      />
-                      <input
-                        type="number"
-                        style={{ width: 90 }}
-                        value={soapForm.durationMinutes || 50}
-                        onChange={e => setSoapForm({ ...soapForm, durationMinutes: Number(e.target.value) })}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="form-group">
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span className="soap-letter" style={{ width: 16, height: 16, background: '#0d0d0d', color: '#fff', borderRadius: 3, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10 }}>S</span>
-                    <span>Subjektif (Danışanın İfadeleri &amp; Ruh Hali)</span>
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={soapForm.subjective || ''}
-                    onChange={e => setSoapForm({ ...soapForm, subjective: e.target.value })}
-                    placeholder="Danışanın seans esnasındaki sözel paylaşımları, haftalık deneyimleri ve şikayetleri..."
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span className="soap-letter" style={{ width: 16, height: 16, background: '#0d0d0d', color: '#fff', borderRadius: 3, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10 }}>O</span>
-                    <span>Objektif (Klinisyenin Gözlemleri &amp; Bilişsel/Davranışsal Durum)</span>
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={soapForm.objective || ''}
-                    onChange={e => setSoapForm({ ...soapForm, objective: e.target.value })}
-                    placeholder="Duygulanım (afekt), düşünce akışı hızı, göz teması, motor gerginlik, test puanları..."
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span className="soap-letter" style={{ width: 16, height: 16, background: '#0d0d0d', color: '#fff', borderRadius: 3, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10 }}>A</span>
-                    <span>Analiz / Değerlendirme (Klinik Formülasyon &amp; Şemalar)</span>
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={soapForm.assessment || ''}
-                    onChange={e => setSoapForm({ ...soapForm, assessment: e.target.value })}
-                    placeholder="BDT bilişsel kavramsallaştırma, otomatik düşünceler, savunma mekanizmaları..."
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span className="soap-letter" style={{ width: 16, height: 16, background: '#0d0d0d', color: '#fff', borderRadius: 3, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10 }}>P</span>
-                    <span>Plan (Müdahaleler, Ev Ödevleri &amp; Gelecek Seans)</span>
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={soapForm.plan || ''}
-                    onChange={e => setSoapForm({ ...soapForm, plan: e.target.value })}
-                    placeholder="Uygulanan teknikler, sonraki seans gündemi, sevk/konsültasyon kararı..."
-                  />
-                </div>
-
-                <div className="form-row-2">
-                  <div className="form-group">
-                    <label>Ev Ödevi</label>
-                    <input
-                      type="text"
-                      value={soapForm.homework || ''}
-                      onChange={e => setSoapForm({ ...soapForm, homework: e.target.value })}
-                      placeholder="Düşünce kaydı formu, nefes egzersizi..."
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Risk Düzeyi</label>
-                    <select
-                      value={soapForm.riskLevel || 'none'}
-                      onChange={e => setSoapForm({ ...soapForm, riskLevel: e.target.value as RiskLevel })}
-                    >
-                      <option value="none">Risk Yok / Güvenli</option>
-                      <option value="low">Düşük Risk</option>
-                      <option value="moderate">Orta Risk (Yakın Takip)</option>
-                      <option value="high">Yüksek Risk! (Acil Protokol)</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <div className="clinical-modal-foot">
-                <button type="button" className="btn-secondary" onClick={() => setSoapModalOpen(false)}>
-                  Vazgeç
-                </button>
-                <button type="submit" className="btn-primary">
-                  {editingSession ? 'Seans Notunu Güncelle' : 'Seans Notunu Kaydet'}
-                </button>
-              </div>
-            </form>
-        </ClinicalDialog>
-      )}
+      <SoapSessionDialog
+        open={soapOpen}
+        sessions={sessions}
+        clients={client ? [client] : []}
+        initial={soapInitial}
+        lockClient
+        onClose={() => setSoapOpen(false)}
+        onSaved={onSoapSaved}
+      />
+      {confirmDialog}
     </div>
   );
 }

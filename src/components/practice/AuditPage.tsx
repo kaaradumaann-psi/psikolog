@@ -13,7 +13,7 @@ export function AuditPage() {
         <div className="clinical-title-wrap">
           <div className="clinical-kicker"><span className="clinical-kicker-dot" /><span>Kayıt izi</span></div>
           <h1>Denetim kaydı</h1>
-          <p>Bu cihazdaki son kaydetme ve silme işlemleri. Bulut açıksa sunucu kendi kaydını ayrıca tutar.</p>
+          <p>Bu cihazdaki son kaydetme ve silme işlemleri; son {events.length} kayıt tutulur. Denetim izi de yalnızca bu cihazdadır, sunucuya gönderilmez.</p>
         </div>
         <button type="button" className="btn-secondary" onClick={() => navigate('/ayarlar')}>
           <Icon name="left" size={14} />

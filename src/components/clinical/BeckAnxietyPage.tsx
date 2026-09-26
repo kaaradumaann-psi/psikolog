@@ -24,7 +24,8 @@ export function BeckAnxietyPage() {
   const [testDate, setTestDate] = useState<string>(clinicToday());
 
   const [answers, setAnswers] = useState(() => emptyAnswers(21));
-  const [toast, setToast] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  const [saving, setSaving] = useState(false);
 
   function handleClientSelect(id: string) {
     setSelectedClientId(id);
@@ -56,20 +57,21 @@ export function BeckAnxietyPage() {
   }, [completeAnswers, selectedClientId, clientName, clientGender, parsedAge, testDate]);
 
   function handleSave() {
+    if (saving) return;
     if (!clientName.trim()) {
-      alert('Danışan adı gerekli. Varsayılan ad atanmaz.');
+      setNotice({ tone: 'error', text: 'Danışan adı gerekli. Varsayılan ad atanmaz.' });
       return;
     }
     if (clientGender !== 'KADIN' && clientGender !== 'ERKEK') {
-      alert('Cinsiyet seçin. Varsayılan atanmaz.');
+      setNotice({ tone: 'error', text: 'Cinsiyet seçin. Varsayılan atanmaz.' });
       return;
     }
     if (parsedAge === null) {
-      alert('Yaş boş bırakılabilir; girildiyse 0–120 arası tam sayı olmalı.');
+      setNotice({ tone: 'error', text: 'Yaş boş bırakılabilir; girildiyse 0–120 arası tam sayı olmalı.' });
       return;
     }
     if (!completeAnswers) {
-      alert('İşaretlenmeyen madde var. Boş madde 0 sayılmaz.');
+      setNotice({ tone: 'error', text: 'İşaretlenmeyen madde var. Boş madde 0 sayılmaz.' });
       return;
     }
     const result = calculateBeckAnxiety(completeAnswers, {
@@ -79,9 +81,15 @@ export function BeckAnxietyPage() {
       age: parsedAge,
       testDate,
     });
-    saveBeckAnxietyTest(result);
-    setToast('Beck Anksiyete Envanteri başarıyla kaydedildi ✓');
-    setTimeout(() => setToast(null), 3000);
+    setSaving(true);
+    try {
+      saveBeckAnxietyTest(result);
+      setNotice({ tone: 'ok', text: 'Beck Anksiyete Envanteri kaydedildi. Boş bırakılmış madde yoktur; 0 da bir cevaptır.' });
+    } catch (reason) {
+      setNotice({ tone: 'error', text: reason instanceof Error ? reason.message : 'Sonuç kaydedilemedi. Cihaz depo alanını kontrol edin.' });
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -111,16 +119,26 @@ export function BeckAnxietyPage() {
             <Icon name="print" size={16} />
             <span>Raporu Yazdır</span>
           </button>
-          <button type="button" className="btn-primary" onClick={handleSave}>
+          <button type="button" className="btn-primary" onClick={handleSave} disabled={saving} aria-busy={saving}>
             <Icon name="save" size={16} />
-            <span>Sonucu Kaydet</span>
+            <span>{saving ? 'Kaydediliyor…' : 'Sonucu Kaydet'}</span>
           </button>
         </div>
       </div>
 
-      {toast && (
-        <div className="modern-table-card" style={{ background: 'var(--success-tint)', border: '1px solid var(--success-border)', color: 'var(--success)', padding: '12px 16px', marginBottom: 20 }}>
-          {toast}
+      {notice && (
+        <div
+          className="modern-table-card"
+          role={notice.tone === 'error' ? 'alert' : 'status'}
+          style={{
+            background: notice.tone === 'error' ? 'var(--danger-tint)' : 'var(--success-tint)',
+            border: `1px solid ${notice.tone === 'error' ? 'var(--danger-border)' : 'var(--success-border)'}`,
+            color: notice.tone === 'error' ? 'var(--danger-ink)' : 'var(--success)',
+            padding: '12px 16px',
+            marginBottom: 20,
+          }}
+        >
+          {notice.text}
         </div>
       )}
 
@@ -129,8 +147,9 @@ export function BeckAnxietyPage() {
         <h3 style={{ margin: '0 0 14px', fontSize: 16 }}>Danışan Bilgileri</h3>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
           <div className="form-group">
-            <label>Kayıtlı Danışanlardan Seç</label>
+            <label htmlFor="bai-client-select">Kayıtlı Danışanlardan Seç</label>
             <select
+              id="bai-client-select"
               value={selectedClientId}
               onChange={e => handleClientSelect(e.target.value)}
             >
@@ -144,8 +163,9 @@ export function BeckAnxietyPage() {
           </div>
 
           <div className="form-group">
-            <label>Danışan Adı Soyadı *</label>
+            <label htmlFor="bai-client-name">Danışan Adı Soyadı *</label>
             <input
+              id="bai-client-name"
               type="text"
               value={clientName}
               onChange={e => setClientName(e.target.value)}
@@ -154,9 +174,11 @@ export function BeckAnxietyPage() {
           </div>
 
           <div className="form-group">
-            <label>Cinsiyet &amp; Yaş</label>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <fieldset className="form-fieldset">
+              <legend>Cinsiyet ve yaş</legend>
+              <div style={{ display: 'flex', gap: 8 }}>
               <select
+                aria-label="Cinsiyet"
                 value={clientGender}
                 onChange={e => setClientGender(e.target.value === 'ERKEK' || e.target.value === 'KADIN' ? e.target.value : '')}
               >
@@ -165,6 +187,7 @@ export function BeckAnxietyPage() {
                 <option value="ERKEK">Erkek</option>
               </select>
               <input
+                aria-label="Yaş"
                 type="number"
                 style={{ width: 80 }}
                 min={0}
@@ -173,12 +196,14 @@ export function BeckAnxietyPage() {
                 placeholder="Yaş"
                 onChange={e => setClientAge(e.target.value)}
               />
-            </div>
+              </div>
+            </fieldset>
           </div>
 
           <div className="form-group">
-            <label>Uygulanma Tarihi</label>
+            <label htmlFor="bai-test-date">Uygulanma Tarihi</label>
             <input
+              id="bai-test-date"
               type="date"
               value={testDate}
               onChange={e => setTestDate(e.target.value)}
@@ -277,9 +302,9 @@ export function BeckAnxietyPage() {
           <Icon name="print" size={16} />
           <span>Yazdır / PDF</span>
         </button>
-        <button type="button" className="btn-primary" onClick={handleSave}>
+        <button type="button" className="btn-primary" onClick={handleSave} disabled={saving} aria-busy={saving}>
           <Icon name="save" size={16} />
-          <span>Testi Danışan Dosyasına Kaydet</span>
+          <span>{saving ? 'Kaydediliyor…' : 'Testi Danışan Dosyasına Kaydet'}</span>
         </button>
       </div>
     </div>

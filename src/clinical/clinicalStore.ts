@@ -1,6 +1,7 @@
 /**
  * Klinik Psikoloji ve Değerlendirme Sistemi — Merkezi Veri Deposu (Clinical Store)
- * Yerel depolama, yedek ve dosya silme. Örnek danışan yüklemez.
+ * Yerel depolama hesap kapsamı ile çalışır: her oturum kendi kasasını görür.
+ * Örnek danışan yüklemez. Yedek al/geri yükle destekler.
  * Halil Karaduman · Uzman Psikolog & Geliştirici
  */
 
@@ -13,16 +14,37 @@ import type {
   Scl90Result,
   ClinicalReport,
 } from './clinicalTypes';
-import { purgeClientPractice, recordAudit } from './practiceStore';
+import { planPracticePurge, purgeClientPractice, recordAudit } from './practiceStore';
+import {
+  commitScopedWrites,
+  onScopeChange,
+  readScopedRaw,
+  scopedKey,
+  watchCrossTab,
+  writeScopedRaw,
+  type PlannedWrite,
+} from './storageScope';
 import { MAX_CLIENTS, MAX_SESSIONS, reportStorageError } from './recordRules';
 
-const CLIENTS_KEY = 'psikolog_clients_v2';
-const SESSIONS_KEY = 'psikolog_sessions_v2';
-const APPOINTMENTS_KEY = 'psikolog_appointments_v2';
-const BDI_KEY = 'psikolog_bdi_tests_v2';
-const BAI_KEY = 'psikolog_bai_tests_v2';
-const SCL90_KEY = 'psikolog_scl90_tests_v2';
-const REPORTS_KEY = 'psikolog_reports_v2';
+/**
+ * Denetim izi hiçbir klinik yazmayı engelleyemez: yazım hatası yutulur,
+ * kayıt yine de tamamlanır (kayıt önceliği izden büyüktür).
+ */
+function audit(action: string, entity: string, entityId: string, summary: string): void {
+  try {
+    recordAudit({ action, entity, entityId, summary });
+  } catch {
+    /* yutulur — bilinçli */
+  }
+}
+
+const CLIENTS_KEY = 'clients';
+const SESSIONS_KEY = 'sessions';
+const APPOINTMENTS_KEY = 'appointments';
+const BDI_KEY = 'bdi';
+const BAI_KEY = 'bai';
+const SCL90_KEY = 'scl90';
+const REPORTS_KEY = 'reports';
 
 type StoreListener = () => void;
 const listeners = new Set<StoreListener>();
@@ -35,6 +57,14 @@ function notify() {
       console.error('Store listener error:', e);
     }
   });
+}
+
+/**
+ * Depo doğrudan yazıldığında (yedek geri yükleme / temizleme) ekranların
+ * yeniden okuması için: store'un kendisi yazmadığı için aboneyi biz uyandırırız.
+ */
+export function notifyClinicalStore(): void {
+  notify();
 }
 
 export function subscribeClinicalStore(listener: StoreListener): () => void {
@@ -50,48 +80,66 @@ export function subscribeClinicalStore(listener: StoreListener): () => void {
 
 function getLocal<T>(key: string, fallback: T): T {
   try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
+    const raw = readScopedRaw(key);
+    if (raw === null) return fallback;
     return JSON.parse(raw) as T;
   } catch (e) {
-    console.warn(`LocalStorage read error for ${key}:`, e);
+    console.warn(`Yerel kayıt okunamadı (${key}):`, e);
     return fallback;
   }
 }
 
 function setLocal<T>(key: string, value: T): void {
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    writeScopedRaw(key, JSON.stringify(value));
     notify();
-  } catch (error) {
+  } catch {
     reportStorageError();
     throw new Error('Kayıt bu cihaza yazılamadı. Depo dolu olabilir. Önce yedek indirin.');
   }
 }
 
 const LEGACY_DEMO_IDS = ['cli_candan_01', 'cli_mert_02', 'cli_elif_03', 'cli_burak_04'];
-const PURGE_FLAG = 'psikolog_legacy_demo_purged_v1';
-let initialized = false;
+const PURGE_FLAG = 'demo_purged';
+const purgedScopes = new Set<string>();
 
-export function initClinicalStore(): void {
-  if (typeof window === 'undefined' || initialized) return;
-  initialized = true;
-  if (localStorage.getItem(PURGE_FLAG)) return;
-  const clients = getLocal<Client[]>(CLIENTS_KEY, []);
-  const demoIds = new Set(clients.filter((client) => LEGACY_DEMO_IDS.includes(client.id)).map((client) => client.id));
-  if (demoIds.size) {
-    const keep = (clientId: string | undefined) => !clientId || !demoIds.has(clientId);
-    setLocal(CLIENTS_KEY, clients.filter((client) => !demoIds.has(client.id)));
-    setLocal(SESSIONS_KEY, getLocal<SoapSession[]>(SESSIONS_KEY, []).filter((item) => keep(item.clientId)));
-    setLocal(APPOINTMENTS_KEY, getLocal<Appointment[]>(APPOINTMENTS_KEY, []).filter((item) => keep(item.clientId)));
-    setLocal(BDI_KEY, getLocal<BeckDepressionResult[]>(BDI_KEY, []).filter((item) => keep(item.clientId)));
-    setLocal(BAI_KEY, getLocal<BeckAnxietyResult[]>(BAI_KEY, []).filter((item) => keep(item.clientId)));
-    setLocal(SCL90_KEY, getLocal<Scl90Result[]>(SCL90_KEY, []).filter((item) => keep(item.clientId)));
-    setLocal(REPORTS_KEY, getLocal<ClinicalReport[]>(REPORTS_KEY, []).filter((item) => keep(item.clientId)));
-    for (const id of demoIds) purgeClientPractice(id);
+function initClinicalStore(): void {
+  if (typeof globalThis === 'undefined') return;
+  const marker = scopedKey(PURGE_FLAG);
+  if (purgedScopes.has(marker)) return;
+  purgedScopes.add(marker);
+  try {
+    if (readScopedRaw(PURGE_FLAG)) return;
+    const clients = getLocal<Client[]>(CLIENTS_KEY, []);
+    const demoIds = new Set(clients.filter((client) => LEGACY_DEMO_IDS.includes(client.id)).map((client) => client.id));
+    if (demoIds.size) {
+      const keep = (clientId: string | undefined) => !clientId || !demoIds.has(clientId);
+      setLocal(CLIENTS_KEY, clients.filter((client) => !demoIds.has(client.id)));
+      setLocal(SESSIONS_KEY, getSoapSessions().filter((item) => keep(item.clientId)));
+      setLocal(APPOINTMENTS_KEY, getLocal<Appointment[]>(APPOINTMENTS_KEY, []).filter((item) => keep(item.clientId)));
+      setLocal(BDI_KEY, getLocal<BeckDepressionResult[]>(BDI_KEY, []).filter((item) => keep(item.clientId)));
+      setLocal(BAI_KEY, getLocal<BeckAnxietyResult[]>(BAI_KEY, []).filter((item) => keep(item.clientId)));
+      setLocal(SCL90_KEY, getLocal<Scl90Result[]>(SCL90_KEY, []).filter((item) => keep(item.clientId)));
+      setLocal(REPORTS_KEY, getLocal<ClinicalReport[]>(REPORTS_KEY, []).filter((item) => keep(item.clientId)));
+      purgeClientPractice([...demoIds]);
+    }
+    writeScopedRaw(PURGE_FLAG, '1');
+  } catch {
+    /* örnek kayıt temizliği yapılamazsa çalışma alanı yine de açılır */
   }
-  localStorage.setItem(PURGE_FLAG, '1');
 }
+
+// Hesap kapsamı bağlandığında/degistiğinde bu modülün aboneleri yenilenir.
+onScopeChange(() => {
+  purgedScopes.clear();
+  initClinicalStore();
+  notify();
+});
+
+// İkinci sekmede yapılan kayıt, bu sekmede bayat veri olarak kalmasın.
+watchCrossTab(() => notify());
+
+export { initClinicalStore };
 
 /* ------------------------------------------------------------------ */
 /*  DANIŞANLAR (Clients)                                              */
@@ -128,15 +176,23 @@ export function saveClient(client: Client): void {
   recordAudit({ action: 'save', entity: 'client', entityId: client.id, summary: `${client.firstName} ${client.lastName}` });
 }
 
+/** Dosya silmenin tamamı tek yazımda uygulanır; yarısı silinmiş dosya bırakılmaz. */
+export function planClientDeletion(id: string): PlannedWrite[] {
+  return [
+    [CLIENTS_KEY, JSON.stringify(getClients().filter((item) => item.id !== id))],
+    [SESSIONS_KEY, JSON.stringify(getSoapSessions().filter((item) => item.clientId !== id))],
+    [APPOINTMENTS_KEY, JSON.stringify(getAppointments().filter((item) => item.clientId !== id))],
+    [BDI_KEY, JSON.stringify(getBeckDepressionTests().filter((item) => item.clientId !== id))],
+    [BAI_KEY, JSON.stringify(getBeckAnxietyTests().filter((item) => item.clientId !== id))],
+    [SCL90_KEY, JSON.stringify(getScl90Tests().filter((item) => item.clientId !== id))],
+    [REPORTS_KEY, JSON.stringify(getClinicalReports().filter((item) => item.clientId !== id))],
+    ...planPracticePurge(id),
+  ];
+}
+
 export function deleteClient(id: string): void {
-  setLocal(CLIENTS_KEY, getClients().filter(c => c.id !== id));
-  setLocal(SESSIONS_KEY, getSoapSessions().filter(s => s.clientId !== id));
-  setLocal(APPOINTMENTS_KEY, getAppointments().filter(a => a.clientId !== id));
-  setLocal(BDI_KEY, getBeckDepressionTests().filter(t => t.clientId !== id));
-  setLocal(BAI_KEY, getBeckAnxietyTests().filter(t => t.clientId !== id));
-  setLocal(SCL90_KEY, getScl90Tests().filter(t => t.clientId !== id));
-  setLocal(REPORTS_KEY, getClinicalReports().filter(r => r.clientId !== id));
-  purgeClientPractice(id);
+  commitScopedWrites(planClientDeletion(id));
+  notify();
   recordAudit({ action: 'delete', entity: 'client', entityId: id, summary: 'Danışan dosyası ve bağlı kayıtlar silindi' });
 }
 
@@ -165,11 +221,13 @@ export function saveSoapSession(session: SoapSession): void {
     list.unshift({ ...session, createdAt: now, updatedAt: now });
   }
   setLocal(SESSIONS_KEY, list);
+  audit(idx >= 0 ? 'update' : 'save', 'session', session.id, `Seans notu ${session.sessionNumber ?? ''} · ${session.clientId}`.trim());
 }
 
 export function deleteSoapSession(id: string): void {
   const list = getSoapSessions().filter(s => s.id !== id);
   setLocal(SESSIONS_KEY, list);
+  audit('delete', 'session', id, 'Seans notu silindi');
 }
 
 /* ------------------------------------------------------------------ */
@@ -190,11 +248,13 @@ export function saveAppointment(appointment: Appointment): void {
     list.push(appointment);
   }
   setLocal(APPOINTMENTS_KEY, list);
+  audit(idx >= 0 ? 'update' : 'save', 'appointment', appointment.id, `Randevu ${appointment.date} ${appointment.time} · ${appointment.status}`);
 }
 
 export function deleteAppointment(id: string): void {
   const list = getAppointments().filter(a => a.id !== id);
   setLocal(APPOINTMENTS_KEY, list);
+  audit('delete', 'appointment', id, 'Randevu silindi');
 }
 
 /* ------------------------------------------------------------------ */
@@ -215,11 +275,13 @@ export function saveBeckDepressionTest(test: BeckDepressionResult): void {
     list.unshift(test);
   }
   setLocal(BDI_KEY, list);
+  audit(idx >= 0 ? 'update' : 'save', 'test', test.id, `BDI sonucu kaydedildi · ${test.totalScore}`);
 }
 
 export function deleteBeckDepressionTest(id: string): void {
   const list = getBeckDepressionTests().filter(t => t.id !== id);
   setLocal(BDI_KEY, list);
+  audit('delete', 'test', id, 'BDI sonucu silindi');
 }
 
 /* ------------------------------------------------------------------ */
@@ -240,11 +302,13 @@ export function saveBeckAnxietyTest(test: BeckAnxietyResult): void {
     list.unshift(test);
   }
   setLocal(BAI_KEY, list);
+  audit(idx >= 0 ? 'update' : 'save', 'test', test.id, `BAI sonucu kaydedildi · ${test.totalScore}`);
 }
 
 export function deleteBeckAnxietyTest(id: string): void {
   const list = getBeckAnxietyTests().filter(t => t.id !== id);
   setLocal(BAI_KEY, list);
+  audit('delete', 'test', id, 'BAI sonucu silindi');
 }
 
 /* ------------------------------------------------------------------ */
@@ -265,11 +329,13 @@ export function saveScl90Test(test: Scl90Result): void {
     list.unshift(test);
   }
   setLocal(SCL90_KEY, list);
+  audit(idx >= 0 ? 'update' : 'save', 'test', test.id, `SCL-90-R sonucu kaydedildi · GSI ${test.gsi.toFixed(2)}`);
 }
 
 export function deleteScl90Test(id: string): void {
   const list = getScl90Tests().filter(t => t.id !== id);
   setLocal(SCL90_KEY, list);
+  audit('delete', 'test', id, 'SCL-90-R sonucu silindi');
 }
 
 /* ------------------------------------------------------------------ */
@@ -291,11 +357,13 @@ export function saveClinicalReport(report: ClinicalReport): void {
     list.unshift({ ...report, createdAt: now, updatedAt: now });
   }
   setLocal(REPORTS_KEY, list);
+  audit(idx >= 0 ? 'update' : 'save', 'report', report.id, `Rapor · ${report.clientName} · ${report.reportType}`);
 }
 
 export function deleteClinicalReport(id: string): void {
   const list = getClinicalReports().filter(r => r.id !== id);
   setLocal(REPORTS_KEY, list);
+  audit('delete', 'report', id, 'Rapor silindi');
 }
 
 /* ------------------------------------------------------------------ */
@@ -339,7 +407,12 @@ function backupArray<T extends { id?: string }>(value: unknown, label: string, m
   return value as T[];
 }
 
-export function importClinicalBackup(bundle: ClinicalBackupBundle): void {
+/**
+ * Yedekten yüklemeyi hazırlar ama yazmaz. Veri Management modalı klinik ve
+ * uygulama planlarını tek transaction'da commit eder; böylece kota hatasında
+ * dosyanın yarısı değişmiş olmaz.
+ */
+export function planClinicalImport(bundle: ClinicalBackupBundle): PlannedWrite[] {
   if (!bundle || bundle.version !== '2.0' || !Array.isArray(bundle.clients)) {
     throw new Error('Geçersiz yedek. Yalnızca bu uygulamanın 2.0 dosyası yüklenir.');
   }
@@ -357,25 +430,38 @@ export function importClinicalBackup(bundle: ClinicalBackupBundle): void {
     if (!fileNumber || fileNumbers.has(fileNumber)) throw new Error('Yedekte çakışan veya boş dosya numarası var.');
     fileNumbers.add(fileNumber);
   }
-  setLocal(CLIENTS_KEY, clients);
-  setLocal(SESSIONS_KEY, backupArray<SoapSession>(bundle.sessions || [], 'Seans', MAX_SESSIONS));
-  setLocal(APPOINTMENTS_KEY, backupArray<Appointment>(bundle.appointments || [], 'Randevu', MAX_SESSIONS));
-  setLocal(BDI_KEY, backupArray<BeckDepressionResult>(bundle.bdiTests || [], 'Beck Depresyon', MAX_SESSIONS));
-  setLocal(BAI_KEY, backupArray<BeckAnxietyResult>(bundle.baiTests || [], 'Beck Anksiyete', MAX_SESSIONS));
-  setLocal(SCL90_KEY, backupArray<Scl90Result>(bundle.scl90Tests || [], 'SCL-90-R', MAX_SESSIONS));
-  setLocal(REPORTS_KEY, backupArray<ClinicalReport>(bundle.reports || [], 'Rapor', MAX_CLIENTS));
+  return [
+    [CLIENTS_KEY, JSON.stringify(clients)],
+    [SESSIONS_KEY, JSON.stringify(backupArray<SoapSession>(bundle.sessions || [], 'Seans', MAX_SESSIONS))],
+    [APPOINTMENTS_KEY, JSON.stringify(backupArray<Appointment>(bundle.appointments || [], 'Randevu', MAX_SESSIONS))],
+    [BDI_KEY, JSON.stringify(backupArray<BeckDepressionResult>(bundle.bdiTests || [], 'Beck Depresyon', MAX_SESSIONS))],
+    [BAI_KEY, JSON.stringify(backupArray<BeckAnxietyResult>(bundle.baiTests || [], 'Beck Anksiyete', MAX_SESSIONS))],
+    [SCL90_KEY, JSON.stringify(backupArray<Scl90Result>(bundle.scl90Tests || [], 'SCL-90-R', MAX_SESSIONS))],
+    [REPORTS_KEY, JSON.stringify(backupArray<ClinicalReport>(bundle.reports || [], 'Rapor', MAX_CLIENTS))],
+  ];
+}
+
+export function importClinicalBackup(bundle: ClinicalBackupBundle): void {
+  commitScopedWrites(planClinicalImport(bundle));
+  notify();
   recordAudit({ action: 'import', entity: 'backup', entityId: 'clinical', summary: 'Klinik yedek geri yüklendi' });
 }
 
+export function planClinicalClear(): PlannedWrite[] {
+  return [
+    [CLIENTS_KEY, '[]'],
+    [SESSIONS_KEY, '[]'],
+    [APPOINTMENTS_KEY, '[]'],
+    [BDI_KEY, '[]'],
+    [BAI_KEY, '[]'],
+    [SCL90_KEY, '[]'],
+    [REPORTS_KEY, '[]'],
+  ];
+}
+
 export function clearAllClinicalData(): void {
-  setLocal(CLIENTS_KEY, []);
-  setLocal(SESSIONS_KEY, []);
-  setLocal(APPOINTMENTS_KEY, []);
-  setLocal(BDI_KEY, []);
-  setLocal(BAI_KEY, []);
-  setLocal(SCL90_KEY, []);
-  setLocal(REPORTS_KEY, []);
-  purgeClientPractice('*');
-  localStorage.setItem(PURGE_FLAG, '1');
+  commitScopedWrites(planClinicalClear());
+  writeScopedRaw(PURGE_FLAG, '1');
+  notify();
   recordAudit({ action: 'delete', entity: 'backup', entityId: 'clinical', summary: 'Yerel klinik kayıt temizlendi' });
 }

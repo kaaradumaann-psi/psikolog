@@ -1470,3 +1470,50 @@
     font-size: 12.5px;
   }
 }
+
+/* ============ Onay diyalogu (window.confirm yerine) ============ */
+.confirm-dialog {
+  max-width: 480px;
+  width: min(480px, calc(100vw - 32px));
+}
+
+.confirm-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.confirm-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 20px;
+  padding: 10px 12px;
+  border: 1px solid var(--danger-border);
+  border-radius: 8px;
+  background: var(--danger-tint);
+  color: var(--danger-ink);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* Satır içi doğrulama notu — alert() yerine formun altında kalır. */
+.form-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--danger-border);
+  border-radius: 8px;
+  background: var(--danger-tint);
+  color: var(--danger-ink);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.form-notice[data-tone="info"] {
+  border-color: var(--primary-border);
+  background: var(--primary-tint);
+  color: var(--accent-ink);
+}

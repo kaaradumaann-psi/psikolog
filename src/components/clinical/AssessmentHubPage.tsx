@@ -2,12 +2,16 @@ import { useEffect, useState } from 'react';
 import type { BeckDepressionResult, BeckAnxietyResult, Scl90Result } from '../../clinical/clinicalTypes';
 import type { RapidScreeningResult } from '../../clinical/rapidScreening';
 import {
+  deleteBeckAnxietyTest,
+  deleteBeckDepressionTest,
+  deleteScl90Test,
   getBeckDepressionTests,
   getBeckAnxietyTests,
   getScl90Tests,
   subscribeClinicalStore,
 } from '../../clinical/clinicalStore';
-import { getScreenings, subscribePracticeStore } from '../../clinical/practiceStore';
+import { deleteScreening, getScreenings, subscribePracticeStore } from '../../clinical/practiceStore';
+import { useConfirmDialog } from '../useConfirmDialog';
 import { Icon } from '../Icon';
 import type { IconName } from '../Icon';
 import { navigate } from '../../router';
@@ -55,6 +59,7 @@ type HistoryItem = {
   severity: string;
   tone: 'normal' | 'warning' | 'danger';
   safetyFlag?: boolean;
+  source: 'bdi' | 'bai' | 'scl90' | 'screening';
 };
 
 function severityTone(severity: string): HistoryItem['tone'] {
@@ -64,6 +69,7 @@ function severityTone(severity: string): HistoryItem['tone'] {
 }
 
 export function AssessmentHubPage() {
+  const confirm = useConfirmDialog();
   const [bdiTests, setBdiTests] = useState<BeckDepressionResult[]>(() => getBeckDepressionTests());
   const [baiTests, setBaiTests] = useState<BeckAnxietyResult[]>(() => getBeckAnxietyTests());
   const [scl90Tests, setScl90Tests] = useState<Scl90Result[]>(() => getScl90Tests());
@@ -87,11 +93,13 @@ export function AssessmentHubPage() {
       id: test.id, clientId: test.clientId, clientName: test.clientName,
       title: 'Beck Depresyon · BDI', date: test.testDate, score: `${test.totalScore}/63`,
       severity: `${test.severity} depresyon`, tone: severityTone(test.severity), safetyFlag: test.suicideRisk,
+      source: 'bdi' as const,
     })),
     ...baiTests.map((test) => ({
       id: test.id, clientId: test.clientId, clientName: test.clientName,
       title: 'Beck Anksiyete · BAI', date: test.testDate, score: `${test.totalScore}/63`,
       severity: `${test.severity} anksiyete`, tone: severityTone(test.severity),
+      source: 'bai' as const,
     })),
     ...scl90Tests.map((test) => ({
       id: test.id, clientId: test.clientId, clientName: test.clientName,
@@ -99,12 +107,14 @@ export function AssessmentHubPage() {
       severity: test.gsi >= 1 ? 'Klinik eşik üzerinde' : 'Eşik altında',
       tone: test.gsi >= 1 ? 'warning' as const : 'normal' as const,
       safetyFlag: (test.answers?.[14] ?? 0) > 0,
+      source: 'scl90' as const,
     })),
     ...screenings.map((test) => ({
       id: test.id, clientId: test.clientId, clientName: test.clientName,
       title: test.type === 'phq9' ? 'PHQ-9 Kısa Tarama' : 'GAD-7 Kısa Tarama',
       date: test.testDate, score: `${test.totalScore}/${test.type === 'phq9' ? 27 : 21}`,
       severity: test.severity, tone: severityTone(test.severity), safetyFlag: test.suicideRisk,
+      source: 'screening' as const,
     })),
   ].sort((a, b) => b.date.localeCompare(a.date));
 
@@ -155,13 +165,34 @@ export function AssessmentHubPage() {
         ) : (
           <div className="assessment-history-list">
             {history.map((item) => (
-              <article className="assessment-history-item" key={item.id}>
+              <article className="assessment-history-item" key={`${item.source}:${item.id}`}>
                 <span className="assessment-history-icon"><Icon name="fileText" size={20} /></span>
                 <div className="assessment-history-main">
                   <strong>{item.clientName}</strong>
                   <span>{item.title} · {item.date} · {item.score}</span>
                 </div>
                 <div className="assessment-history-actions">
+                  <button
+                    type="button"
+                    className="btn-secondary btn-sm"
+                    onClick={() =>
+                      confirm.ask({
+                        title: 'Ölçek kaydı silinsin mi?',
+                        description: `${item.clientName} · ${item.title} (${item.date}) kaydı bu cihazdan silinir. Klinik kararda düzeltme gerekiyorsa önce ölçeği yeniden uygulayın; silme geri alınamaz.`,
+                        confirmLabel: 'Kaydı sil',
+                        tone: 'danger',
+                        run: () => {
+                          if (item.source === 'bdi') deleteBeckDepressionTest(item.id);
+                          else if (item.source === 'bai') deleteBeckAnxietyTest(item.id);
+                          else if (item.source === 'scl90') deleteScl90Test(item.id);
+                          else deleteScreening(item.id);
+                        },
+                      })
+                    }
+                    aria-label={`${item.clientName} ölçek kaydını sil`}
+                  >
+                    Sil
+                  </button>
                   <span className={`badge ${item.tone === 'danger' ? 'badge-risk-high' : item.tone === 'warning' ? 'badge-risk-moderate' : 'badge-active'}`}>{item.severity}</span>
                   {item.safetyFlag && <span className="badge badge-risk-high">Güvenlik uyarısı</span>}
                   {item.clientId && <button type="button" className="btn-secondary btn-sm" onClick={() => navigate(`/danisanlar/${item.clientId}`)}>Dosyaya git</button>}
@@ -171,6 +202,7 @@ export function AssessmentHubPage() {
           </div>
         )}
       </section>
+      {confirm.dialog}
     </div>
   );
 }

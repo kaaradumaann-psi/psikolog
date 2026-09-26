@@ -247,6 +247,13 @@ Deno.serve(async (request) => {
         });
         if (error || !data.user) {
           console.error('Admin user creation failed', error);
+          const message = String((error as { message?: unknown })?.message ?? '');
+          if (/already been registered|already exists|user already/i.test(message)) {
+            return response(request, 409, { error: 'Bu e-posta ile kayıtlı bir hesap var.' });
+          }
+          if (/length|at least|password/i.test(message)) {
+            return response(request, 400, { error: 'Parola sunucu güvenlik kurallarını karşılamıyor.' });
+          }
           if (isDatabaseSideError(error)) {
             return response(request, 500, {
               error:
@@ -410,7 +417,7 @@ Deno.serve(async (request) => {
       }
       return response(request, 500, {
         error:
-          'İşlem tamamlanamadı; yönetici supabase functions logs admin-users çıktısını ve npm run diagnose:supabase sonucunu kontrol etmeli.',
+          'İşlem tamamlanamadı; yönetici supabase functions logs admin-users çıktısını kontrol etmeli.',
       });
     }
   } catch (error) {

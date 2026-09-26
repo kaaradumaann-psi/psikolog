@@ -1,33 +1,22 @@
-import { useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { AuthenticatedUser } from './auth/authTypes';
 import { displayName } from './auth/userDisplay';
 import { supabaseConfig } from './auth/supabaseClient';
 import { getSession, onAuthChange, signIn, signOut, userFromSession } from './auth/supabaseAuth';
+import { configureStorageScope } from './clinical/storageScope';
 import { AppointmentsPage } from './components/clinical/AppointmentsPage';
 import { AssessmentHubPage } from './components/clinical/AssessmentHubPage';
-import { BeckAnxietyPage } from './components/clinical/BeckAnxietyPage';
-import { BeckDepressionPage } from './components/clinical/BeckDepressionPage';
-import { ClientDetailPage } from './components/clinical/ClientDetailPage';
 import { ClientListPage } from './components/clinical/ClientListPage';
-import { ClinicalReportsPage } from './components/clinical/ClinicalReportsPage';
-import { RapidScreeningPage } from './components/clinical/RapidScreeningPage';
-import { Scl90Page } from './components/clinical/Scl90Page';
-import { SoapSessionsPage } from './components/clinical/SoapSessionsPage';
 import { ConnectivityBanner } from './components/ConnectivityBanner';
 import { Dashboard } from './components/Dashboard';
-import { FaqPage } from './components/FaqPage';
 import { Icon } from './components/Icon';
 import type { IconName } from './components/Icon';
 import { InfoPageShell } from './components/InfoPageShell';
 import { MobileNav } from './components/MobileNav';
-import { PrivacyPolicyPage } from './components/PrivacyPolicyPage';
-import { AuditPage } from './components/practice/AuditPage';
 import { SettingsPage } from './components/practice/SettingsPage';
 import { TasksPage } from './components/practice/TasksPage';
 import { SiteFooter } from './components/SiteFooter';
-import { SourcesPage } from './components/SourcesPage';
-import { TermsPage } from './components/TermsPage';
 import { navigate, useRoute } from './router';
 import type { AppRoute } from './router';
 import { APP_NAME } from './site';
@@ -55,6 +44,32 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     ],
   },
 ];
+
+
+/* AÄŸÄ±r ekranlar yola girdiÄŸinde indirilir: ilk aÃ§Ä±lÄ±ÅŸta tÃ¼m Ã¶lçek madde
+   bankalarÄ±, rapor editÃ¶rÃ¼ ve dosya ayrÄ±ntÄ±sÄ± okunmaz. Ã–nizleme/yazdÄ±rma
+   davranÄ±ÅŸÄ± deÄŸiÅŸmez, yÃ¼klenen bayt azalÄ±r. */
+const ClientDetailPage = lazy(() => import('./components/clinical/ClientDetailPage').then((m) => ({ default: m.ClientDetailPage })));
+const SoapSessionsPage = lazy(() => import('./components/clinical/SoapSessionsPage').then((m) => ({ default: m.SoapSessionsPage })));
+const BeckDepressionPage = lazy(() => import('./components/clinical/BeckDepressionPage').then((m) => ({ default: m.BeckDepressionPage })));
+const BeckAnxietyPage = lazy(() => import('./components/clinical/BeckAnxietyPage').then((m) => ({ default: m.BeckAnxietyPage })));
+const Scl90Page = lazy(() => import('./components/clinical/Scl90Page').then((m) => ({ default: m.Scl90Page })));
+const RapidScreeningPage = lazy(() => import('./components/clinical/RapidScreeningPage').then((m) => ({ default: m.RapidScreeningPage })));
+const ClinicalReportsPage = lazy(() => import('./components/clinical/ClinicalReportsPage').then((m) => ({ default: m.ClinicalReportsPage })));
+const AuditPage = lazy(() => import('./components/practice/AuditPage').then((m) => ({ default: m.AuditPage })));
+const FaqPage = lazy(() => import('./components/FaqPage').then((m) => ({ default: m.FaqPage })));
+const PrivacyPolicyPage = lazy(() => import('./components/PrivacyPolicyPage').then((m) => ({ default: m.PrivacyPolicyPage })));
+const TermsPage = lazy(() => import('./components/TermsPage').then((m) => ({ default: m.TermsPage })));
+const SourcesPage = lazy(() => import('./components/SourcesPage').then((m) => ({ default: m.SourcesPage })));
+
+function RouteFallback() {
+  return (
+    <div className="route-loading" role="status">
+      <span className="route-loading-dot" aria-hidden="true" />
+      Ekran hazÄ±rlanÄ±yorâ€¦
+    </div>
+  );
+}
 
 function BrandMark() {
   return (
@@ -148,17 +163,31 @@ function CloudGate() {
 
   useEffect(() => {
     let cancelled = false;
+    // Oturum çözülmeden kasa bağlı olmamalı: başka hesabın verisi ekrana gelmesin.
+    configureStorageScope(null);
     getSession()
       .then((session) => userFromSession(session))
       .then((next) => {
-        if (!cancelled) setUser(next);
+        if (cancelled) return;
+        configureStorageScope(next?.id ?? null);
+        setUser(next);
       })
-      .catch(() => {
-        if (!cancelled) setUser(null);
+      .catch((reason: unknown) => {
+        if (cancelled) return;
+        configureStorageScope(null);
+        setError(reason instanceof Error ? reason.message : 'Oturum doğrulanamadı.');
+        setUser(null);
       });
     const { data } = onAuthChange((_event, session) => {
       void userFromSession(session).then((next) => {
-        if (!cancelled) setUser(next);
+        if (cancelled) return;
+        configureStorageScope(next?.id ?? null);
+        setUser(next);
+      }).catch((reason: unknown) => {
+        if (cancelled) return;
+        configureStorageScope(null);
+        setUser(null);
+        setError(reason instanceof Error ? reason.message : 'Oturum süresi doldu.');
       });
     });
     return () => {
@@ -173,6 +202,7 @@ function CloudGate() {
     setError(null);
     try {
       const next = await signIn(String(data.get('email') || ''), String(data.get('password') || ''));
+      configureStorageScope(next.id);
       setUser(next);
       navigate('/', { replace: true });
     } catch (reason) {
@@ -238,7 +268,11 @@ function CloudGate() {
       user={user}
       localMode={false}
       onLogout={() => {
-        void signOut().finally(() => navigate('/', { replace: true }));
+        void signOut().finally(() => {
+          configureStorageScope(null);
+          setUser(null);
+          navigate('/', { replace: true });
+        });
       }}
     />
   );
@@ -253,7 +287,12 @@ function WorkspaceShell({ user, onLogout, localMode }: { user: AuthenticatedUser
       setStorageError(detail || 'Kayıt yazılamadı.');
     };
     window.addEventListener('psikolog:storage-error', onError);
-    return () => window.removeEventListener('psikolog:storage-error', onError);
+    const clearError = () => setStorageError(null);
+    window.addEventListener('online', clearError);
+    return () => {
+      window.removeEventListener('psikolog:storage-error', onError);
+      window.removeEventListener('online', clearError);
+    };
   }, []);
 
   const workspace = resolveWorkspace(route) ?? 'home';
@@ -295,7 +334,9 @@ function WorkspaceShell({ user, onLogout, localMode }: { user: AuthenticatedUser
           <div className="sidebar-privacy">
             <span className="sidebar-privacy-icon"><Icon name="shield" size={18} /></span>
             <strong>{localMode ? 'Yerel çalışma alanı' : 'Bulut hesabı açık'}</strong>
-            <p>{localMode ? 'Kayıtlar bu tarayıcıda tutulur ve şifrelenmez. Düzenli yedek alın.' : 'Yerel klinik kayıtlar bu cihazda tutulur. Hesap ayarlarınızı kontrol edin.'}</p>
+            <p>{localMode
+              ? 'Kayıtlar bu tarayıcıda tutulur ve şifrelenmez. Düzenli yedek alın.'
+              : 'Giriş bulut hesabıyla yapılır; danışan kayıtları bu cihazda, yalnızca bu hesap için tutulur. Sunucuda kopya yoktur — düzenli yedek alın.'}</p>
             <a href="/ayarlar">Ayarları aç <Icon name="arrowRight" size={14} /></a>
           </div>
           <span className="sidebar-version">PSİKOLOG · KLİNİK ÇALIŞMA ALANI</span>
@@ -343,6 +384,7 @@ function WorkspaceShell({ user, onLogout, localMode }: { user: AuthenticatedUser
         <ConnectivityBanner />
         {storageError && <p className="shell-alert" role="alert">{storageError}</p>}
         <main className="app-main" id="main" tabIndex={-1}>
+          <Suspense fallback={<RouteFallback />}>
           {route.page === 'danisan' && <ClientDetailPage clientId={route.id} />}
           {route.page === 'danisanlar' && <ClientListPage />}
           {route.page === 'seanslar' && <SoapSessionsPage />}
@@ -357,6 +399,7 @@ function WorkspaceShell({ user, onLogout, localMode }: { user: AuthenticatedUser
           {route.page === 'ayarlar' && <SettingsPage canAdmin={canAdmin} />}
           {route.page === 'denetim' && <AuditPage />}
           {route.page === 'home' && <Dashboard user={user} />}
+          </Suspense>
         </main>
         <SiteFooter onNewEntry={() => navigate('/seanslar')} />
       </div>

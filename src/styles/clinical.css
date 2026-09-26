@@ -994,3 +994,36 @@
     page-break-inside: avoid;
   }
 }
+
+/* A4 klinik çıktı boşlukları */
+@page {
+  margin: 16mm 15mm;
+}
+
+/* Yazdırma başlığı: hangi danışanın hangi bölümünün kağıda gittiğini gösterir. */
+.print-section-caption {
+  display: none;
+}
+
+@media print {
+  .print-section-caption {
+    display: block;
+    margin: 0 0 10pt;
+    font-size: 9.5pt;
+    color: #444;
+    letter-spacing: 0.02em;
+  }
+
+  .safety-callout {
+    border: 1px solid #d8c9c9;
+    padding: 8pt 10pt;
+  }
+}
+
+.safety-callout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}

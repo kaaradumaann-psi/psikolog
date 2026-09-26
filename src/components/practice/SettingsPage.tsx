@@ -116,10 +116,16 @@ export function SettingsPage({ canAdmin }: { canAdmin: boolean }) {
       <section className="modern-table-card" style={{ padding: 18, marginTop: 16 }}>
         <h2 style={{ fontSize: 16, marginTop: 0 }}>Bulut</h2>
         {supabaseConfig.configured ? (
-          <p style={{ color: 'var(--soft)' }}>Supabase bağlı. Kurum verisi RLS ile ayrılır. Yerel dosya yine bu cihazda kalır; bulut danışanları ayrı şemadadır.</p>
+          <p style={{ color: 'var(--soft)' }}>
+            Giriş, hesap ve kurum ayrımı Supabase üzerinden çalışır. Danışan, seans ve ölçek kayıtları ise bu sürümde
+            sunucuya yazılmaz; yalnızca bu cihazda ve bu hesaba bağlı olarak tutulur. Bu yüzden tek kopya yedeğinizdir:
+            Ayarlar → Yedekle’yi düzenli kullanın.
+          </p>
         ) : (
           <p style={{ color: 'var(--soft)' }}>
-            Supabase tanımlı değil — çalışma alanı çevrimdışı önceliklidir. Kurumsal kurulum için <code>.env</code> içine yalnızca anon anahtar yazılır; hizmet rolü tarayıcıya girmez. Şema <code>supabase/migrations</code> altındadır.
+            Supabase tanımlı değil; çalışma alanı yerel hesapla açılır. Kayıtlar yalnızca bu tarayıcıdadır.
+            Kurulumda <code>.env</code> içine yalnızca anon anahtar yazılır, hizmet rolü tarayıcıya girmez.
+            Şema <code>supabase/migrations</code> altındadır.
           </p>
         )}
         {canAdmin && supabaseConfig.configured && <CloudAdminPanel />}

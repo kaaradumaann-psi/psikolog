@@ -14,6 +14,7 @@ import {
 } from '../src/clinical/clinicalStore';
 import { getNotes, saveNote } from '../src/clinical/practiceStore';
 import type { Client, SoapSession, Appointment } from '../src/clinical/clinicalTypes';
+import { configureStorageScope } from '../src/clinical/storageScope';
 
 if (!globalThis.localStorage) {
   const store = new Map<string, string>();
@@ -55,6 +56,8 @@ function client(id: string): Client {
     updatedAt: now,
   };
 }
+
+configureStorageScope('test-hesap');
 
 test('boş klinik örnek danışan yüklemez', () => {
   localStorage.clear();

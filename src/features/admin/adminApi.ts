@@ -74,7 +74,10 @@ export async function adminCreateUser(input: {
   });
   if (error) throw new Error('Kullanıcı oluşturulamadı: ' + error.message);
   if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
-  return data as AdminProfile;
+  // Edge Function { profile: ... } döndürür; ham gövde profil değildir.
+  const profile = (data as { profile?: AdminProfile })?.profile;
+  if (!profile || typeof profile.id !== 'string') throw new Error('Kullanıcı oluşturuldu ama profil doğrulanamadı.');
+  return profile;
 }
 
 export async function adminDeleteUser(userId: string): Promise<void> {

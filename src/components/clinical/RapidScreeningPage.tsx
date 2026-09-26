@@ -23,7 +23,8 @@ export function RapidScreeningPage() {
 
   const [gadAnswers, setGadAnswers] = useState(() => emptyAnswers(7));
   const [phqAnswers, setPhqAnswers] = useState(() => emptyAnswers(9));
-  const [toast, setToast] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  const [saving, setSaving] = useState(false);
 
   function handleClientSelect(id: string) {
     setSelectedClientId(id);
@@ -54,22 +55,25 @@ export function RapidScreeningPage() {
   }, [completePhq, clientName, selectedClientId, testDate]);
 
   function handleSave() {
+    if (saving) return;
     if (!clientName.trim()) {
-      alert('Danışan adı gerekli. Varsayılan ad atanmaz.');
+      setNotice({ tone: 'error', text: 'Danışan adı gerekli. Varsayılan ad atanmaz.' });
       return;
     }
     const result = activeTool === 'gad7' ? liveGadResult : livePhqResult;
     if (!result) {
-      alert('İşaretlenmeyen madde var. Boş madde 0 sayılmaz.');
+      setNotice({ tone: 'error', text: 'İşaretlenmeyen madde var. Boş madde 0 sayılmaz.' });
       return;
     }
-    saveScreening({ ...result, clientName: clientName.trim() });
-    setToast(
-      activeTool === 'gad7'
-        ? 'GAD-7 tarama sonucu kaydedildi'
-        : 'PHQ-9 tarama sonucu kaydedildi'
-    );
-    setTimeout(() => setToast(null), 3000);
+    setSaving(true);
+    try {
+      saveScreening({ ...result, clientName: clientName.trim() });
+      setNotice({ tone: 'ok', text: activeTool === 'gad7' ? 'GAD-7 tarama sonucu kaydedildi.' : 'PHQ-9 tarama sonucu kaydedildi.' });
+    } catch (reason) {
+      setNotice({ tone: 'error', text: reason instanceof Error ? reason.message : 'Tarama sonucu kaydedilemedi.' });
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -99,16 +103,26 @@ export function RapidScreeningPage() {
             <Icon name="print" size={16} />
             <span>Raporu Yazdır</span>
           </button>
-          <button type="button" className="btn-primary" onClick={handleSave}>
+          <button type="button" className="btn-primary" onClick={handleSave} disabled={saving} aria-busy={saving}>
             <Icon name="save" size={16} />
             <span>Sonucu Kaydet</span>
           </button>
         </div>
       </div>
 
-      {toast && (
-        <div className="modern-table-card" style={{ background: 'var(--success-tint)', border: '1px solid var(--success-border)', color: 'var(--success)', padding: '12px 16px', marginBottom: 20 }}>
-          {toast}
+      {notice && (
+        <div
+          className="modern-table-card"
+          role={notice.tone === 'error' ? 'alert' : 'status'}
+          style={{
+            background: notice.tone === 'error' ? 'var(--danger-tint)' : 'var(--success-tint)',
+            border: `1px solid ${notice.tone === 'error' ? 'var(--danger-border)' : 'var(--success-border)'}`,
+            color: notice.tone === 'error' ? 'var(--danger-ink)' : 'var(--success)',
+            padding: '12px 16px',
+            marginBottom: 20,
+          }}
+        >
+          {notice.text}
         </div>
       )}
 
@@ -137,8 +151,9 @@ export function RapidScreeningPage() {
         <h3 style={{ margin: '0 0 14px', fontSize: 16 }}>Danışan Bilgileri</h3>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
           <div className="form-group">
-            <label>Kayıtlı Danışanlardan Seç</label>
+            <label htmlFor="scr-client-select">Kayıtlı Danışanlardan Seç</label>
             <select
+              id="scr-client-select"
               value={selectedClientId}
               onChange={e => handleClientSelect(e.target.value)}
             >
@@ -152,8 +167,9 @@ export function RapidScreeningPage() {
           </div>
 
           <div className="form-group">
-            <label>Danışan Adı Soyadı *</label>
+            <label htmlFor="scr-client-name">Danışan Adı Soyadı *</label>
             <input
+              id="scr-client-name"
               type="text"
               value={clientName}
               onChange={e => setClientName(e.target.value)}
@@ -162,8 +178,9 @@ export function RapidScreeningPage() {
           </div>
 
           <div className="form-group">
-            <label>Uygulanma Tarihi</label>
+            <label htmlFor="scr-test-date">Uygulanma Tarihi</label>
             <input
+              id="scr-test-date"
               type="date"
               value={testDate}
               onChange={e => setTestDate(e.target.value)}
@@ -313,7 +330,7 @@ export function RapidScreeningPage() {
           <Icon name="print" size={16} />
           <span>Yazdır / PDF</span>
         </button>
-        <button type="button" className="btn-primary" onClick={handleSave}>
+        <button type="button" className="btn-primary" onClick={handleSave} disabled={saving} aria-busy={saving}>
           <Icon name="save" size={16} />
           <span>Tarama Sonucunu Kaydet</span>
         </button>

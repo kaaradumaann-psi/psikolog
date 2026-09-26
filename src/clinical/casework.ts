@@ -312,8 +312,9 @@ export function buildSessionPreps(snapshot: CaseSnapshot, date = snapshot.today)
       if (formulation?.reviewDate && formulation.reviewDate <= date) {
         checks.push('Formülasyon gözden geçirme tarihi geldi.');
       }
-      if (appointment.paymentStatus === 'pending' && appointment.status !== 'cancelled') {
-        checks.push('Ücret bekliyor.');
+      // Ücret yazılmadıysa "bekliyor" uyarısı gürültüdür; yalnız gerçek borçta gösterilir.
+      if (appointment.paymentStatus === 'pending' && appointment.status !== 'cancelled' && (appointment.fee ?? 0) > 0) {
+        checks.push(`Ücret bekliyor: ${appointment.fee} TL.`);
       }
       return {
         appointmentId: appointment.id,

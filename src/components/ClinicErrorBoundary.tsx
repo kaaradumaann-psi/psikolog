@@ -14,9 +14,13 @@ export class ClinicErrorBoundary extends Component<{ children: ReactNode }, Stat
     if (!this.state.failed) return this.props.children;
     return (
       <main style={{ maxWidth: 560, margin: '12vh auto', padding: 24 }}>
-        <h1 style={{ fontWeight: 500 }}>Çalışma alanı açılamadı</h1>
-        <p>Kayıtlar bu cihazda duruyor. Sayfayı yenileyin. Sürerse Ayarlar’dan aldığınız yedeği başka bir tarayıcıda açmayın; önce bu cihazı kontrol edin.</p>
-        <button type="button" onClick={() => window.location.reload()}>Yenile</button>
+        <h1 style={{ fontWeight: 500 }}>Bu ekran açılamadı</h1>
+        <p>
+          Kayıtlarınız silinmedi; danışan, seans ve ölçek kayıtlarınız bu cihazda durmaya devam ediyor.
+          Sorun ekranın kendisinde. Sayfayı yenileyin, yine açılmazsa Ayarlar → Yedek al ile bir kopya indirin
+          ve yöneticiyle paylaşın.
+        </p>
+        <button type="button" onClick={() => window.location.reload()}>Sayfayı yenile</button>
       </main>
     );
   }

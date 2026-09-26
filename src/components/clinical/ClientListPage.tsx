@@ -8,7 +8,8 @@ import {
 } from '../../clinical/clinicalStore';
 import { ClinicalDialog } from './ClinicalDialog';
 import { Icon } from '../Icon';
-import { ageFromBirthDate, isValidTc, nextFileNumber, normalizeTc } from '../../clinical/recordRules';
+import { useConfirmDialog } from '../useConfirmDialog';
+import { ageFromBirthDate, isValidTc, nextFileNumber, normalizeTc, trIncludes } from '../../clinical/recordRules';
 import { navigate } from '../../router';
 
 export function ClientListPage() {
@@ -17,6 +18,9 @@ export function ClientListPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const { ask: askConfirm, dialog: confirmDialog } = useConfirmDialog();
 
   // Form State
   const [formData, setFormData] = useState<Partial<Client>>({
@@ -52,16 +56,18 @@ export function ClientListPage() {
   }, []);
 
   const filteredClients = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = search.trim();
     return clients.filter(c => {
+      // Türkçe eşleme: "ibrahim" araması "İbrahim" kaydını bulmalı, "ISLAK"
+      // araması "ıslak" ile eşleşmeli.
       const matchSearch =
         !q ||
-        c.firstName.toLowerCase().includes(q) ||
-        c.lastName.toLowerCase().includes(q) ||
-        c.fileNumber.toLowerCase().includes(q) ||
-        c.phone.includes(q) ||
-        (c.tcNumber && c.tcNumber.includes(q)) ||
-        c.diagnoses.some(d => d.toLowerCase().includes(q));
+        trIncludes(c.firstName, q) ||
+        trIncludes(c.lastName, q) ||
+        trIncludes(c.fileNumber, q) ||
+        trIncludes(c.phone, q) ||
+        trIncludes(c.tcNumber, q) ||
+        c.diagnoses.some((d) => trIncludes(d, q));
 
       const matchStatus = statusFilter === 'all' || c.status === statusFilter;
       return matchSearch && matchStatus;
@@ -103,6 +109,8 @@ export function ClientListPage() {
       status: 'active',
     });
     setDiagInput('');
+    setFormError(null);
+    setSaving(false);
     setModalOpen(true);
   }
 
@@ -120,46 +128,54 @@ export function ClientListPage() {
     setEditingClient(c);
     setFormData({ ...c });
     setDiagInput('');
+    setFormError(null);
+    setSaving(false);
     setModalOpen(true);
   }
 
   function handleDelete(id: string, name: string, e: React.MouseEvent) {
     e.stopPropagation();
-    if (confirm(`${name} isimli danışan kaydını ve tüm klinik dosyasını silmek istediğinize emin misiniz?`)) {
-      deleteClient(id);
-    }
+    askConfirm({
+      title: 'Danışan dosyasını sil',
+      description: `${name} kaydına bağlı seans, randevu, ölçek ve rapor kayıtları bu cihazdan silinir. Yedek almadıysanız bu işlem geri alınabilir değil.`,
+      confirmLabel: 'Dosyayı ve bağlı kayıtları sil',
+      run: () => deleteClient(id),
+    });
   }
 
   function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    if (!formData.firstName?.trim() || !formData.lastName?.trim()) {
-      alert('Ad ve soyad gerekli.');
+    if (saving) return;
+    const firstName = formData.firstName?.trim() || '';
+    const lastName = formData.lastName?.trim() || '';
+    if (!firstName || !lastName) {
+      setFormError('Ad ve soyad gerekli.');
       return;
     }
     const gender = formData.gender;
     if (gender !== 'KADIN' && gender !== 'ERKEK') {
-      alert('Cinsiyet seçin. Varsayılan atanmaz.');
+      setFormError('Cinsiyet seçin. Varsayılan atanmaz.');
       return;
     }
     const fileNumber = formData.fileNumber || nextFileNumber(clients.map((client) => client.fileNumber));
     if (clients.some((client) => client.fileNumber === fileNumber && client.id !== editingClient?.id)) {
-      alert('Bu dosya numarası başka bir danışanda kayıtlı.');
+      setFormError('Bu dosya numarası başka bir danışanda kayıtlı. Numarayı değiştirin.');
       return;
     }
     const email = formData.email?.trim() || '';
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      alert('E-posta geçersiz. Bilinmiyorsa boş bırakın.');
+      setFormError('E-posta geçersiz. Bilinmiyorsa boş bırakın.');
       return;
     }
     const tcNumber = normalizeTc(formData.tcNumber || '');
     if (!isValidTc(tcNumber)) {
-      alert('Kimlik numarası 11 rakam olmalı. Bilinmiyorsa boş bırakın.');
+      setFormError('Kimlik numarası 11 rakam olmalı. Bilinmiyorsa boş bırakın.');
       return;
     }
     const birthDate = formData.birthDate || '';
     const age = birthDate ? ageFromBirthDate(birthDate) : 0;
     if (birthDate && age === null) {
-      alert('Doğum tarihi geçersiz veya gelecekte.');
+      setFormError('Doğum tarihi geçersiz veya gelecekte.');
       return;
     }
 
@@ -167,8 +183,8 @@ export function ClientListPage() {
     const clientToSave: Client = {
       id: clientId,
       fileNumber,
-      firstName: formData.firstName.trim(),
-      lastName: formData.lastName.trim(),
+      firstName,
+      lastName,
       tcNumber,
       birthDate,
       age: age ?? 0,
@@ -191,12 +207,17 @@ export function ClientListPage() {
       updatedAt: new Date().toISOString(),
     };
 
+    setSaving(true);
     try {
       saveClient(clientToSave);
+      setFormError(null);
       setModalOpen(false);
       if (!editingClient) navigate(`/danisanlar/${clientId}`);
     } catch (reason) {
-      alert(reason instanceof Error ? reason.message : 'Kayıt yazılamadı.');
+      // Form içeriği korunur: kayıt yazılamadıysa uzman yeniden deneyebilir.
+      setFormError(reason instanceof Error ? reason.message : 'Kayıt yazılamadı.');
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -446,6 +467,12 @@ export function ClientListPage() {
             </div>
             <form onSubmit={handleSave}>
               <div className="clinical-modal-body">
+                {formError && (
+                  <p className="form-notice" role="alert">
+                    <Icon name="alert" size={16} />
+                    <span>{formError}</span>
+                  </p>
+                )}
                 <div className="form-row-2">
                   <div className="form-group">
                     <label htmlFor="client-file-number">Protokol / Dosya No</label>
@@ -782,14 +809,15 @@ export function ClientListPage() {
                 </div>
               </div>
               <div className="clinical-modal-foot">
-                <button type="button" className="btn-secondary" onClick={() => setModalOpen(false)}>Vazgeç</button>
-                <button type="submit" className="btn-primary">
-                  {editingClient ? 'Değişiklikleri Kaydet' : 'Danışanı Kaydet'}
+                <button type="button" className="btn-secondary" onClick={() => setModalOpen(false)} disabled={saving}>Vazgeç</button>
+                <button type="submit" className="btn-primary" disabled={saving} aria-busy={saving}>
+                  {saving ? 'Kaydediliyor…' : editingClient ? 'Değişiklikleri Kaydet' : 'Danışanı Kaydet'}
                 </button>
               </div>
             </form>
         </ClinicalDialog>
       )}
+      {confirmDialog}
     </div>
   );
 }

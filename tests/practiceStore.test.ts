@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { newId, saveTask, getTasks, saveScreening, getScreenings, importPracticeData } from '../src/clinical/practiceStore.ts';
 import { calculateGad7 } from '../src/clinical/rapidScreening.ts';
+import { configureStorageScope } from '../src/clinical/storageScope';
 
 if (!globalThis.localStorage) {
   const store = new Map<string, string>();
@@ -14,6 +15,8 @@ if (!globalThis.localStorage) {
     get length() { return store.size; },
   };
 }
+
+configureStorageScope('test-hesap');
 
 test('görev kaydı örnek kişi üretmez', () => {
   localStorage.clear();

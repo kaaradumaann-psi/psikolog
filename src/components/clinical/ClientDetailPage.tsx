@@ -504,10 +504,10 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* Beck Depresyon Kayıtları */}
             {bdiTests.map(t => (
-              <div key={t.id} className="modern-table-card" style={{ padding: 18 }}>
+              <div key={t.id} className="modern-table-card client-assessment-record">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--primary-tint)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div className="client-assessment-icon">
                       <Icon name="pulse" size={18} />
                     </div>
                     <div>
@@ -524,7 +524,7 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
                     </span>
                   </div>
                 </div>
-                <p style={{ fontSize: 13, color: 'var(--text)', background: 'var(--bg-soft)', padding: 10, borderRadius: 6, margin: 0 }}>
+                <p className="client-assessment-note">
                   {t.clinicalInterpretation}
                 </p>
               </div>
@@ -532,10 +532,10 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
 
             {/* Beck Anksiyete Kayıtları */}
             {baiTests.map(t => (
-              <div key={t.id} className="modern-table-card" style={{ padding: 18 }}>
+              <div key={t.id} className="modern-table-card client-assessment-record">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--warning-tint)', color: 'var(--warning)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div className="client-assessment-icon">
                       <Icon name="activity" size={18} />
                     </div>
                     <div>
@@ -552,7 +552,7 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
                     </span>
                   </div>
                 </div>
-                <p style={{ fontSize: 13, color: 'var(--text)', background: 'var(--bg-soft)', padding: 10, borderRadius: 6, margin: 0 }}>
+                <p className="client-assessment-note">
                   {t.clinicalInterpretation}
                 </p>
               </div>
@@ -560,10 +560,10 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
 
             {/* SCL-90-R Kayıtları */}
             {scl90Tests.map(t => (
-              <div key={t.id} className="modern-table-card" style={{ padding: 18 }}>
+              <div key={t.id} className="modern-table-card client-assessment-record">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--bg-soft)', color: 'var(--text)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div className="client-assessment-icon">
                       <Icon name="layers" size={18} />
                     </div>
                     <div>
@@ -581,7 +581,7 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
                     </span>
                   </div>
                 </div>
-                <p style={{ fontSize: 13, color: 'var(--text)', background: 'var(--bg-soft)', padding: 10, borderRadius: 6, margin: 0 }}>
+                <p className="client-assessment-note">
                   {t.clinicalInterpretation}
                 </p>
               </div>
@@ -760,7 +760,7 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {reports.map(r => (
-                <div key={r.id} className="modern-table-card" style={{ padding: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div key={r.id} className="modern-table-card client-report-record">
                   <div>
                     <strong style={{ fontSize: 15 }}>{r.reportTitle}</strong>
                     <div style={{ fontSize: 12, color: 'var(--soft)' }}>Tarih: {r.reportDate} · Değerlendiren: {r.evaluator}</div>

@@ -109,7 +109,7 @@ export function TasksPage() {
       ) : (
         <div className="task-list">
           {visible.map((task) => (
-            <article key={task.id} className={`task-card priority-${task.priority}`}>
+            <article key={task.id} className={`task-card priority-${task.priority} status-${task.status}`}>
               <div className="task-card-main">
                 <span className="task-card-kicker">{task.clientName || 'Genel görev'}</span>
                 <h2>{task.title}</h2>

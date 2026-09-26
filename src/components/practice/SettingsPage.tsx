@@ -74,7 +74,7 @@ export function SettingsPage({ canAdmin, user }: { canAdmin: boolean; user: Auth
         </div>
       </div>
 
-      <form onSubmit={onSubmit} className="modern-table-card" style={{ padding: 18, display: 'grid', gap: 12 }}>
+      <form onSubmit={onSubmit} className="content-form-section settings-form">
         <div className="form-row-2">
           <label className="form-group">Uzman adı<input value={settings.evaluatorName} onChange={(event) => setSettings({ ...settings, evaluatorName: event.target.value })} maxLength={120} /></label>
           <label className="form-group">Ünvan<input value={settings.title} onChange={(event) => setSettings({ ...settings, title: event.target.value })} maxLength={120} /></label>
@@ -121,17 +121,18 @@ export function SettingsPage({ canAdmin, user }: { canAdmin: boolean; user: Auth
         </div>
       </form>
 
-      <section className="modern-table-card" style={{ padding: 18, marginTop: 16 }}>
-        <h2 style={{ fontSize: 16, marginTop: 0 }}>Bulut</h2>
+      <section className="settings-cloud-section">
+        <span>VERİ KAYNAĞI</span>
+        <h2>Bulut bağlantısı</h2>
         {supabaseConfig.configured ? (
-          <p style={{ color: 'var(--soft)' }}>Supabase bağlı. Klinik kayıtların kaynağı sunucudur; bu cihazdaki klinik veriler yalnızca önbellek ve gönderilmeyi bekleyen kuyruktur. Sunucu durumunu üstteki şeritten izleyin.</p>
+          <p>Supabase bağlı. Klinik kayıtların ana kaynağı sunucudur; bu cihazdaki klinik veriler yalnızca önbellek ve gönderilmeyi bekleyen kuyruktur. Sunucu durumunu üstteki şeritten izleyin.</p>
         ) : (
-          <p style={{ color: 'var(--soft)' }}>
+          <p>
             Supabase tanımlı değil — çalışma alanı çevrimdışı önceliklidir. Kurumsal kurulum için <code>.env</code> içine yalnızca anon anahtar yazılır; hizmet rolü tarayıcıya girmez. Şema <code>supabase/migrations</code> altındadır.
           </p>
         )}
-        {canAdmin && supabaseConfig.configured && <CloudAdminPanel user={user} />}
       </section>
+      {canAdmin && supabaseConfig.configured && <CloudAdminPanel user={user} />}
       {backupOpen && <DataManagementModal onClose={() => setBackupOpen(false)} />}
     </div>
   );

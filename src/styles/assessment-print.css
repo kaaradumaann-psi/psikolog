@@ -1,0 +1,306 @@
+@media screen {
+  .print-document-notice {
+    margin-top: 34px;
+    padding-top: 10px;
+    border-top: 1px solid var(--hairline);
+    color: var(--soft);
+    font-size: 9.5px;
+    line-height: 1.45;
+  }
+
+  .print-document-notice span { color: var(--text); font-weight: 650; }
+  .print-document-notice p { margin: 3px 0 0; }
+
+  .assessment-card-rights {
+    display: inline-block;
+    margin-top: 11px;
+    color: var(--soft);
+    font-size: 10px;
+    font-weight: 750;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+
+  .assessment-card-rights.is-licensed { color: #815219; }
+  .assessment-card-rights.is-free-reproduction { color: #0a6b49; }
+
+  .assessment-legal-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 11px;
+    margin: 0 0 22px;
+    padding: 13px 0;
+    border-top: 1px solid var(--hairline);
+    border-bottom: 1px solid var(--hairline);
+    color: var(--soft);
+  }
+
+  .assessment-legal-note.is-licensed {
+    border-bottom-color: var(--warning-border);
+  }
+
+  .assessment-legal-icon {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    flex: none;
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+    color: var(--text);
+    background: var(--bg-soft);
+  }
+
+  .assessment-legal-note.is-licensed .assessment-legal-icon {
+    border-color: var(--warning-border);
+    color: #815219;
+    background: var(--warning-tint);
+  }
+
+  .assessment-legal-note > div { min-width: 0; }
+  .assessment-legal-label { display: block; margin-bottom: 2px; color: var(--text); font-size: 10px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+  .assessment-legal-note p { margin: 0; max-width: 92ch; font-size: 11.5px; line-height: 1.55; }
+  .assessment-legal-note a { display: inline-block; margin-top: 4px; color: var(--accent-ink); font-size: 11px; font-weight: 700; text-decoration: none; }
+  .assessment-legal-note a:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+  .assessment-result-print-header,
+  .paper-assessment-sheet {
+    display: none;
+  }
+
+  .sources-page { display: flex; flex-direction: column; gap: 34px; }
+  .sources-intro { max-width: 78ch; margin: 0; color: var(--soft); font-size: 13.5px; line-height: 1.7; }
+  .sources-section-head { padding-bottom: 13px; border-bottom: 1px solid var(--text); }
+  .sources-section-head > span { color: var(--accent-ink); font-size: 9.5px; font-weight: 800; letter-spacing: .13em; }
+  .sources-section-head h2 { margin: 5px 0 0; font: 400 25px var(--font-display); letter-spacing: -.03em; }
+  .sources-right-row { display: grid; grid-template-columns: minmax(160px, .55fr) minmax(320px, 1.25fr) auto; gap: 22px; align-items: start; padding: 17px 0; border-bottom: 1px solid var(--hairline); }
+  .sources-right-row > div { display: flex; flex-direction: column; gap: 3px; }
+  .sources-right-row strong { color: var(--text); font-size: 13px; }
+  .sources-right-row span { color: #815219; font-size: 10.5px; font-weight: 700; }
+  .sources-right-row:last-child span { color: #0a6b49; }
+  .sources-right-row p { margin: 0; color: var(--soft); font-size: 12px; line-height: 1.6; }
+  .sources-right-row a { color: var(--accent-ink); font-size: 11px; font-weight: 700; text-decoration: none; }
+  .sources-right-row a:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .sources-reference-row { display: grid; grid-template-columns: minmax(160px, .28fr) minmax(0, 1fr); gap: 22px; padding: 17px 0; border-bottom: 1px solid var(--hairline); }
+  .sources-reference-row h3 { margin: 0; color: var(--text); font-size: 13.5px; }
+  .sources-reference-row ul { margin: 0; padding-left: 18px; color: var(--soft); font-size: 12px; line-height: 1.6; }
+  .sources-reference-row li + li { margin-top: 5px; }
+
+  .assessment-print-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 24px;
+  }
+
+  .assessment-paper-help {
+    margin: 8px 0 0;
+    color: var(--soft);
+    font-size: 11.5px;
+    line-height: 1.5;
+    text-align: right;
+  }
+}
+
+@media screen and (max-width: 720px) {
+  .sources-right-row,
+  .sources-reference-row { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .sources-right-row a { min-height: 40px; display: inline-flex; align-items: center; }
+  .assessment-print-actions { align-items: stretch; flex-direction: column; }
+  .assessment-print-actions .btn-primary,
+  .assessment-print-actions .btn-secondary { width: 100%; justify-content: center; }
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 13mm 12mm 14mm;
+  }
+
+  .paper-assessment-sheet,
+  .assessment-result-print-header { display: none !important; }
+
+  .print-document-notice {
+    margin-top: 26pt;
+    padding-top: 7pt;
+    border-top: .5pt solid #aaa;
+    color: #555;
+    font: 400 7pt/1.35 Arial, sans-serif;
+    break-inside: avoid;
+  }
+
+  .print-document-notice span { color: #111; font-weight: 700; }
+  .print-document-notice p { margin: 2pt 0 0; }
+
+  html[data-assessment-print='result'] .assessment-result-print-header {
+    display: block !important;
+    margin-bottom: 18pt;
+    padding-bottom: 12pt;
+    border-bottom: 1.5pt solid #111;
+  }
+
+  .assessment-result-print-header > div > span {
+    display: block;
+    margin-bottom: 4pt;
+    color: #555;
+    font: 700 7.5pt/1.2 Arial, sans-serif;
+    letter-spacing: .12em;
+  }
+
+  .assessment-result-print-header h1 {
+    margin: 0;
+    color: #111;
+    font: 700 18pt/1.15 Georgia, serif;
+  }
+
+  .assessment-result-print-header dl {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 7pt 18pt;
+    margin: 13pt 0 0;
+  }
+
+  .assessment-result-print-header dl div { display: grid; grid-template-columns: 72pt 1fr; border-bottom: .5pt solid #ddd; padding-bottom: 3pt; }
+  .assessment-result-print-header dt { color: #555; font: 700 8pt Arial, sans-serif; }
+  .assessment-result-print-header dd { margin: 0; color: #111; font: 400 9pt Arial, sans-serif; }
+  .assessment-result-print-header > p { margin: 10pt 0 0; color: #555; font: 400 7.5pt/1.35 Arial, sans-serif; }
+  .assessment-result-print-header .assessment-result-product-copyright {
+    display: block;
+    margin-top: 4pt;
+    color: #111;
+    font: 700 7pt/1.3 Arial, sans-serif;
+  }
+
+  html[data-assessment-print='result'] .assessment-legal-note {
+    display: flex !important;
+    margin-top: 14pt;
+    padding: 8pt 0;
+    border-top: .5pt solid #ccc;
+    border-bottom: .5pt solid #ccc;
+    color: #444;
+  }
+
+  html[data-assessment-print='result'] .assessment-legal-icon,
+  html[data-assessment-print='result'] .assessment-legal-note a { display: none !important; }
+  html[data-assessment-print='result'] .assessment-legal-note p { font-size: 7.5pt; }
+
+  html[data-assessment-print='paper'] body * {
+    visibility: hidden !important;
+  }
+
+  html[data-assessment-print='paper'] body {
+    margin: 0 !important;
+    background: #fff !important;
+  }
+
+  html[data-assessment-print='paper'] .paper-assessment-sheet,
+  html[data-assessment-print='paper'] .paper-assessment-sheet * {
+    visibility: visible !important;
+  }
+
+  html[data-assessment-print='paper'] .paper-assessment-sheet {
+    position: absolute;
+    inset: 0 auto auto 0;
+    display: block !important;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    color: #111;
+    background: #fff;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 8.5pt;
+    line-height: 1.3;
+  }
+
+  .paper-assessment-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12pt;
+    padding-bottom: 10pt;
+    border-bottom: 1.5pt solid #111;
+  }
+
+  .paper-assessment-header span { display: block; margin-bottom: 3pt; color: #555; font-size: 7pt; font-weight: 700; letter-spacing: .12em; }
+  .paper-assessment-header h1 { margin: 0; color: #111; font: 700 17pt/1.12 Georgia, serif; }
+  .paper-assessment-header p { margin: 3pt 0 0; color: #555; font-size: 8pt; }
+  .paper-assessment-header > strong { min-width: 65pt; padding: 7pt 8pt; border: 1pt solid #111; text-align: center; font-size: 11pt; }
+
+  .paper-assessment-identity {
+    display: grid;
+    grid-template-columns: 1.5fr .6fr;
+    gap: 14pt;
+    margin: 11pt 0;
+  }
+
+  .paper-assessment-identity > div { display: grid; grid-template-columns: auto 1fr; align-items: end; gap: 7pt; border-bottom: .75pt solid #333; min-height: 18pt; }
+  .paper-assessment-identity span { color: #555; font-size: 7.5pt; font-weight: 700; }
+  .paper-assessment-identity strong { min-height: 12pt; font-size: 9pt; }
+
+  .paper-assessment-instruction {
+    margin: 0 0 10pt;
+    padding: 7pt 9pt;
+    border: .75pt solid #bbb;
+    border-left: 2pt solid #111;
+    break-inside: avoid;
+  }
+
+  .paper-assessment-instruction.is-rights-restricted { border-left-color: #8a5a05; background: #fffcf3; }
+  .paper-assessment-instruction strong { display: block; margin-bottom: 2pt; font-size: 8pt; }
+  .paper-assessment-instruction p { margin: 0; color: #333; font-size: 7.5pt; line-height: 1.35; }
+
+  .paper-assessment-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+
+  .paper-assessment-table thead { display: table-header-group; }
+  .paper-assessment-table tr { break-inside: avoid; }
+  .paper-assessment-table th,
+  .paper-assessment-table td { border: .5pt solid #aaa; }
+  .paper-assessment-table thead th { padding: 4pt 3pt; color: #222; background: #f2f2f2; font-size: 7pt; text-align: center; vertical-align: bottom; }
+  .paper-assessment-table thead th:first-child { width: 25pt; }
+  .paper-assessment-table thead th:not(:first-child):not(:nth-child(2)) { width: 46pt; }
+  .paper-assessment-table thead th b { display: block; font-size: 8.5pt; }
+  .paper-assessment-table thead th span { display: block; margin-top: 1pt; font-weight: 400; line-height: 1.1; }
+  .paper-assessment-table tbody th { width: 25pt; padding: 4pt 3pt; text-align: center; font-size: 7.5pt; }
+  .paper-assessment-table tbody td { padding: 4pt 5pt; font-size: 8pt; vertical-align: middle; }
+  .paper-assessment-table tbody td:not(:nth-child(2)) { text-align: center; }
+
+  .is-licensed-response-sheet .paper-assessment-table thead th:not(:first-child) { width: auto; }
+  .is-licensed-response-sheet .paper-assessment-table tbody th,
+  .is-licensed-response-sheet .paper-assessment-table tbody td { padding-top: 3pt; padding-bottom: 3pt; }
+  .is-licensed-response-sheet .paper-assessment-table tbody td { text-align: center; }
+
+  .paper-answer-circle {
+    display: inline-block;
+    width: 10pt;
+    height: 10pt;
+    border: .75pt solid #333;
+    border-radius: 50%;
+  }
+
+  .paper-assessment-clinician {
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: 12pt;
+    margin-top: 10pt;
+    break-inside: avoid;
+  }
+
+  .paper-assessment-clinician > div { min-height: 32pt; padding: 5pt; border: .75pt solid #aaa; }
+  .paper-assessment-clinician span { color: #555; font-size: 7pt; font-weight: 700; }
+
+  .paper-assessment-footer {
+    margin-top: 11pt;
+    padding-top: 7pt;
+    border-top: .75pt solid #aaa;
+    break-inside: avoid;
+  }
+
+  .paper-assessment-footer p { margin: 0 0 2pt; color: #555; font-size: 6.7pt; line-height: 1.3; }
+  .paper-assessment-footer .paper-assessment-product-copyright { margin-top: 4pt; color: #111; }
+}

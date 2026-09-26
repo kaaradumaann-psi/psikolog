@@ -15,6 +15,13 @@ import { cloudContext } from '../../clinical/cloud/sync';
 import { asCompleteAnswers, emptyAnswers, parseOptionalAge } from '../../clinical/scaleIntake';
 import { Icon } from '../Icon';
 import { navigate } from '../../router';
+import {
+  AssessmentLegalNotice,
+  AssessmentPaperSheet,
+  AssessmentResultPrintHeader,
+  printAssessmentPaper,
+  printAssessmentResult,
+} from './AssessmentPrint';
 
 export function Scl90Page() {
   const clients = useMemo(() => getClients(), []);
@@ -112,9 +119,13 @@ export function Scl90Page() {
         </div>
 
         <div className="clinical-actions">
-          <button type="button" className="btn-secondary" onClick={() => window.print()}>
+          <button type="button" className="btn-secondary" onClick={() => printAssessmentPaper('scl90')}>
+            <Icon name="fileText" size={16} />
+            <span>Yanıt formu / PDF</span>
+          </button>
+          <button type="button" className="btn-secondary" onClick={() => printAssessmentResult('scl90')}>
             <Icon name="print" size={16} />
-            <span>Raporu Yazdır</span>
+            <span>Sonuç özeti / PDF</span>
           </button>
           <button type="button" className="btn-primary" onClick={handleSave}>
             <Icon name="save" size={16} />
@@ -122,6 +133,15 @@ export function Scl90Page() {
           </button>
         </div>
       </div>
+
+      <AssessmentPaperSheet
+        assessment="scl90"
+        respondentName={clientName}
+        date={testDate}
+        items={SCL90_ITEMS.map((item) => ({ id: item.id, text: item.text }))}
+        options={SCL90_SCALE_OPTIONS.map((option) => ({ score: option.score, label: option.label }))}
+      />
+      <AssessmentResultPrintHeader assessment="scl90" respondentName={clientName} date={testDate} />
 
       {saveError && <p className="record-lock-error" role="alert">{saveError}</p>}
       {toast && (
@@ -193,8 +213,10 @@ export function Scl90Page() {
         </div>
       </div>
 
+      <AssessmentLegalNotice assessment="scl90" />
+
       {/* Canlı Skor & Global İndeksler Kartı */}
-      <div className="modern-table-card" style={{ padding: 24, marginBottom: 24, border: '2px solid var(--hairline)', background: '#fafafa' }}>
+      <div className="assessment-result-panel">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16, marginBottom: 16 }}>
           <div>
             <div style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--soft)', fontWeight: 600 }}>
@@ -251,7 +273,7 @@ export function Scl90Page() {
           })}
         </div>
 
-        <div style={{ background: 'var(--bg)', padding: 14, borderRadius: 8, border: '1px solid var(--hairline)', fontSize: 13.5, lineHeight: 1.6, marginTop: 16 }}>
+        <div className="assessment-result-note" style={{ marginTop: 16 }}>
           <strong>Klinik Yorum &amp; Değerlendirme:</strong> {liveResult ? liveResult.clinicalInterpretation : '90 maddenin tümü işaretlenmeden indeks üretilmez. Boş madde 0 sayılmaz.'}
         </div>
       </div>
@@ -342,10 +364,14 @@ export function Scl90Page() {
       </div>
 
       {/* Alt Kaydet & Yazdır */}
-      <div className="scl-form-actions btn-print-hide">
-        <button type="button" className="btn-secondary" onClick={() => window.print()}>
+      <div className="scl-form-actions assessment-print-actions btn-print-hide">
+        <button type="button" className="btn-secondary" onClick={() => printAssessmentPaper('scl90')}>
+          <Icon name="fileText" size={16} />
+          <span>Yanıt formu / PDF</span>
+        </button>
+        <button type="button" className="btn-secondary" onClick={() => printAssessmentResult('scl90')}>
           <Icon name="print" size={16} />
-          <span>Yazdır / PDF</span>
+          <span>Sonuç özeti / PDF</span>
         </button>
         <button type="button" className="btn-primary" onClick={handleSave}>
           <Icon name="save" size={16} />

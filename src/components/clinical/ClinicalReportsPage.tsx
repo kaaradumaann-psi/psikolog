@@ -25,6 +25,7 @@ import { clinicToday, isSafeImageUrl } from '../../clinical/recordRules';
 import { Icon } from '../Icon';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { RecordLockActions, RecordStatusBadge } from './RecordLockActions';
+import { COPYRIGHT_HOLDER, COPYRIGHT_YEAR } from '../../site';
 
 export function ClinicalReportsPage() {
   const [reports, setReports] = useState<ClinicalReport[]>(() => getClinicalReports());
@@ -471,6 +472,10 @@ export function ClinicalReportsPage() {
                     <span style={{ fontSize: 11, color: '#555' }}>{getSettings().title || 'Klinik Psikolog'}</span>
                   </div>
                 </div>
+                <footer className="print-document-notice">
+                  <span>© {COPYRIGHT_YEAR} {COPYRIGHT_HOLDER} · Klinik çalışma alanı çıktısı</span>
+                  <p>Bu rapor test maddelerini yeniden üretmez. Ölçek adları ve puanları ilgili hak sahiplerinin materyal kullanım koşullarına tabidir; sonuçlar tek başına tanı değildir.</p>
+                </footer>
               </div>
             </div>
           ) : (

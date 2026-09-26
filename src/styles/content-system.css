@@ -1,0 +1,321 @@
+/* Content-area hierarchy
+   A · normal content: white surface + neutral hairline
+   B · selected content: blue left accent
+   C · active content: blue underline/tint on the control itself
+   D · important content: semantic warning/danger treatment
+   E · status content: compact semantic text/badge
+
+   Existing sidebar, sidebar footer, top bar and navigation selectors are
+   intentionally absent from this file. */
+
+@media screen {
+  /* A — ordinary content never receives a decorative accent. */
+  .modern-table-card,
+  .card-elevated,
+  .metric-card,
+  .client-table-wrap,
+  .soap-card,
+  .assessment-card,
+  .question-item-card,
+  .report-list-item,
+  .formulation-card,
+  .calendar-card {
+    border: 1px solid var(--hairline);
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: none;
+  }
+
+  .modern-table-card:hover,
+  .metric-card:hover,
+  .soap-card:hover,
+  .formulation-card:hover {
+    box-shadow: none;
+  }
+
+  .metric-card,
+  .assessment-card,
+  .soap-card,
+  .question-item-card {
+    transition: border-color 150ms ease, background-color 150ms ease;
+  }
+
+  .metric-card:hover,
+  .assessment-card:hover {
+    border-color: var(--slate-300);
+    transform: none;
+  }
+
+  .metric-card-head .metric-icon,
+  .metric-card-head .metric-icon.icon-accent,
+  .assessment-card-top .assessment-card-icon,
+  .assessment-card:nth-child(2) .assessment-card-icon,
+  .assessment-card:nth-child(3) .assessment-card-icon,
+  .assessment-card:nth-child(4) .assessment-card-icon,
+  .assessment-history-icon,
+  .board-tool-icon,
+  .desk-rail-icon,
+  .empty-state-card > svg {
+    border: 1px solid var(--hairline);
+    background: var(--bg-soft);
+    color: var(--text);
+  }
+
+  .empty-state-card {
+    border: 1px dashed var(--slate-300);
+    border-radius: 12px;
+    background: #fff;
+  }
+
+  .assessment-page .assessment-card {
+    min-height: 232px;
+    border-radius: 12px;
+  }
+
+  .assessment-card-code,
+  .task-card-kicker {
+    color: var(--soft);
+  }
+
+  .assessment-card-foot button {
+    color: var(--text);
+    border-color: var(--hairline);
+    background: #fff;
+  }
+
+  .assessment-card-foot button:hover {
+    color: var(--text);
+    border-color: var(--slate-300);
+    background: var(--bg-soft);
+  }
+
+  .assessment-history-item {
+    border-radius: 10px;
+    box-shadow: none;
+  }
+
+  /* B — selected rows/cards carry the blue accent and nothing else does. */
+  .report-list-item.is-selected {
+    border-color: var(--primary-border);
+    box-shadow: inset 3px 0 0 var(--accent);
+    background: #fff;
+  }
+
+  .report-list-item:not(.is-selected):hover {
+    border-color: var(--slate-300);
+    background: var(--bg-soft);
+  }
+
+  /* C — answer/active controls use the same restrained selected state. */
+  .option-label {
+    border-radius: 8px;
+    background: #fff;
+  }
+
+  .option-label:hover {
+    border-color: var(--slate-300);
+    background: var(--bg-soft);
+  }
+
+  .option-label.selected {
+    border-color: var(--accent);
+    background: var(--primary-tint);
+    color: var(--text);
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+
+  .question-item-card.answered {
+    border-color: var(--hairline);
+    background: #fff;
+  }
+
+  .clinical-tab-btn.active,
+  .file-section-panel button.is-current {
+    color: var(--accent-ink);
+    border-bottom-color: var(--accent);
+  }
+
+  /* Informational/important content uses one directional accent, not a blue box. */
+  .assessment-note {
+    border: 1px solid var(--hairline);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 9px 9px 0;
+    background: #fff;
+    color: var(--soft);
+  }
+
+  .assessment-note svg { color: var(--accent-ink); }
+
+  .assessment-result-panel {
+    padding: 22px;
+    margin-bottom: 24px;
+    border: 1px solid var(--hairline);
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: none;
+  }
+
+  .client-assessment-record {
+    padding: 17px;
+  }
+
+  .client-assessment-icon {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    flex: none;
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+    color: var(--text);
+    background: var(--bg-soft);
+  }
+
+  .client-assessment-note {
+    margin: 0;
+    padding: 10px 0 0;
+    border-top: 1px solid var(--hairline);
+    color: var(--soft);
+    font-size: 12.5px;
+    line-height: 1.55;
+  }
+
+  .client-report-record {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 15px 16px;
+  }
+
+  .assessment-result-note {
+    padding: 12px 14px;
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+    background: var(--bg-soft);
+    color: var(--text);
+    font-size: 13.5px;
+    line-height: 1.6;
+  }
+
+  /* Tasks are ordinary records. Accent appears only for a live/important state. */
+  .task-card {
+    border: 1px solid var(--hairline);
+    border-left-width: 1px;
+    border-radius: 11px;
+    box-shadow: none;
+  }
+
+  .task-card.priority-low,
+  .task-card.priority-medium {
+    border-left-color: var(--hairline);
+  }
+
+  .task-card.status-in_progress {
+    border-left: 3px solid var(--accent);
+  }
+
+  .task-card.priority-high {
+    border-left: 3px solid var(--danger);
+  }
+
+  .task-priority {
+    border-color: var(--hairline);
+    background: var(--bg-soft);
+    color: var(--soft);
+  }
+
+  .task-priority.priority-high {
+    border-color: var(--danger-border);
+    background: var(--danger-tint);
+    color: var(--danger-ink);
+  }
+
+  .task-status-select.status-in_progress {
+    border-color: var(--primary-border);
+    background: var(--primary-tint);
+    color: var(--accent-ink);
+  }
+
+  /* D/E — only semantic urgency keeps a coloured edge or surface. */
+  .question-item-card.critical {
+    border-left: 4px solid var(--danger);
+    background: var(--danger-tint);
+  }
+
+  .prep-checks {
+    border-left-color: var(--warning);
+    background: var(--warning-tint);
+  }
+
+  .record-status,
+  .badge {
+    box-shadow: none;
+  }
+
+  /* Forms read as sections, not floating widgets. */
+  .content-form-section {
+    padding: 22px;
+    border: 1px solid var(--hairline);
+    border-radius: 12px;
+    background: #fff;
+  }
+
+  .settings-form { display: grid; gap: 13px; }
+  .settings-cloud-section { margin-top: 26px; padding: 19px 0; border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); }
+  .settings-cloud-section > span { color: var(--accent-ink); font-size: 9.5px; font-weight: 800; letter-spacing: .13em; }
+  .settings-cloud-section h2 { margin: 5px 0 6px; color: var(--text); font: 400 24px var(--font-display); letter-spacing: -.03em; }
+  .settings-cloud-section p { max-width: 82ch; margin: 0; color: var(--soft); font-size: 12.5px; line-height: 1.65; }
+
+  .form-group input,
+  .form-group select,
+  .form-group textarea,
+  .field input,
+  .field textarea,
+  .search-input-wrap input,
+  .filter-select {
+    border-radius: 8px;
+    box-shadow: none;
+  }
+
+  /* Modal is a real work surface; no glass/blur/floating SaaS treatment. */
+  .clinical-modal-backdrop {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: rgba(13, 13, 13, .48);
+  }
+
+  .clinical-modal {
+    border-radius: 13px;
+    box-shadow: 0 18px 48px -28px rgba(13, 13, 13, .38);
+    animation: none;
+  }
+
+  .clinical-modal-foot { background: var(--bg-soft); }
+
+  /* Dashboard content uses flat paper/ink surfaces; app chrome is untouched. */
+  .day-board .desk {
+    border-radius: 14px;
+    background: var(--bg-soft);
+  }
+
+  .day-board .desk-now {
+    border-radius: 12px;
+    background: #171719;
+  }
+
+  .day-board .desk-now::after { display: none; }
+
+  .day-board .desk-rail button,
+  .onboarding-panel,
+  .onboarding-steps,
+  .board-tool,
+  .board-empty,
+  .board-clear,
+  .attention-panel,
+  .board-shortcuts,
+  .tomorrow-card {
+    border-radius: 11px;
+    box-shadow: none;
+  }
+}

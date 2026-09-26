@@ -13,6 +13,13 @@ import { cloudContext } from '../../clinical/cloud/sync';
 import { asCompleteAnswers, emptyAnswers, parseOptionalAge } from '../../clinical/scaleIntake';
 import { Icon } from '../Icon';
 import { navigate } from '../../router';
+import {
+  AssessmentLegalNotice,
+  AssessmentPaperSheet,
+  AssessmentResultPrintHeader,
+  printAssessmentPaper,
+  printAssessmentResult,
+} from './AssessmentPrint';
 
 export function BeckDepressionPage() {
   const clients = useMemo(() => getClients(), []);
@@ -107,9 +114,13 @@ export function BeckDepressionPage() {
         </div>
 
         <div className="clinical-actions">
-          <button type="button" className="btn-secondary" onClick={() => window.print()}>
+          <button type="button" className="btn-secondary" onClick={() => printAssessmentPaper('bdi')}>
+            <Icon name="fileText" size={16} />
+            <span>Yanıt formu / PDF</span>
+          </button>
+          <button type="button" className="btn-secondary" onClick={() => printAssessmentResult('bdi')}>
             <Icon name="print" size={16} />
-            <span>Raporu Yazdır</span>
+            <span>Sonuç özeti / PDF</span>
           </button>
           <button type="button" className="btn-primary" onClick={handleSave}>
             <Icon name="save" size={16} />
@@ -117,6 +128,15 @@ export function BeckDepressionPage() {
           </button>
         </div>
       </div>
+
+      <AssessmentPaperSheet
+        assessment="bdi"
+        respondentName={clientName}
+        date={testDate}
+        items={BECK_DEPRESSION_QUESTIONS.map((question) => ({ id: question.id, text: question.title }))}
+        options={[0, 1, 2, 3].map((score) => ({ score, label: 'Yanıt' }))}
+      />
+      <AssessmentResultPrintHeader assessment="bdi" respondentName={clientName} date={testDate} />
 
       {saveError && <p className="record-lock-error" role="alert">{saveError}</p>}
       {toast && (
@@ -188,8 +208,10 @@ export function BeckDepressionPage() {
         </div>
       </div>
 
+      <AssessmentLegalNotice assessment="bdi" />
+
       {/* Canlı Skor & Sonuç Kartı */}
-      <div className="modern-table-card" style={{ padding: 24, marginBottom: 24, border: '2px solid var(--primary-border)', background: '#fafcff' }}>
+      <div className="assessment-result-panel">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16, marginBottom: 16 }}>
           <div>
             <div style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--soft)', fontWeight: 600 }}>
@@ -227,7 +249,7 @@ export function BeckDepressionPage() {
           </div>
         )}
 
-        <div style={{ background: 'var(--bg)', padding: 14, borderRadius: 8, border: '1px solid var(--hairline)', fontSize: 13.5, lineHeight: 1.6 }}>
+        <div className="assessment-result-note">
           <strong>Klinik Değerlendirme &amp; Özet:</strong> {liveResult ? liveResult.clinicalInterpretation : 'Tüm maddeler işaretlenmeden puan üretilmez. Boş madde 0 sayılmaz.'}
         </div>
       </div>
@@ -238,7 +260,7 @@ export function BeckDepressionPage() {
         {BECK_DEPRESSION_QUESTIONS.map((q, idx) => (
           <div
             key={q.id}
-            className={`question-item-card ${answers[idx] !== 0 ? 'answered' : ''} ${q.critical && answers[idx]! > 0 ? 'critical' : ''}`}
+            className={`question-item-card ${answers[idx] !== null ? 'answered' : ''} ${q.critical && answers[idx]! > 0 ? 'critical' : ''}`}
           >
             <div className="question-header">
               <span className="question-num">Madde {q.id}</span>
@@ -273,10 +295,14 @@ export function BeckDepressionPage() {
       </div>
 
       {/* Alt Butonlar */}
-      <div className="btn-print-hide" style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 24 }}>
-        <button type="button" className="btn-secondary" onClick={() => window.print()}>
+      <div className="assessment-print-actions btn-print-hide">
+        <button type="button" className="btn-secondary" onClick={() => printAssessmentPaper('bdi')}>
+          <Icon name="fileText" size={16} />
+          <span>Yanıt formu / PDF</span>
+        </button>
+        <button type="button" className="btn-secondary" onClick={() => printAssessmentResult('bdi')}>
           <Icon name="print" size={16} />
-          <span>Yazdır / PDF</span>
+          <span>Sonuç özeti / PDF</span>
         </button>
         <button type="button" className="btn-primary" onClick={handleSave}>
           <Icon name="save" size={16} />

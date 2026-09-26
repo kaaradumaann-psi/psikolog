@@ -13,6 +13,13 @@ import { cloudContext } from '../../clinical/cloud/sync';
 import { asCompleteAnswers, emptyAnswers } from '../../clinical/scaleIntake';
 import { Icon } from '../Icon';
 import { navigate } from '../../router';
+import {
+  AssessmentLegalNotice,
+  AssessmentPaperSheet,
+  AssessmentResultPrintHeader,
+  printAssessmentPaper,
+  printAssessmentResult,
+} from './AssessmentPrint';
 
 export function RapidScreeningPage() {
   const clients = useMemo(() => getClients(), []);
@@ -98,9 +105,13 @@ export function RapidScreeningPage() {
         </div>
 
         <div className="clinical-actions">
-          <button type="button" className="btn-secondary" onClick={() => window.print()}>
+          <button type="button" className="btn-secondary" onClick={() => printAssessmentPaper(activeTool)}>
+            <Icon name="fileText" size={16} />
+            <span>Boş form / PDF</span>
+          </button>
+          <button type="button" className="btn-secondary" onClick={() => printAssessmentResult(activeTool)}>
             <Icon name="print" size={16} />
-            <span>Raporu Yazdır</span>
+            <span>Sonuç özeti / PDF</span>
           </button>
           <button type="button" className="btn-primary" onClick={handleSave}>
             <Icon name="save" size={16} />
@@ -108,6 +119,15 @@ export function RapidScreeningPage() {
           </button>
         </div>
       </div>
+
+      <AssessmentPaperSheet
+        assessment={activeTool}
+        respondentName={clientName}
+        date={testDate}
+        items={(activeTool === 'gad7' ? GAD7_QUESTIONS : PHQ9_QUESTIONS).map((question) => ({ id: question.id, text: question.text }))}
+        options={RAPID_SCALE_OPTIONS.map((option) => ({ score: option.score, label: option.label }))}
+      />
+      <AssessmentResultPrintHeader assessment={activeTool} respondentName={clientName} date={testDate} />
 
       {saveError && <p className="record-lock-error" role="alert">{saveError}</p>}
       {toast && (
@@ -176,11 +196,13 @@ export function RapidScreeningPage() {
         </div>
       </div>
 
+      <AssessmentLegalNotice assessment={activeTool} />
+
       {/* GAD-7 Görünümü */}
       {activeTool === 'gad7' && (
         <div>
           {/* Canlı Skor */}
-          <div className="modern-table-card" style={{ padding: 20, marginBottom: 24, background: '#fafcff', border: '2px solid var(--primary-border)' }}>
+          <div className="assessment-result-panel">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 14 }}>
               <div>
                 <div style={{ fontSize: 11, textTransform: 'uppercase', color: 'var(--soft)', fontWeight: 600 }}>
@@ -246,7 +268,7 @@ export function RapidScreeningPage() {
       {activeTool === 'phq9' && (
         <div>
           {/* Canlı Skor */}
-          <div className="modern-table-card" style={{ padding: 20, marginBottom: 24, background: '#fafcff', border: '2px solid var(--primary-border)' }}>
+          <div className="assessment-result-panel">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 14 }}>
               <div>
                 <div style={{ fontSize: 11, textTransform: 'uppercase', color: 'var(--soft)', fontWeight: 600 }}>
@@ -312,10 +334,14 @@ export function RapidScreeningPage() {
       )}
 
       {/* Alt Butonlar */}
-      <div className="btn-print-hide" style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 28 }}>
-        <button type="button" className="btn-secondary" onClick={() => window.print()}>
+      <div className="assessment-print-actions btn-print-hide">
+        <button type="button" className="btn-secondary" onClick={() => printAssessmentPaper(activeTool)}>
+          <Icon name="fileText" size={16} />
+          <span>Boş form / PDF</span>
+        </button>
+        <button type="button" className="btn-secondary" onClick={() => printAssessmentResult(activeTool)}>
           <Icon name="print" size={16} />
-          <span>Yazdır / PDF</span>
+          <span>Sonuç özeti / PDF</span>
         </button>
         <button type="button" className="btn-primary" onClick={handleSave}>
           <Icon name="save" size={16} />

@@ -1,6 +1,9 @@
 import type { AuthenticatedUser } from '../../auth/authTypes';
+import { displayName } from '../../auth/userDisplay';
 import { CloudAdminPanel } from './CloudAdminPanel';
+import { Icon } from '../Icon';
 import { SiteFooter } from '../SiteFooter';
+import { WorkspaceSectionBoundary } from '../WorkspaceSectionBoundary';
 
 /** An authenticated platform ADMIN without a clinical org can manage tenants,
  * but must not enter the clinical workspace or be assigned one implicitly. */
@@ -13,23 +16,45 @@ export function AdminSetupPage({
   logoutError: string | null;
 }) {
   return (
-    <div className="auth-page">
-      <main className="auth-shell" style={{ maxWidth: 940, width: '100%' }}>
-        <div className="modern-table-card" style={{ padding: 18 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+    <div className="auth-page admin-setup-page">
+      <main className="admin-setup-shell">
+        <header className="admin-setup-account-bar">
+          <div className="admin-setup-account">
+            <span className="admin-setup-account-mark" aria-hidden="true"><Icon name="shield" size={18} /></span>
             <div>
-              <h1 style={{ fontSize: 23, margin: '0 0 8px' }}>Sistem yöneticisi kurulumu</h1>
-              <p style={{ margin: 0 }}>Hesabınız ADMIN rolünde, ancak klinik çalışma alanı için kurum seçilmemiş.</p>
+              <strong>{displayName(user)}</strong>
+              <span>Sistem yöneticisi · klinik kurum atanmamış</span>
             </div>
-            <button type="button" className="btn-secondary btn-sm" onClick={onLogout}>Çıkış</button>
           </div>
-          {logoutError && <p role="alert" style={{ color: 'var(--danger-ink)' }}>{logoutError}</p>}
-          <p style={{ fontSize: 13, color: 'var(--soft)' }}>
-            Bu ekranda kurum ve hesapları yönetebilirsiniz. Danışan kayıtları açılmaz;
-            klinik alana geçmek isterseniz yalnızca seçtiğiniz kurumu kendi profilinize atayın.
+          <button type="button" className="btn-secondary btn-sm" onClick={onLogout}>Çıkış</button>
+        </header>
+
+        {logoutError && <p className="record-lock-error admin-setup-logout-error" role="alert">{logoutError}</p>}
+
+        <section className="admin-setup-intro" aria-labelledby="admin-setup-title">
+          <div>
+            <span className="admin-setup-kicker">Sistem yöneticisi kurulumu</span>
+            <h1 id="admin-setup-title">Önce çalışma alanınızın kurumunu belirleyin.</h1>
+          </div>
+          <p>
+            Kurum; ekip adı olmanın ötesinde, klinik kayıtların sunucuda hangi güvenlik sınırı içinde tutulacağını
+            belirler. Yönetim işlemleri için kurum üyeliği gerekmez. Danışan dosyalarını açmak istiyorsanız mevcut
+            kurumlardan doğru olanı seçip kendi hesabınıza açıkça atayın.
           </p>
+        </section>
+
+        <div className="admin-setup-principles" aria-label="Kurum modelinin özeti">
+          <div><strong>Kurum</strong><span>Klinik ve ekip için tek güvenlik kapsamı</span></div>
+          <div><strong>Hesap</strong><span>Bir kuruma bağlı rol ve oturum kimliği</span></div>
+          <div><strong>Dosya erişimi</strong><span>Kurum üyeliğinden ayrıca sunucu kurallarıyla sınırlandırılır</span></div>
         </div>
-        <CloudAdminPanel user={user} onOwnOrganizationAssigned={onOwnOrganizationAssigned} />
+
+        <WorkspaceSectionBoundary
+          title="Kurum yönetimi görüntülenemedi"
+          description="Hesap oturumunuz açık kaldı. Bölümü yeniden deneyin; sorun sürerse çıkış yapıp yöneticinize başvurun."
+        >
+          <CloudAdminPanel user={user} onOwnOrganizationAssigned={onOwnOrganizationAssigned} />
+        </WorkspaceSectionBoundary>
       </main>
       <SiteFooter compact />
     </div>

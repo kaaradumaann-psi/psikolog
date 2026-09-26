@@ -25,6 +25,10 @@ import { clinicToday, isSafeImageUrl } from '../../clinical/recordRules';
 import { Icon } from '../Icon';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { RecordLockActions, RecordStatusBadge } from './RecordLockActions';
+import { COPYRIGHT_HOLDER, COPYRIGHT_YEAR } from '../../site';
+import { beckDepressionScoreContext, isBeckCriticalItemEndorsed } from '../../clinical/beckDepression';
+import { beckAnxietyScoreContext } from '../../clinical/beckAnxiety';
+import { scl90CriticalItemFlags } from '../../clinical/scl90';
 
 export function ClinicalReportsPage() {
   const [reports, setReports] = useState<ClinicalReport[]>(() => getClinicalReports());
@@ -108,17 +112,17 @@ export function ClinicalReportsPage() {
       const bai = getBeckAnxietyTests().find((item) => item.clientId === cId);
       title = 'Beck Envanterleri Duygu-Durum Raporu';
       defaultSections = [
-        { id: 's1', title: '1. Uygulama', content: `Kayıtlı BDI: ${bdi ? 'var' : 'yok'}. Kayıtlı BAI: ${bai ? 'var' : 'yok'}. Uygulanmamış envanter rapora yazılmaz. Puanlar tarama bandıdır, tanı değildir.` },
-        { id: 's2', title: '2. Puanlar', content: `BDI: ${bdi ? `${bdi.totalScore}/63 (${bdi.severity})${bdi.suicideRisk ? ' — Madde 9 uyarısı' : ''}` : 'kayıt yok'}. BAI: ${bai ? `${bai.totalScore}/63 (${bai.severity})` : 'kayıt yok'}.` },
-        { id: 's3', title: '3. Klinik yorum', content: 'Şiddet bandı, görüşme ve işlevsellik ile birlikte okunmalıdır. Güvenlik maddesi pozitifse protokol işletilir.' },
+        { id: 's1', title: '1. Uygulama', content: `Kayıtlı BDI (Hisli Türkçe formu; BDI-II değil): ${bdi ? 'var' : 'yok'}. Kayıtlı BAI: ${bai ? 'var' : 'yok'}. Uygulanmamış envanter rapora yazılmaz. Ölçek puanları tek başına tanı değildir.` },
+        { id: 's2', title: '2. Puanlar', content: `BDI: ${bdi ? `${bdi.totalScore}/63 (${beckDepressionScoreContext(bdi)})${isBeckCriticalItemEndorsed(bdi) ? ' — Madde 9 işaretli; klinik değerlendirme gerekebilir' : ''}` : 'kayıt yok'}. BAI: ${bai ? `${bai.totalScore}/63 (${beckAnxietyScoreContext(bai)})` : 'kayıt yok'}.` },
+        { id: 's3', title: '3. Klinik yorum', content: 'BDI ve BAI toplam puanları görüşme ve işlevsellik bağlamında okunur; tek başına tanı veya tedavi kararı üretmez. Kritik yanıt işaretliyse otomatik risk sınıfı üretilmeden klinik güvenlik değerlendirmesi yapılır.' },
       ];
     } else if (type === 'scl90') {
       const scl = getScl90Tests().find((item) => item.clientId === cId);
       title = 'SCL-90-R Semptom Profili Raporu';
       defaultSections = [
-        { id: 's1', title: '1. Genel indeksler', content: scl ? `GSI ${scl.gsi}, PST ${scl.pst}, PSDI ${scl.psdi}.` : 'Bu danışan için SCL-90-R kaydı yok.' },
-        { id: 's2', title: '2. Boyutlar', content: scl ? `SOM ${scl.dimensionScores.somatization}, O-C ${scl.dimensionScores.obsessiveCompulsive}, DEP ${scl.dimensionScores.depression}, ANX ${scl.dimensionScores.anxiety}, HOS ${scl.dimensionScores.hostility}.` : 'Boyut puanı üretilemedi.' },
-        { id: 's3', title: '3. Sınır', content: 'GSI ≥ 1.0 klinik eşik uyarısıdır. Norm tek başına tanı koymaz.' },
+        { id: 's1', title: '1. Ham genel indeksler', content: scl ? `GSI ${scl.gsi}, PST ${scl.pst}, PSDI ${scl.psdi}. ${scl90CriticalItemFlags(scl).length ? `Kritik yanıt bayrakları: ${scl90CriticalItemFlags(scl).join(', ')}.` : 'Kritik yanıt bayrağı yok.'}` : 'Bu danışan için SCL-90-R kaydı yok.' },
+        { id: 's2', title: '2. Ham boyut ortalamaları', content: scl ? `SOM ${scl.dimensionScores.somatization}, O-C ${scl.dimensionScores.obsessiveCompulsive}, DEP ${scl.dimensionScores.depression}, ANX ${scl.dimensionScores.anxiety}, HOS ${scl.dimensionScores.hostility}.` : 'Boyut puanı üretilemedi.' },
+        { id: 's3', title: '3. Yorum sınırı', content: 'Bu otomatik bölüm T-puanı, Türkçe norm karşılaştırması, GSI klinik eşiği veya tanı üretmez. Dağ (1991) üniversite öğrencisi örnekleminden genelleme yapılmaz.' },
       ];
     } else if (type === 'referral') {
       title = 'Psikiyatrik Konsültasyon & Sevk Raporu';
@@ -471,6 +475,10 @@ export function ClinicalReportsPage() {
                     <span style={{ fontSize: 11, color: '#555' }}>{getSettings().title || 'Klinik Psikolog'}</span>
                   </div>
                 </div>
+                <footer className="print-document-notice">
+                  <span>© {COPYRIGHT_YEAR} {COPYRIGHT_HOLDER} · Klinik çalışma alanı çıktısı</span>
+                  <p>Bu rapor test maddelerini yeniden üretmez. Ölçek adları ve puanları ilgili hak sahiplerinin materyal kullanım koşullarına tabidir; sonuçlar tek başına tanı değildir.</p>
+                </footer>
               </div>
             </div>
           ) : (

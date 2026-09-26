@@ -11,8 +11,14 @@ import { getScreenings, subscribePracticeStore } from '../../clinical/practiceSt
 import { Icon } from '../Icon';
 import type { IconName } from '../Icon';
 import { navigate } from '../../router';
+import { assessmentMeta, type AssessmentKey } from '../../clinical/assessmentCatalog';
+import { beckDepressionScoreContext, isBeckCriticalItemEndorsed } from '../../clinical/beckDepression';
+import { beckAnxietyScoreContext } from '../../clinical/beckAnxiety';
+import { phq9CriticalItemEndorsed, rapidScoreContext } from '../../clinical/rapidScreening';
+import { scl90CriticalItemFlags } from '../../clinical/scl90';
 
 type AssessmentTool = {
+  key: AssessmentKey;
   code: string;
   title: string;
   detail: string;
@@ -24,23 +30,23 @@ type AssessmentTool = {
 
 const TOOLS: AssessmentTool[] = [
   {
-    code: 'BDI', title: 'Beck Depresyon Envanteri', icon: 'pulse', meta: '21 MADDE · DEPRESYON',
-    detail: 'Hisli (1989) Türkçe uyarlaması. Depresif belirti şiddetini izleyin; madde 9 için güvenlik uyarısı görünür.',
+    key: 'bdi', code: 'BDI', title: 'Beck Depresyon Envanteri', icon: 'pulse', meta: '21 MADDE · TOPLAM PUAN',
+    detail: 'Hisli Türkçe BDI formu için puan aktarımı; BDI-II değildir. Yetkili form gerekir, madde metni uygulamada dağıtılmaz.',
     path: '/testler/beck-depresyon', action: 'Beck Depresyon testini başlat',
   },
   {
-    code: 'BAI', title: 'Beck Anksiyete Envanteri', icon: 'activity', meta: '21 BELİRTİ · KAYGI',
-    detail: 'Ulusoy, Şahin ve Erkmen (1998) Türkçe uyarlaması. Bedensel ve bilişsel kaygı şiddetini izleyin.',
+    key: 'bai', code: 'BAI', title: 'Beck Anksiyete Envanteri', icon: 'activity', meta: '21 MADDE · TOPLAM PUAN',
+    detail: 'Ulusoy, Şahin ve Erkmen (1998) Türkçe uyarlaması için sayısal yanıt aktarımı. Yetkili form ve dijital kullanım hakkı ayrıca doğrulanır.',
     path: '/testler/beck-anksiyete', action: 'Beck Anksiyete testini başlat',
   },
   {
-    code: 'SCL', title: 'SCL-90-R Belirti Tarama', icon: 'layers', meta: '90 MADDE · 9 BOYUT',
-    detail: 'Dağ (1991) Türkçe uyarlaması. Dokuz belirti boyutu ile GSI, PST ve PSDI sonuçlarını birlikte görün.',
+    key: 'scl90', code: 'SCL', title: 'SCL-90-R Belirti Tarama', icon: 'layers', meta: '90 MADDE · 9 BOYUT',
+    detail: 'Dağ (1991) üniversite öğrencisi çalışmasıyla ilişkili form için sayısal aktarım. Ham boyutlar ve indeksler gösterilir; norm veya klinik eşik üretilmez.',
     path: '/testler/scl90', action: 'SCL-90-R testini başlat',
   },
   {
-    code: 'KISA', title: 'PHQ-9 ve GAD-7', icon: 'trend', meta: 'KISA TARAMA · İKİ ÖLÇEK',
-    detail: 'Seans içi depresyon ve kaygı izlemi. PHQ-9 madde 9 pozitifse güvenlik uyarısı açılır.',
+    key: 'phq9', code: 'KISA', title: 'PHQ-9 ve GAD-7', icon: 'trend', meta: 'KISA TARAMA · İKİ ÖLÇEK',
+    detail: 'Doğrulanmış Türkçe formlardan GAD-7 ve PHQ-9 sayısal yanıt aktarımı. PHQ-9 madde 9 işaretlenirse nötr klinik inceleme bayrağı oluşur.',
     path: '/testler/tarama', action: 'PHQ-9 ve GAD-7 taramasını başlat',
   },
 ];
@@ -56,12 +62,6 @@ type HistoryItem = {
   tone: 'normal' | 'warning' | 'danger';
   safetyFlag?: boolean;
 };
-
-function severityTone(severity: string): HistoryItem['tone'] {
-  if (severity.includes('Şiddetli')) return 'danger';
-  if (severity.includes('Orta')) return 'warning';
-  return 'normal';
-}
 
 export function AssessmentHubPage() {
   const [bdiTests, setBdiTests] = useState<BeckDepressionResult[]>(() => getBeckDepressionTests());
@@ -85,26 +85,26 @@ export function AssessmentHubPage() {
   const history: HistoryItem[] = [
     ...bdiTests.map((test) => ({
       id: test.id, clientId: test.clientId, clientName: test.clientName,
-      title: 'Beck Depresyon · BDI', date: test.testDate, score: `${test.totalScore}/63`,
-      severity: `${test.severity} depresyon`, tone: severityTone(test.severity), safetyFlag: test.suicideRisk,
+      title: 'Beck Depresyon · BDI (pre-II)', date: test.testDate, score: `${test.totalScore}/63`,
+      severity: beckDepressionScoreContext(test), tone: 'normal' as const, safetyFlag: isBeckCriticalItemEndorsed(test),
     })),
     ...baiTests.map((test) => ({
       id: test.id, clientId: test.clientId, clientName: test.clientName,
       title: 'Beck Anksiyete · BAI', date: test.testDate, score: `${test.totalScore}/63`,
-      severity: `${test.severity} anksiyete`, tone: severityTone(test.severity),
+      severity: beckAnxietyScoreContext(test), tone: 'normal' as const,
     })),
     ...scl90Tests.map((test) => ({
       id: test.id, clientId: test.clientId, clientName: test.clientName,
       title: 'SCL-90-R Belirti Tarama', date: test.testDate, score: `GSI ${test.gsi} · PST ${test.pst}`,
-      severity: test.gsi >= 1 ? 'Klinik eşik üzerinde' : 'Eşik altında',
-      tone: test.gsi >= 1 ? 'warning' as const : 'normal' as const,
-      safetyFlag: (test.answers?.[14] ?? 0) > 0,
+      severity: test.normReference === 'none' ? 'Ham indeks · norm uygulanmadı' : 'Eski kayıt · norm dayanağını doğrulayın',
+      tone: 'normal' as const,
+      safetyFlag: scl90CriticalItemFlags(test).length > 0,
     })),
     ...screenings.map((test) => ({
       id: test.id, clientId: test.clientId, clientName: test.clientName,
       title: test.type === 'phq9' ? 'PHQ-9 Kısa Tarama' : 'GAD-7 Kısa Tarama',
       date: test.testDate, score: `${test.totalScore}/${test.type === 'phq9' ? 27 : 21}`,
-      severity: test.severity, tone: severityTone(test.severity), safetyFlag: test.suicideRisk,
+      severity: rapidScoreContext(test), tone: 'normal' as const, safetyFlag: phq9CriticalItemEndorsed(test),
     })),
   ].sort((a, b) => b.date.localeCompare(a.date));
 
@@ -118,7 +118,7 @@ export function AssessmentHubPage() {
         </div>
       </div>
 
-      <div className="assessment-note"><Icon name="info" size={18} /><span>Puanlar tarama amaçlıdır, tanı koymaz. Güvenlik maddesi pozitifse klinik karar görüşmeye aittir.</span></div>
+      <div className="assessment-note"><Icon name="info" size={18} /><span>Puanlar tarama amaçlıdır, tanı koymaz. Her araç kendi lisans koşuluyla kullanılır. PHQ-9 ve GAD-7 için danışanın elle doldurabileceği boş form; lisanslı araçlar için madde metni içermeyen yanıt aktarım sayfası PDF olarak hazırlanabilir.</span></div>
 
       <section aria-label="Değerlendirme araçları" className="tool-grid">
         {TOOLS.map((tool, index) => (
@@ -131,6 +131,7 @@ export function AssessmentHubPage() {
               <span className="assessment-card-code">{tool.code}</span>
               <h2>{tool.title}</h2>
               <p>{tool.detail}</p>
+              <span className={`assessment-card-rights is-${assessmentMeta(tool.key).access}`}>{assessmentMeta(tool.key).accessLabel}</span>
             </div>
             <div className="assessment-card-foot">
               <span>{tool.meta}</span>

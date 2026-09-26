@@ -38,7 +38,7 @@ export function TermsPage() {
           title: 'Telif',
           body: (
             <p>
-              Arayüz ve bu deponun özgün kodu {COPYRIGHT_HOLDER}’a aittir. Beck, SCL-90-R, GAD-7 ve PHQ-9 maddeleri ilgili hak sahiplerinin eserleridir; yazılım bu maddeleri klinik uygulama aracı olarak sunar, ticari test kitapçığı iddiası taşımaz.
+              Arayüz ve bu deponun özgün kodu {COPYRIGHT_HOLDER}’a aittir. Beck envanterleri ile SCL-90-R® telif, marka ve test güvenliği koruması altındaki lisanslı materyallerdir; çalışma alanı bunlar için kullanım veya çoğaltma lisansı sağlamaz. Uygulayıcı resmî materyali ve gerekli hakkı ayrıca temin eder. PHQ-9 ve GAD-7, geliştiricilerinin ve Pfizer Inc. erişim beyanı uyarınca izin gerekmeksizin çoğaltılabilir, çevrilebilir, gösterilebilir ve dağıtılabilir. Tüm araçlarda mesleki yetkinlik ve klinik sorumluluk uygulayıcıya aittir.
             </p>
           ),
         },

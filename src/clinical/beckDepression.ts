@@ -1,335 +1,275 @@
 /**
- * Beck Depresyon Envanteri (BDI / BDO) — 21 Madde Değerlendirme & Yorumlama Motoru
- * Beck, Ward, Mendelson, Mock & Erbaugh (1961); Hisli (1988, 1989) Türk Uyarlaması
- * Halil Karaduman · Uzman Psikolog & Geliştirici
+ * Beck Depresyon Envanteri (BDI; BDI-II değildir) — katı puanlama çekirdeği.
+ *
+ * Kimlik dayanağı: Beck, Ward, Mendelson, Mock & Erbaugh (1961) ve
+ * Hisli'nin 1988/1989 Türkçe uyarlama çalışmaları. Depodaki önceki metinler
+ * yetkili Türkçe formdan doğrulanamadığı için telifli madde/yanıt metinleri bu
+ * modülde tutulmaz. Uygulama yalnız resmî form yanında puan aktarımı yapar.
  */
 
-import type { BeckDepressionResult, BeckDepressionSeverity, Gender } from './clinicalTypes';
-import { clinicToday } from './recordRules';
+import type { BeckDepressionResult, BeckDepressionScoreBand, Gender } from './clinicalTypes';
+import { clinicToday, isValidClinicDate } from './recordRules';
 
-export interface BeckQuestionOption {
+export const BDI_INSTRUMENT_ID = 'bdi-original-tr-hisli';
+export const BDI_INSTRUMENT_VERSION = 'BDI-original-1961-TR-Hisli-1988/1989';
+export const BDI_SCORING_VERSION = 'bdi-original-total-v1';
+export const BDI_ITEM_COUNT = 21;
+export const BDI_ITEM_MIN = 0;
+export const BDI_ITEM_MAX = 3;
+export const BDI_MAX_TOTAL = BDI_ITEM_COUNT * BDI_ITEM_MAX;
+/** Hisli Türkçe BDI literatüründe tarama amacıyla kullanılan eşik; tanı değildir. */
+export const BDI_TURKISH_SCREENING_THRESHOLD = 17;
+export const BDI_CRITICAL_ITEM_ID = 9;
+
+export type BeckDepressionResponse = {
+  itemId: number;
   score: number;
-  text: string;
-}
+};
 
-export interface BeckQuestion {
-  id: number;
-  title: string;
-  options: BeckQuestionOption[];
-  category: 'cognitive_affective' | 'somatic_performance';
-  critical?: boolean;
-}
+export type BeckDepressionValidationError = {
+  code: 'not-an-array' | 'invalid-entry' | 'invalid-item-id' | 'duplicate-item-id' | 'invalid-score' | 'missing-item';
+  itemId?: number;
+  index?: number;
+};
 
-export const BECK_DEPRESSION_QUESTIONS: BeckQuestion[] = [
-  {
-    id: 1,
-    title: 'Hüzün / Üzüntü',
-    category: 'cognitive_affective',
-    options: [
-      { score: 0, text: 'Kendimi üzüntülü ve kederli hissetmiyorum.' },
-      { score: 1, text: 'Kendimi üzüntülü ve kederli hissediyorum.' },
-      { score: 2, text: 'Her zaman üzüntülü ve kederliyim; bundan kurtulamıyorum.' },
-      { score: 3, text: 'O kadar üzgün ve kederliyim ki artık dayanamıyorum.' },
-    ],
-  },
-  {
-    id: 2,
-    title: 'Geleceğe Bakış / Karamsarlık',
-    category: 'cognitive_affective',
-    options: [
-      { score: 0, text: 'Gelecek hakkında umutsuz ve karamsar değilim.' },
-      { score: 1, text: 'Gelecek hakkında karamsarım.' },
-      { score: 2, text: 'Gelecekten beklediğim hiçbir şey yok.' },
-      { score: 3, text: 'Geleceğim hakkında hiçbir umudum yok ve durumumun düzeleceğine inanmıyorum.' },
-    ],
-  },
-  {
-    id: 3,
-    title: 'Başarısızlık Duygusu',
-    category: 'cognitive_affective',
-    options: [
-      { score: 0, text: 'Kendimi başarısız bir insan olarak görmüyorum.' },
-      { score: 1, text: 'Çevremdeki insanlardan daha çok başarısızlıklarım olmuş gibi hissediyorum.' },
-      { score: 2, text: 'Geçmişe baktığımda başarısızlıklarla dolu olduğunu görüyorum.' },
-      { score: 3, text: 'Kendimi tamamen başarısız bir insan olarak görüyorum.' },
-    ],
-  },
-  {
-    id: 4,
-    title: 'Doyumsuzluk / Zevk Alamama',
-    category: 'cognitive_affective',
-    options: [
-      { score: 0, text: 'Her şeyden eskisi kadar zevk alabiliyorum.' },
-      { score: 1, text: 'Eskiden olduğu gibi her şeyden zevk alamıyorum.' },
-      { score: 2, text: 'Artık hiçbir şeyden gerçek bir doyum ve zevk alamıyorum.' },
-      { score: 3, text: 'Her şeyden sıkılıyorum ve hiçbir şey bana zevk vermiyor.' },
-    ],
-  },
-  {
-    id: 5,
-    title: 'Suçluluk Duygusu',
-    category: 'cognitive_affective',
-    options: [
-      { score: 0, text: 'Kendimi herhangi bir biçimde suçlu hissetmiyorum.' },
-      { score: 1, text: 'Kendimi zaman zaman suçlu hissediyorum.' },
-      { score: 2, text: 'Kendimi çoğu zaman oldukça suçlu hissediyorum.' },
-      { score: 3, text: 'Kendimi her zaman çok suçlu hissediyorum.' },
-    ],
-  },
-  {
-    id: 6,
-    title: 'Cezalandırılma Beklentisi',
-    category: 'cognitive_affective',
-    options: [
-      { score: 0, text: 'Cezalandırılacağımı düşünmüyorum.' },
-      { score: 1, text: 'Sanki cezalandırılacakmışım gibi geliyor.' },
-      { score: 2, text: 'Cezalandırılmayı bekliyorum.' },
-      { score: 3, text: 'Cezalandırıldığımı hissediyorum.' },
-    ],
-  },
-  {
-    id: 7,
-    title: 'Kendinden Nefret / Hayal Kırıklığı',
-    category: 'cognitive_affective',
-    options: [
-      { score: 0, text: 'Kendimden hoşnutum ve kendimi beğeniyorum.' },
-      { score: 1, text: 'Kendimden pek hoşnut değilim / hayal kırıklığına uğramış durumdayım.' },
-      { score: 2, text: 'Kendime çok kızıyorum / kendimden nefret ediyorum.' },
-      { score: 3, text: 'Kendimden tamamen nefret ediyorum.' },
-    ],
-  },
-  {
-    id: 8,
-    title: 'Kendini Suçlama',
-    category: 'cognitive_affective',
-    options: [
-      { score: 0, text: 'Kötü giden şeylerde kendimi diğer insanlardan daha çok suçlamıyorum.' },
-      { score: 1, text: 'Zayıflıklarım veya hatalarım için kendimi suçluyorum.' },
-      { score: 2, text: 'Hatalarım için her zaman kendimi suçlarım.' },
-      { score: 3, text: 'Olan her kötü şey için kendimi suçluyorum.' },
-    ],
-  },
-  {
-    id: 9,
-    title: 'İntihar Düşünceleri (Kritik Madde)',
-    category: 'cognitive_affective',
-    critical: true,
-    options: [
-      { score: 0, text: 'Kendimi öldürmek gibi bir düşüncem yok.' },
-      { score: 1, text: 'Zaman zaman kendimi öldürmeyi düşündüğüm oluyor ama bunu yapmam.' },
-      { score: 2, text: 'Kendimi öldürmek isterdim.' },
-      { score: 3, text: 'Fırsatını bulursam kendimi öldürürüm.' },
-    ],
-  },
-  {
-    id: 10,
-    title: 'Ağlama Nöbetleri',
-    category: 'cognitive_affective',
-    options: [
-      { score: 0, text: 'Her zamankinden fazla ağlamıyorum.' },
-      { score: 1, text: 'Şimdi eskisinden daha çok ağlıyorum.' },
-      { score: 2, text: 'Şu sıralarda her an ağlayabilirim / sürekli ağlıyorum.' },
-      { score: 3, text: 'Eskiden ağlayabilirdim ama şimdi istesem de ağlayamıyorum.' },
-    ],
-  },
-  {
-    id: 11,
-    title: 'Huzursuzluk / Ajitasyon',
-    category: 'cognitive_affective',
-    options: [
-      { score: 0, text: 'Her zamankinden daha sinirli ve huzursuz değilim.' },
-      { score: 1, text: 'Eskisine kıyasla daha kolay sinirleniyor ve kızıyorum.' },
-      { score: 2, text: 'Çoğu zaman kendimi çok sinirli ve huzursuz hissediyorum.' },
-      { score: 3, text: 'Beni sinirlendiren şeylere artık hiç tepki veremiyorum / donup kalıyorum.' },
-    ],
-  },
-  {
-    id: 12,
-    title: 'Sosyal İlgi / İçe Çekilme',
-    category: 'cognitive_affective',
-    options: [
-      { score: 0, text: 'Diğer insanlarla görüşme isteğimi kaybetmedim.' },
-      { score: 1, text: 'İnsanlarla eskisi kadar görüşmek istemiyorum.' },
-      { score: 2, text: 'İnsanlarla olan ilişkilerimi büyük ölçüde kaybettim.' },
-      { score: 3, text: 'İnsanlarla görüşmek hiç istemiyorum; kimseyle konuşmak istemiyorum.' },
-    ],
-  },
-  {
-    id: 13,
-    title: 'Karar Verme Güçlüğü',
-    category: 'cognitive_affective',
-    options: [
-      { score: 0, text: 'Eskiden olduğu kadar kolay karar verebiliyorum.' },
-      { score: 1, text: 'Eskiden olduğu gibi kolay karar veremiyorum; erteliyorum.' },
-      { score: 2, text: 'Karar verirken eskisine göre çok büyük güçlük çekiyorum.' },
-      { score: 3, text: 'Artık hiçbir konuda karar veremiyorum.' },
-    ],
-  },
-  {
-    id: 14,
-    title: 'Beden Algısı / Görünüm',
-    category: 'somatic_performance',
-    options: [
-      { score: 0, text: 'Görünüşümün eskisinden daha kötü olduğunu düşünmüyorum.' },
-      { score: 1, text: 'Yaşlandığımı ve çekici görünmediğimi düşünüp endişeleniyorum.' },
-      { score: 2, text: 'Görünüşümde çekiciliğimi yok eden kalıcı değişiklikler olduğunu hissediyorum.' },
-      { score: 3, text: 'Kendimi çok çirkin buluyorum.' },
-    ],
-  },
-  {
-    id: 15,
-    title: 'Çalışma Gücü / Verimlilik',
-    category: 'somatic_performance',
-    options: [
-      { score: 0, text: 'Eskisi kadar iyi çalışabiliyorum.' },
-      { score: 1, text: 'Bir şeyler yapabilmek için fazladan gayret göstermem gerekiyor.' },
-      { score: 2, text: 'Herhangi bir işi yapabilmek için kendimi çok zorlamam gerekiyor.' },
-      { score: 3, text: 'Hiçbir iş yapamıyorum.' },
-    ],
-  },
-  {
-    id: 16,
-    title: 'Uyku Düzeni',
-    category: 'somatic_performance',
-    options: [
-      { score: 0, text: 'Her zamanki gibi rahat uyuyabiliyorum.' },
-      { score: 1, text: 'Eskisi kadar rahat uyuyamıyorum.' },
-      { score: 2, text: 'Her zamankinden 1-2 saat erken uyanıyorum ve tekrar uyuyamıyorum.' },
-      { score: 3, text: 'Her zamankinden çok erken uyanıyorum ve artık hiç uyuyamıyorum.' },
-    ],
-  },
-  {
-    id: 17,
-    title: 'Yorgunluk / Enerji Kaybı',
-    category: 'somatic_performance',
-    options: [
-      { score: 0, text: 'Her zamankinden daha çabuk yorulmuyorum.' },
-      { score: 1, text: 'Eskisinden daha çabuk ve kolay yoruluyorum.' },
-      { score: 2, text: 'Neredeyse her şey beni çok çabuk yoruyor.' },
-      { score: 3, text: 'Kendimi hiçbir şey yapamayacak kadar yorgun hissediyorum.' },
-    ],
-  },
-  {
-    id: 18,
-    title: 'İştah Değişimi',
-    category: 'somatic_performance',
-    options: [
-      { score: 0, text: 'İştahım her zamanki gibi.' },
-      { score: 1, text: 'İştahım eskisi kadar iyi değil.' },
-      { score: 2, text: 'İştahım çok azaldı / çok kötü.' },
-      { score: 3, text: 'Artık hiç iştahım yok / hiçbir şey yiyemiyorum.' },
-    ],
-  },
-  {
-    id: 19,
-    title: 'Kilo Kaybı',
-    category: 'somatic_performance',
-    options: [
-      { score: 0, text: 'Son zamanlarda pek kilo kaybetmedim.' },
-      { score: 1, text: 'İki kilodan fazla kilo verdim.' },
-      { score: 2, text: 'Dört kilodan fazla kilo verdim.' },
-      { score: 3, text: 'Altı kilodan fazla kilo verdim (diyet yapmaksızın).' },
-    ],
-  },
-  {
-    id: 20,
-    title: 'Somatik Kaygı / Sağlık Endişesi',
-    category: 'somatic_performance',
-    options: [
-      { score: 0, text: 'Sağlığım hakkında eskisinden daha fazla endişelenmiyorum.' },
-      { score: 1, text: 'Ağrı, sancı, mide bozukluğu veya kabızlık gibi belirtiler beni endişelendiriyor.' },
-      { score: 2, text: 'Sağlığım beni çok endişelendiriyor; başka şeyleri düşünmekte zorlanıyorum.' },
-      { score: 3, text: 'Sağlığım hakkında o kadar çok endişeleniyorum ki başka hiçbir şey düşünemiyorum.' },
-    ],
-  },
-  {
-    id: 21,
-    title: 'Cinsel İstek / Libido',
-    category: 'somatic_performance',
-    options: [
-      { score: 0, text: 'Cinsel ilgimde son zamanlarda bir değişiklik olmadı.' },
-      { score: 1, text: 'Cinsel konularla eskisinden daha az ilgileniyorum.' },
-      { score: 2, text: 'Cinsel ilgim oldukça azaldı.' },
-      { score: 3, text: 'Cinsel ilgimi tamamen kaybettim.' },
-    ],
-  },
-];
+export type BeckDepressionValidation = {
+  valid: boolean;
+  complete: boolean;
+  answeredCount: number;
+  missingItemIds: number[];
+  errors: BeckDepressionValidationError[];
+  responses: BeckDepressionResponse[];
+};
 
-export function calculateBeckDepression(
-  answers: number[],
-  clientInfo: { name: string; gender: Gender; age?: number; clientId?: string; testDate?: string }
-): BeckDepressionResult {
-  const safeAnswers = answers.slice(0, 21);
-  while (safeAnswers.length < 21) safeAnswers.push(0);
-
-  let totalScore = 0;
-  let cognitiveAffectiveScore = 0;
-  let somaticPerformanceScore = 0;
-
-  safeAnswers.forEach((score, index) => {
-    const val = Math.max(0, Math.min(3, score || 0));
-    totalScore += val;
-    if (index < 13) {
-      cognitiveAffectiveScore += val;
-    } else {
-      somaticPerformanceScore += val;
+export type BeckDepressionScoring =
+  | {
+      status: 'invalid' | 'incomplete';
+      validation: BeckDepressionValidation;
     }
+  | {
+      status: 'complete';
+      validation: BeckDepressionValidation;
+      responses: BeckDepressionResponse[];
+      totalScore: number;
+      maxScore: typeof BDI_MAX_TOTAL;
+      screeningThreshold: typeof BDI_TURKISH_SCREENING_THRESHOLD;
+      screeningThresholdReached: boolean;
+      scoreBand: BeckDepressionScoreBand;
+      criticalItemEndorsed: boolean;
+      criticalItemScore: number;
+    };
+
+/**
+ * IDs and values are validated before summing. Missing/invalid entries are
+ * never clamped, padded or silently converted to zero.
+ */
+export function validateBeckDepressionResponses(input: unknown): BeckDepressionValidation {
+  if (!Array.isArray(input)) {
+    return {
+      valid: false,
+      complete: false,
+      answeredCount: 0,
+      missingItemIds: Array.from({ length: BDI_ITEM_COUNT }, (_, index) => index + 1),
+      errors: [{ code: 'not-an-array' }],
+      responses: [],
+    };
+  }
+
+  const errors: BeckDepressionValidationError[] = [];
+  const byId = new Map<number, BeckDepressionResponse>();
+
+  input.forEach((entry: unknown, index) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      errors.push({ code: 'invalid-entry', index });
+      return;
+    }
+    const candidate = entry as { itemId?: unknown; score?: unknown };
+    const itemId = candidate.itemId;
+    if (!Number.isInteger(itemId) || (itemId as number) < 1 || (itemId as number) > BDI_ITEM_COUNT) {
+      errors.push({ code: 'invalid-item-id', index });
+      return;
+    }
+    const numericItemId = itemId as number;
+    if (byId.has(numericItemId)) {
+      errors.push({ code: 'duplicate-item-id', itemId: numericItemId, index });
+      return;
+    }
+    if (!Number.isInteger(candidate.score) || (candidate.score as number) < BDI_ITEM_MIN || (candidate.score as number) > BDI_ITEM_MAX) {
+      errors.push({ code: 'invalid-score', itemId: numericItemId, index });
+      return;
+    }
+    byId.set(numericItemId, { itemId: numericItemId, score: candidate.score as number });
   });
 
-  const suicideItemScore = safeAnswers[8] || 0; // Item 9 (0-indexed 8)
-  const suicideRisk = suicideItemScore > 0;
+  const missingItemIds = Array.from({ length: BDI_ITEM_COUNT }, (_, index) => index + 1)
+    .filter((itemId) => !byId.has(itemId));
+  for (const itemId of missingItemIds) errors.push({ code: 'missing-item', itemId });
 
-  let severity: BeckDepressionSeverity = 'Minimal';
-  if (totalScore >= 30) severity = 'Şiddetli';
-  else if (totalScore >= 17) severity = 'Orta';
-  else if (totalScore >= 10) severity = 'Hafif';
-  else severity = 'Minimal';
+  const structuralErrors = errors.filter((error) => error.code !== 'missing-item');
+  const responses = [...byId.values()].sort((a, b) => a.itemId - b.itemId);
+  return {
+    valid: structuralErrors.length === 0,
+    complete: structuralErrors.length === 0 && missingItemIds.length === 0 && responses.length === BDI_ITEM_COUNT,
+    answeredCount: responses.length,
+    missingItemIds,
+    errors,
+    responses,
+  };
+}
 
-  let interpretation = '';
-  if (severity === 'Minimal') {
-    interpretation =
-      'Danışanın BDI toplam puanı (' +
-      totalScore +
-      '/63) normal / minimal düzeydedir. Klinik düzeyde belirgin bir depresif tablo saptanmamıştır. Günlük işlevsellik olağan sınırlardadır.';
-  } else if (severity === 'Hafif') {
-    interpretation =
-      'Danışanın BDI toplam puanı (' +
-      totalScore +
-      '/63) hafif düzeyde depresif belirtilere işaret etmektedir. Karamsarlık, motivasyon kaybı veya uyku/yorgunluk dalgalanmaları görülebilir. Koruyucu psikoterapi ve psikoeğitim önerilir.';
-  } else if (severity === 'Orta') {
-    interpretation =
-      'Danışanın BDI toplam puanı (' +
-      totalScore +
-      '/63) klinik olarak anlamlı orta düzeyde depresyona işaret etmektedir. Anhedoni, suçluluk duyguları, karamsarlık ve somatik belirtiler belirgindir. Yapılandırılmış Bilişsel Davranışçı Terapi (BDT) ve gerektiğinde psikiyatrik değerlendirme düşünülmelidir.';
-  } else {
-    interpretation =
-      'Danışanın BDI toplam puanı (' +
-      totalScore +
-      '/63) şiddetli depresif epizod göstergeleri taşımaktadır. Çökkün duygu durum, derin umutsuzluk, psikomotor yavaşlama ve enerji kaybı yoğun düzeydedir. Acil psikiyatrik konsültasyon ve farmakoterapi desteği ile birlikte yakın psikoterapötik takip gereklidir.';
-  }
+export function scoreBeckDepression(input: unknown): BeckDepressionScoring {
+  const validation = validateBeckDepressionResponses(input);
+  if (!validation.valid) return { status: 'invalid', validation };
+  if (!validation.complete) return { status: 'incomplete', validation };
 
-  if (suicideRisk) {
-    interpretation +=
-      ' [KRİTİK GÜVENLİK UYARISI: Danışan Madde 9 (İntihar Düşünceleri) maddesinde ' +
-      suicideItemScore +
-      ' puan vermiştir. İntihar risk değerlendirmesi yapılmalı ve güvenlik protokolü işletilmelidir!]';
-  }
+  const totalScore = validation.responses.reduce((sum, response) => sum + response.score, 0);
+  const criticalItemScore = validation.responses.find((response) => response.itemId === BDI_CRITICAL_ITEM_ID)?.score ?? 0;
+  const screeningThresholdReached = totalScore >= BDI_TURKISH_SCREENING_THRESHOLD;
 
   return {
-    id: 'bdi_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 7),
-    clientId: clientInfo.clientId,
-    clientName: clientInfo.name,
-    clientGender: clientInfo.gender,
-    clientAge: clientInfo.age,
-    testDate: clientInfo.testDate || clinicToday(),
-    answers: safeAnswers,
+    status: 'complete',
+    validation,
+    responses: validation.responses,
     totalScore,
-    severity,
-    cognitiveAffectiveScore,
-    somaticPerformanceScore,
-    suicideRisk,
-    suicideItemScore,
-    clinicalInterpretation: interpretation,
-    createdAt: new Date().toISOString(),
+    maxScore: BDI_MAX_TOTAL,
+    screeningThreshold: BDI_TURKISH_SCREENING_THRESHOLD,
+    screeningThresholdReached,
+    scoreBand: screeningThresholdReached ? 'Tarama eşiğinde veya üzerinde' : 'Tarama eşiğinin altında',
+    criticalItemEndorsed: criticalItemScore > 0,
+    criticalItemScore,
   };
+}
+
+export function responsesFromAnswerSlots(answers: readonly (number | null | undefined)[]): BeckDepressionResponse[] {
+  return answers.flatMap((score, index) => Number.isInteger(score)
+    ? [{ itemId: index + 1, score: score as number }]
+    : []);
+}
+
+export type BeckDepressionRecordInput = {
+  id: string;
+  clientId?: string;
+  name: string;
+  gender: Gender;
+  age?: number;
+  testDate?: string;
+  expertNote?: string;
+  revision?: number;
+  revisionOf?: string;
+  createdAt?: string;
+};
+
+/** Builds persistence/report metadata from one already validated score result. */
+export function createBeckDepressionResult(
+  scoring: BeckDepressionScoring,
+  input: BeckDepressionRecordInput,
+): BeckDepressionResult {
+  if (scoring.status !== 'complete') {
+    throw new Error('Tamamlanmamış veya geçersiz BDI yanıtlarından sonuç kaydı oluşturulamaz.');
+  }
+  const createdAt = input.createdAt ?? new Date().toISOString();
+  const thresholdText = scoring.screeningThresholdReached
+    ? `Türkçe uyarlama literatüründe tarama amacıyla kullanılan ${BDI_TURKISH_SCREENING_THRESHOLD} puan eşiğinde veya üzerindedir.`
+    : `Türkçe uyarlama literatüründe tarama amacıyla kullanılan ${BDI_TURKISH_SCREENING_THRESHOLD} puan eşiğinin altındadır.`;
+  const criticalText = scoring.criticalItemEndorsed
+    ? ' Madde 9 yanıtı işaretlenmiştir. Bu yanıt toplam puandan bağımsız klinik değerlendirme gerektirebilir; sistem risk düzeyi veya tanı üretmez.'
+    : ' Madde 9 için ayrıca bir işaretleme yoktur; bu durum bağımsız güvenlik değerlendirmesinin yerine geçmez.';
+
+  return {
+    id: input.id,
+    clientId: input.clientId,
+    clientName: input.name,
+    clientGender: input.gender,
+    clientAge: input.age,
+    testDate: input.testDate || clinicToday(),
+    instrumentId: BDI_INSTRUMENT_ID,
+    instrumentVersion: BDI_INSTRUMENT_VERSION,
+    scoringVersion: BDI_SCORING_VERSION,
+    completionStatus: 'complete',
+    responses: scoring.responses,
+    // Kept for backward-compatible history/backup readers; never used as the scoring source.
+    answers: scoring.responses.map((response) => response.score),
+    totalScore: scoring.totalScore,
+    maximumScore: BDI_MAX_TOTAL,
+    screeningThreshold: BDI_TURKISH_SCREENING_THRESHOLD,
+    screeningThresholdReached: scoring.screeningThresholdReached,
+    scoreBand: scoring.scoreBand,
+    criticalItemEndorsed: scoring.criticalItemEndorsed,
+    criticalItemScore: scoring.criticalItemScore,
+    criticalItemFlags: scoring.criticalItemEndorsed ? ['item-9-endorsed'] : [],
+    clinicalInterpretation: `BDI toplam puanı ${scoring.totalScore}/${BDI_MAX_TOTAL}. ${thresholdText}${criticalText} Sonuç tek başına depresyon tanısı değildir.`,
+    notes: input.expertNote?.trim() || undefined,
+    revision: input.revision ?? 1,
+    revisionOf: input.revisionOf,
+    createdAt,
+    updatedAt: createdAt,
+  };
+}
+
+/** Recomputes every derived field before a current-version result is stored. */
+export function assertBeckDepressionResultIntegrity(result: BeckDepressionResult): void {
+  if (result.scoringVersion !== BDI_SCORING_VERSION) return; // historical payload compatibility
+  if (
+    typeof result.id !== 'string'
+    || !result.id.trim()
+    || typeof result.clientName !== 'string'
+    || !result.clientName.trim()
+    || (result.clientAge !== undefined && (!Number.isInteger(result.clientAge) || result.clientAge < 0 || result.clientAge > 120))
+    || typeof result.testDate !== 'string'
+    || !isValidClinicDate(result.testDate)
+    || !Number.isInteger(result.revision)
+    || (result.revision ?? 0) < 1
+    || result.revisionOf === result.id
+    || typeof result.createdAt !== 'string'
+    || !Number.isFinite(Date.parse(result.createdAt))
+    || typeof result.updatedAt !== 'string'
+    || !Number.isFinite(Date.parse(result.updatedAt))
+  ) {
+    throw new Error('BDI bütünlük kontrolü başarısız: kayıt metadatası geçersiz.');
+  }
+  const scoring = scoreBeckDepression(result.responses);
+  if (scoring.status !== 'complete') throw new Error('BDI bütünlük kontrolü başarısız: yanıt kümesi tamamlanmış ve geçerli değil.');
+
+  const expectedAnswers = scoring.responses.map((response) => response.score);
+  const expectedFlags = scoring.criticalItemEndorsed ? ['item-9-endorsed'] : [];
+  const answersMatch = Array.isArray(result.answers)
+    && result.answers.length === expectedAnswers.length
+    && result.answers.every((answer, index) => answer === expectedAnswers[index]);
+  const flagsMatch = Array.isArray(result.criticalItemFlags)
+    && result.criticalItemFlags.length === expectedFlags.length
+    && result.criticalItemFlags.every((flag, index) => flag === expectedFlags[index]);
+
+  if (
+    result.instrumentId !== BDI_INSTRUMENT_ID
+    || result.instrumentVersion !== BDI_INSTRUMENT_VERSION
+    || result.completionStatus !== 'complete'
+    || result.totalScore !== scoring.totalScore
+    || result.maximumScore !== scoring.maxScore
+    || result.screeningThreshold !== scoring.screeningThreshold
+    || result.screeningThresholdReached !== scoring.screeningThresholdReached
+    || result.scoreBand !== scoring.scoreBand
+    || result.severity !== undefined
+    || result.criticalItemEndorsed !== scoring.criticalItemEndorsed
+    || result.criticalItemScore !== scoring.criticalItemScore
+    || !answersMatch
+    || !flagsMatch
+  ) {
+    throw new Error('BDI bütünlük kontrolü başarısız: sonuç yanıtlarla tutarlı değil; kayıt oluşturulmadı.');
+  }
+}
+
+export function beckDepressionScoreContext(result: BeckDepressionResult): BeckDepressionScoreBand | string {
+  return result.scoreBand
+    ?? result.severity
+    ?? (result.totalScore >= BDI_TURKISH_SCREENING_THRESHOLD
+      ? 'Tarama eşiğinde veya üzerinde'
+      : 'Tarama eşiğinin altında');
+}
+
+export function isBeckCriticalItemEndorsed(result: BeckDepressionResult): boolean {
+  return result.criticalItemEndorsed ?? result.suicideRisk ?? false;
+}
+
+export function beckCriticalItemScore(result: BeckDepressionResult): number {
+  return result.criticalItemScore ?? result.suicideItemScore ?? 0;
 }

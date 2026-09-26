@@ -3,7 +3,12 @@
  * Klinik store ile aynı cihaz-içi katman.
  */
 import type { CaseFormulation, SafetyPlan } from './casework';
-import type { RapidScreeningResult } from './rapidScreening';
+import {
+  assertRapidScreeningResultIntegrity,
+  GAD7_SCORING_VERSION,
+  PHQ9_SCORING_VERSION,
+  type RapidScreeningResult,
+} from './rapidScreening';
 import { isSafeDocumentUrl, isSafeImageUrl, reportStorageError } from './recordRules';
 import { cacheKey, cloudContext, queueWrite, syncPort } from './cloud/sync';
 import { signedDocumentUrl, type ClinicalSnapshot } from './cloud/repository';
@@ -294,10 +299,27 @@ export function getScreenings(): RapidScreeningResult[] {
 }
 
 export function saveScreening(result: RapidScreeningResult): void {
+  assertRapidScreeningResultIntegrity(result);
   if (cloudContext() && !result.clientId) {
     throw new Error('Buluta kaydetmek için kayıtlı danışan dosyası seçin.');
   }
-  const list = getScreenings().filter((item) => item.id !== result.id);
+  const records = getScreenings();
+  const currentVersion = result.type === 'gad7' ? GAD7_SCORING_VERSION : PHQ9_SCORING_VERSION;
+  const existing = records.find((item) => item.id === result.id);
+  if (existing?.scoringVersion === currentVersion && JSON.stringify(existing) !== JSON.stringify(result)) {
+    throw new Error('Tamamlanmış tarama sonucu değiştirilemez; düzeltmeyi yeni ve bağlı bir revizyon olarak kaydedin.');
+  }
+  if (result.scoringVersion === currentVersion && result.revisionOf) {
+    const source = records.find((item) => item.id === result.revisionOf);
+    if (!source
+      || source.type !== result.type
+      || source.clientId !== result.clientId
+      || source.scoringVersion !== currentVersion
+      || (result.revision ?? 0) !== (source.revision ?? 1) + 1) {
+      throw new Error('Tarama revizyon zinciri geçersiz; önceki tamamlanmış kayıt korunmalıdır.');
+    }
+  }
+  const list = records.filter((item) => item.id !== result.id);
   queueWrite({ entity: 'screening', op: 'upsert', value: result });
   write(SCREEN_KEY, [result, ...list]);
   recordAudit({
@@ -309,6 +331,10 @@ export function saveScreening(result: RapidScreeningResult): void {
 }
 
 export function deleteScreening(id: string): void {
+  const current = getScreenings().find((item) => item.id === id);
+  if (current && (current.scoringVersion === GAD7_SCORING_VERSION || current.scoringVersion === PHQ9_SCORING_VERSION)) {
+    throw new Error('Tamamlanmış tarama sonucu silinemez; düzeltme için bağlı revizyon oluşturun.');
+  }
   queueWrite({ entity: 'screening', op: 'delete', value: id });
   write(SCREEN_KEY, getScreenings().filter((item) => item.id !== id));
 }

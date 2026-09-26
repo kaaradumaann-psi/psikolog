@@ -27,9 +27,12 @@ import {
   subscribeClinicalStore,
 } from '../../clinical/clinicalStore';
 import { readingsForClient, measurementNote, safetyPlanIsEmpty } from '../../clinical/casework';
-import type { RapidScreeningResult } from '../../clinical/rapidScreening';
+import { phq9CriticalItemEndorsed, rapidScoreContext, type RapidScreeningResult } from '../../clinical/rapidScreening';
 import { getSafetyPlan, getScreenings, getSettings, subscribePracticeStore } from '../../clinical/practiceStore';
-import { clinicToday, maskTc } from '../../clinical/recordRules';
+import { clinicToday, formatClinicDate, maskTc } from '../../clinical/recordRules';
+import { beckDepressionScoreContext, isBeckCriticalItemEndorsed } from '../../clinical/beckDepression';
+import { beckAnxietyScoreContext } from '../../clinical/beckAnxiety';
+import { scl90CriticalItemFlags } from '../../clinical/scl90';
 import { ClinicalDialog } from './ClinicalDialog';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { RecordLockActions, RecordStatusBadge } from './RecordLockActions';
@@ -338,7 +341,7 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
               const count = section.id === 'sessions'
                 ? sessions.length
                 : section.id === 'tests'
-                  ? bdiTests.length + baiTests.length + scl90Tests.length
+                  ? bdiTests.length + baiTests.length + scl90Tests.length + screenings.length
                   : section.id === 'reports'
                     ? reports.length
                     : undefined;
@@ -504,27 +507,27 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* Beck Depresyon Kayıtları */}
             {bdiTests.map(t => (
-              <div key={t.id} className="modern-table-card" style={{ padding: 18 }}>
+              <div key={t.id} className="modern-table-card client-assessment-record">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--primary-tint)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div className="client-assessment-icon">
                       <Icon name="pulse" size={18} />
                     </div>
                     <div>
-                      <strong style={{ fontSize: 15 }}>Beck Depresyon Envanteri (BDI)</strong>
-                      <div style={{ fontSize: 12, color: 'var(--soft)' }}>Uygulama Tarihi: {t.testDate}</div>
+                      <strong style={{ fontSize: 15 }}>Beck Depresyon Envanteri (BDI; BDI-II değil)</strong>
+                      <div style={{ fontSize: 12, color: 'var(--soft)' }}>Uygulama: {formatClinicDate(t.testDate)} · Revizyon {t.revision ?? 1}</div>
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <span style={{ fontSize: 20, fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)' }}>
                       {t.totalScore} / 63
                     </span>
-                    <span className={`badge ${t.severity === 'Şiddetli' ? 'badge-risk-high' : t.severity === 'Orta' ? 'badge-risk-moderate' : 'badge-active'}`}>
-                      {t.severity} Depresyon
+                    <span className={`badge ${isBeckCriticalItemEndorsed(t) ? 'badge-risk-moderate' : 'badge-active'}`}>
+                      {isBeckCriticalItemEndorsed(t) ? 'Madde 9 değerlendirmesi' : beckDepressionScoreContext(t)}
                     </span>
                   </div>
                 </div>
-                <p style={{ fontSize: 13, color: 'var(--text)', background: 'var(--bg-soft)', padding: 10, borderRadius: 6, margin: 0 }}>
+                <p className="client-assessment-note">
                   {t.clinicalInterpretation}
                 </p>
               </div>
@@ -532,27 +535,27 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
 
             {/* Beck Anksiyete Kayıtları */}
             {baiTests.map(t => (
-              <div key={t.id} className="modern-table-card" style={{ padding: 18 }}>
+              <div key={t.id} className="modern-table-card client-assessment-record">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--warning-tint)', color: 'var(--warning)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div className="client-assessment-icon">
                       <Icon name="activity" size={18} />
                     </div>
                     <div>
                       <strong style={{ fontSize: 15 }}>Beck Anksiyete Envanteri (BAI)</strong>
-                      <div style={{ fontSize: 12, color: 'var(--soft)' }}>Uygulama Tarihi: {t.testDate}</div>
+                      <div style={{ fontSize: 12, color: 'var(--soft)' }}>Uygulama: {formatClinicDate(t.testDate)} · Revizyon {t.revision ?? 1}</div>
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <span style={{ fontSize: 20, fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)' }}>
                       {t.totalScore} / 63
                     </span>
-                    <span className={`badge ${t.severity === 'Şiddetli' ? 'badge-risk-high' : t.severity === 'Orta' ? 'badge-risk-moderate' : 'badge-active'}`}>
-                      {t.severity} Anksiyete
+                    <span className="badge badge-active">
+                      {beckAnxietyScoreContext(t)}
                     </span>
                   </div>
                 </div>
-                <p style={{ fontSize: 13, color: 'var(--text)', background: 'var(--bg-soft)', padding: 10, borderRadius: 6, margin: 0 }}>
+                <p className="client-assessment-note">
                   {t.clinicalInterpretation}
                 </p>
               </div>
@@ -560,34 +563,58 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
 
             {/* SCL-90-R Kayıtları */}
             {scl90Tests.map(t => (
-              <div key={t.id} className="modern-table-card" style={{ padding: 18 }}>
+              <div key={t.id} className="modern-table-card client-assessment-record">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--bg-soft)', color: 'var(--text)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div className="client-assessment-icon">
                       <Icon name="layers" size={18} />
                     </div>
                     <div>
                       <strong style={{ fontSize: 15 }}>SCL-90-R Belirti Tarama Listesi</strong>
-                      <div style={{ fontSize: 12, color: 'var(--soft)' }}>Uygulama Tarihi: {t.testDate}</div>
+                      <div style={{ fontSize: 12, color: 'var(--soft)' }}>Uygulama: {formatClinicDate(t.testDate)} · Revizyon {t.revision ?? 1}</div>
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>Genel Semptom İndeksi</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>Ham Genel Semptom İndeksi</div>
                       <strong style={{ fontSize: 16 }}>GSI: {t.gsi}</strong>
                     </div>
-                    <span className={`badge ${t.gsi >= 1.0 ? 'badge-risk-moderate' : 'badge-active'}`}>
-                      {t.gsi >= 1.0 ? 'Klinik Eşik Üzerinde' : 'Normal Sınırlar'}
+                    <span className={`badge ${scl90CriticalItemFlags(t).length ? 'badge-risk-moderate' : 'badge-active'}`}>
+                      {scl90CriticalItemFlags(t).length ? 'Kritik yanıt incelemesi' : 'Norm uygulanmadı'}
                     </span>
                   </div>
                 </div>
-                <p style={{ fontSize: 13, color: 'var(--text)', background: 'var(--bg-soft)', padding: 10, borderRadius: 6, margin: 0 }}>
+                <p className="client-assessment-note">
                   {t.clinicalInterpretation}
                 </p>
               </div>
             ))}
 
-            {bdiTests.length === 0 && baiTests.length === 0 && scl90Tests.length === 0 && (
+            {/* GAD-7 / PHQ-9 Kayıtları */}
+            {screenings.map(t => (
+              <div key={t.id} className="modern-table-card client-assessment-record">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div className="client-assessment-icon"><Icon name="trend" size={18} /></div>
+                    <div>
+                      <strong style={{ fontSize: 15 }}>{t.type === 'gad7' ? 'GAD-7' : 'PHQ-9'} Kısa Tarama</strong>
+                      <div style={{ fontSize: 12, color: 'var(--soft)' }}>Uygulama: {formatClinicDate(t.testDate)} · Revizyon {t.revision ?? 1}</div>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontSize: 20, fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)' }}>
+                      {t.totalScore} / {t.type === 'gad7' ? 21 : 27}
+                    </span>
+                    <span className={`badge ${phq9CriticalItemEndorsed(t) ? 'badge-risk-moderate' : 'badge-active'}`}>
+                      {phq9CriticalItemEndorsed(t) ? 'Madde 9 incelemesi' : rapidScoreContext(t)}
+                    </span>
+                  </div>
+                </div>
+                <p className="client-assessment-note">{t.clinicalNote}</p>
+              </div>
+            ))}
+
+            {bdiTests.length === 0 && baiTests.length === 0 && scl90Tests.length === 0 && screenings.length === 0 && (
               <div className="empty-state-card">
                 <Icon name="activity" size={32} />
                 <h4>Uygulanmış Test Bulunmuyor</h4>
@@ -760,7 +787,7 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {reports.map(r => (
-                <div key={r.id} className="modern-table-card" style={{ padding: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div key={r.id} className="modern-table-card client-report-record">
                   <div>
                     <strong style={{ fontSize: 15 }}>{r.reportTitle}</strong>
                     <div style={{ fontSize: 12, color: 'var(--soft)' }}>Tarih: {r.reportDate} · Değerlendiren: {r.evaluator}</div>

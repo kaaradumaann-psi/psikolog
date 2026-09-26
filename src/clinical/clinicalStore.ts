@@ -15,6 +15,9 @@ import type {
 } from './clinicalTypes';
 import { getDocumentsByClient, getFormulations, getSafetyPlans, purgeClientPractice, recordAudit } from './practiceStore';
 import { MAX_CLIENTS, MAX_SESSIONS, reportStorageError } from './recordRules';
+import { assertBeckDepressionResultIntegrity, BDI_SCORING_VERSION } from './beckDepression';
+import { assertBeckAnxietyResultIntegrity, BAI_SCORING_VERSION } from './beckAnxiety';
+import { assertScl90ResultIntegrity, SCL90_SCORING_VERSION } from './scl90';
 import { cacheKey, cloudContext, queueWrite } from './cloud/sync';
 import type { ClinicalSnapshot } from './cloud/repository';
 
@@ -68,6 +71,30 @@ function setLocal<T>(key: string, value: T): void {
   } catch (error) {
     reportStorageError();
     throw new Error('Kayıt bu cihaza yazılamadı. Depo dolu olabilir. Önce yedek indirin.');
+  }
+}
+
+function assertImmutableAssessmentRevision<T extends {
+  id: string;
+  clientId?: string;
+  scoringVersion?: string;
+  revision?: number;
+  revisionOf?: string;
+}>(records: T[], incoming: T, currentScoringVersion: string, label: string): void {
+  const existing = records.find((record) => record.id === incoming.id);
+  if (existing?.scoringVersion === currentScoringVersion) {
+    if (JSON.stringify(existing) !== JSON.stringify(incoming)) {
+      throw new Error(`${label} tamamlanmış sonucu değiştirilemez; düzeltmeyi yeni ve bağlı bir revizyon olarak kaydedin.`);
+    }
+    return;
+  }
+  if (incoming.scoringVersion !== currentScoringVersion || !incoming.revisionOf) return;
+  const source = records.find((record) => record.id === incoming.revisionOf);
+  if (!source
+    || source.clientId !== incoming.clientId
+    || source.scoringVersion !== currentScoringVersion
+    || (incoming.revision ?? 0) !== (source.revision ?? 1) + 1) {
+    throw new Error(`${label} revizyon zinciri geçersiz; önceki tamamlanmış kayıt korunmalıdır.`);
   }
 }
 
@@ -407,10 +434,12 @@ export function getBeckDepressionTests(): BeckDepressionResult[] {
 }
 
 export function saveBeckDepressionTest(test: BeckDepressionResult): void {
+  assertBeckDepressionResultIntegrity(test);
   if (cloudContext() && (!test.clientId || !getClientById(test.clientId))) {
     throw new Error('Buluta kaydetmek için kayıtlı danışan dosyası seçin.');
   }
   const list = getBeckDepressionTests();
+  assertImmutableAssessmentRevision(list, test, BDI_SCORING_VERSION, 'BDI');
   const idx = list.findIndex(t => t.id === test.id);
   if (idx >= 0) {
     list[idx] = test;
@@ -422,6 +451,10 @@ export function saveBeckDepressionTest(test: BeckDepressionResult): void {
 }
 
 export function deleteBeckDepressionTest(id: string): void {
+  const current = getBeckDepressionTests().find((test) => test.id === id);
+  if (current?.scoringVersion === BDI_SCORING_VERSION) {
+    throw new Error('Tamamlanmış BDI sonucu silinemez; düzeltme için bağlı revizyon oluşturun.');
+  }
   const list = getBeckDepressionTests().filter(t => t.id !== id);
   queueWrite({ entity: 'bdi', op: 'delete', value: id });
   setLocal(BDI_KEY, list);
@@ -437,10 +470,12 @@ export function getBeckAnxietyTests(): BeckAnxietyResult[] {
 }
 
 export function saveBeckAnxietyTest(test: BeckAnxietyResult): void {
+  assertBeckAnxietyResultIntegrity(test);
   if (cloudContext() && (!test.clientId || !getClientById(test.clientId))) {
     throw new Error('Buluta kaydetmek için kayıtlı danışan dosyası seçin.');
   }
   const list = getBeckAnxietyTests();
+  assertImmutableAssessmentRevision(list, test, BAI_SCORING_VERSION, 'BAI');
   const idx = list.findIndex(t => t.id === test.id);
   if (idx >= 0) {
     list[idx] = test;
@@ -452,6 +487,10 @@ export function saveBeckAnxietyTest(test: BeckAnxietyResult): void {
 }
 
 export function deleteBeckAnxietyTest(id: string): void {
+  const current = getBeckAnxietyTests().find((test) => test.id === id);
+  if (current?.scoringVersion === BAI_SCORING_VERSION) {
+    throw new Error('Tamamlanmış BAI sonucu silinemez; düzeltme için bağlı revizyon oluşturun.');
+  }
   const list = getBeckAnxietyTests().filter(t => t.id !== id);
   queueWrite({ entity: 'bai', op: 'delete', value: id });
   setLocal(BAI_KEY, list);
@@ -467,10 +506,12 @@ export function getScl90Tests(): Scl90Result[] {
 }
 
 export function saveScl90Test(test: Scl90Result): void {
+  assertScl90ResultIntegrity(test);
   if (cloudContext() && (!test.clientId || !getClientById(test.clientId))) {
     throw new Error('Buluta kaydetmek için kayıtlı danışan dosyası seçin.');
   }
   const list = getScl90Tests();
+  assertImmutableAssessmentRevision(list, test, SCL90_SCORING_VERSION, 'SCL-90-R');
   const idx = list.findIndex(t => t.id === test.id);
   if (idx >= 0) {
     list[idx] = test;
@@ -482,6 +523,10 @@ export function saveScl90Test(test: Scl90Result): void {
 }
 
 export function deleteScl90Test(id: string): void {
+  const current = getScl90Tests().find((test) => test.id === id);
+  if (current?.scoringVersion === SCL90_SCORING_VERSION) {
+    throw new Error('Tamamlanmış SCL-90-R sonucu silinemez; düzeltme için bağlı revizyon oluşturun.');
+  }
   const list = getScl90Tests().filter(t => t.id !== id);
   queueWrite({ entity: 'scl90', op: 'delete', value: id });
   setLocal(SCL90_KEY, list);

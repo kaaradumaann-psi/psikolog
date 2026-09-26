@@ -92,6 +92,17 @@ test('readScale reports a rise without inventing a diagnosis', () => {
   assert.equal(reading?.band, 'Orta');
 });
 
+test('readScale uses revision/time order on the same administration date, never score magnitude', () => {
+  const reading = readScale('BDI', [
+    { date: '2026-09-20', score: 30, band: 'eski', recordedAt: '2026-09-20T10:00:00Z', sequence: 1 },
+    { date: '2026-09-20', score: 12, band: 'düzeltilmiş', recordedAt: '2026-09-20T11:00:00Z', sequence: 2 },
+  ]);
+  assert.equal(reading?.score, 12);
+  assert.equal(reading?.band, 'düzeltilmiş');
+  assert.equal(reading?.previous, 30);
+  assert.equal(reading?.direction, 'down');
+});
+
 test('session prep names the homework and an empty safety plan', () => {
   const [prep] = buildSessionPreps(snapshot);
   assert.equal(prep?.time, '14:00');

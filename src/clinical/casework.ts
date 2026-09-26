@@ -12,6 +12,10 @@ import type {
   SoapSession,
 } from './clinicalTypes';
 import type { RapidScreeningResult } from './rapidScreening';
+import { beckCriticalItemScore, beckDepressionScoreContext, isBeckCriticalItemEndorsed } from './beckDepression';
+import { beckAnxietyScoreContext } from './beckAnxiety';
+import { phq9CriticalItemEndorsed, rapidScoreContext } from './rapidScreening';
+import { scl90CriticalItemFlags } from './scl90';
 
 export type GoalStatus = 'active' | 'met' | 'paused';
 
@@ -204,11 +208,13 @@ function directionOf(current: number, previous: number | undefined, epsilon: num
 
 export function readScale(
   scale: ScoreScale,
-  points: { date: string; score: number; band: string; flag?: string }[],
+  points: { date: string; score: number; band: string; flag?: string; recordedAt?: string; sequence?: number }[],
 ): ScoreReading | null {
   const sorted = points
     .filter((point) => point.date)
-    .sort((a, b) => a.date.localeCompare(b.date) || a.score - b.score);
+    .sort((a, b) => a.date.localeCompare(b.date)
+      || (a.recordedAt ?? '').localeCompare(b.recordedAt ?? '')
+      || (a.sequence ?? 0) - (b.sequence ?? 0));
   const last = sorted[sorted.length - 1];
   if (!last) return null;
   const previous = sorted.length > 1 ? sorted[sorted.length - 2] : undefined;
@@ -240,21 +246,35 @@ export function readingsForClient(
         .map((item) => ({
           date: item.testDate,
           score: item.totalScore,
-          band: item.severity,
-          flag: item.suicideRisk ? `Madde 9: ${item.suicideItemScore}` : undefined,
+          band: beckDepressionScoreContext(item),
+          recordedAt: item.updatedAt ?? item.createdAt,
+          sequence: item.revision,
+          flag: isBeckCriticalItemEndorsed(item) ? `Madde 9 işaretli (${beckCriticalItemScore(item)})` : undefined,
         })),
     ),
     readScale(
       'BAI',
       snapshot.bai
         .filter((item) => item.clientId === clientId)
-        .map((item) => ({ date: item.testDate, score: item.totalScore, band: item.severity })),
+        .map((item) => ({
+          date: item.testDate,
+          score: item.totalScore,
+          band: beckAnxietyScoreContext(item),
+          recordedAt: item.updatedAt ?? item.createdAt,
+          sequence: item.revision,
+        })),
     ),
     readScale(
       'GAD-7',
       snapshot.screenings
         .filter((item) => item.clientId === clientId && item.type === 'gad7')
-        .map((item) => ({ date: item.testDate, score: item.totalScore, band: item.severity })),
+        .map((item) => ({
+          date: item.testDate,
+          score: item.totalScore,
+          band: rapidScoreContext(item),
+          recordedAt: item.updatedAt ?? item.createdAt,
+          sequence: item.revision,
+        })),
     ),
     readScale(
       'PHQ-9',
@@ -263,8 +283,10 @@ export function readingsForClient(
         .map((item) => ({
           date: item.testDate,
           score: item.totalScore,
-          band: item.severity,
-          flag: item.suicideRisk ? 'Madde 9 pozitif' : undefined,
+          band: rapidScoreContext(item),
+          recordedAt: item.updatedAt ?? item.createdAt,
+          sequence: item.revision,
+          flag: phq9CriticalItemEndorsed(item) ? 'Madde 9 işaretli' : undefined,
         })),
     ),
     readScale(
@@ -274,8 +296,10 @@ export function readingsForClient(
         .map((item) => ({
           date: item.testDate,
           score: item.gsi,
-          band: item.gsi >= 1 ? 'Klinik eşik' : 'Eşik altı',
-          flag: (item.answers?.[14] ?? 0) > 0 ? `Madde 15: ${item.answers[14]}` : undefined,
+          band: item.normReference === 'none' ? 'Ham indeks · norm uygulanmadı' : 'Eski kayıt · norm dayanağını doğrulayın',
+          recordedAt: item.updatedAt ?? item.createdAt,
+          sequence: item.revision,
+          flag: scl90CriticalItemFlags(item).length ? scl90CriticalItemFlags(item).join(', ') : undefined,
         })),
     ),
   ];

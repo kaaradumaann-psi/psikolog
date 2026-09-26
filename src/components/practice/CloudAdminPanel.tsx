@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { AuthenticatedUser } from '../../auth/authTypes';
+import { Icon } from '../Icon';
 import {
   adminCreateOrganization,
   adminCreateUser,
@@ -12,6 +13,12 @@ import {
 } from '../../features/admin/adminApi';
 
 type Props = { user: AuthenticatedUser; onOwnOrganizationAssigned?: (organizationId: string) => void };
+
+const ROLE_LABEL: Record<string, string> = {
+  ADMIN: 'Sistem yöneticisi',
+  ORG_ADMIN: 'Kurum yöneticisi',
+  PSYCHOLOG: 'Psikolog',
+};
 
 /** The platform ADMIN can bootstrap tenants without a clinical org. Only an
  * explicitly selected org enables the clinical workspace or a new staff user. */
@@ -129,83 +136,133 @@ export function CloudAdminPanel({ user, onOwnOrganizationAssigned }: Props) {
   }
 
   return (
-    <section className="modern-table-card" style={{ padding: 18, marginTop: 16 }} aria-label="Kurum ve hesap yönetimi">
-      <h2 style={{ fontSize: 17, marginTop: 0 }}>Kurum ve hesap yönetimi</h2>
-      <p style={{ fontSize: 13, color: 'var(--soft)' }}>
-        Kurum, danışan kayıtlarının ve belge kasasının ayrı güvenlik alanıdır. E-posta adresi kurum atamaz;
-        hesap yetkileri sunucudaki profil ve RLS ile belirlenir. Halka açık kayıt kapalıdır.
+    <section className="modern-table-card cloud-admin-panel" aria-label="Kurum ve hesap yönetimi">
+      <h2>Kurum ve hesap yönetimi</h2>
+      <p className="section-hint">
+        Kurum, danışan kayıtlarının ve belge kasasının ayrı güvenlik alanıdır. Bir kuruma üye olmak yalnız isim ve
+        rol görünürlüğü sağlar — hiçbir hesaba başka bir psikoloğun danışan dosyasına otomatik erişim vermez.
+        E-posta adresi kurum atamaz; hesap yetkileri sunucudaki profil ve RLS ile belirlenir. Halka açık kayıt kapalıdır.
       </p>
-      {loading && <p role="status">Kurumlar ve hesaplar yükleniyor…</p>}
-      {error && <p role="alert" style={{ color: 'var(--danger-ink)' }}>{error}</p>}
-      {notice && <p role="status">{notice}</p>}
+
+      {loading && <p role="status" className="section-hint">Kurumlar ve hesaplar yükleniyor…</p>}
+      {error && <p role="alert" className="record-lock-error">{error}</p>}
+      {notice && <p role="status" className="cloud-admin-notice">{notice}</p>}
+
       <button type="button" className="btn-secondary btn-sm" disabled={busy || loading} onClick={() => setReloadKey((previous) => previous + 1)}>
-        Kurum ve hesap listesini yenile
+        <Icon name="refresh" size={14} /> Kurum ve hesap listesini yenile
       </button>
 
       {platformAdmin && (
         <>
-          <form onSubmit={(event) => { void createOrganization(event); }} className="form-row-2" style={{ alignItems: 'end' }}>
-            <label className="form-group">Yeni kurum adı
-              <input value={newOrgName} onChange={(event) => setNewOrgName(event.target.value)} required minLength={2} maxLength={180} />
+          <div className="cloud-admin-block">
+            <h3>Kurumlar</h3>
+            <form onSubmit={(event) => { void createOrganization(event); }} className="form-row-2">
+              <label className="form-group">Yeni kurum adı
+                <input value={newOrgName} onChange={(event) => setNewOrgName(event.target.value)} required minLength={2} maxLength={180} />
+              </label>
+              <button type="submit" className="btn-secondary btn-sm" disabled={busy || loading || loadFailed}>Kurum oluştur</button>
+            </form>
+            <label className="form-group">İşlem yapılacak kurum
+              <select value={selectedOrgId} onChange={(event) => setSelectedOrgId(event.target.value)} disabled={busy || loading || loadFailed}>
+                <option value="">Kurum seçin</option>
+                {organizations.map((org) => <option key={org.id} value={org.id}>{org.name}</option>)}
+              </select>
             </label>
-            <button type="submit" className="btn-secondary btn-sm" disabled={busy || loading || loadFailed}>Kurum oluştur</button>
-          </form>
-          <label className="form-group">İşlem yapılacak kurum
-            <select value={selectedOrgId} onChange={(event) => setSelectedOrgId(event.target.value)} disabled={busy || loading || loadFailed}>
-              <option value="">Kurum seçin</option>
-              {organizations.map((org) => <option key={org.id} value={org.id}>{org.name}</option>)}
-            </select>
-          </label>
-          {!user.organizationId && (
-            <div style={{ margin: '10px 0 16px' }}>
-              <p style={{ fontSize: 13 }}>Sistem yöneticisi kurumsuz olarak hesapları yönetebilir; klinik çalışma alanı için kendi kapsamınıza bir kurum atayın.</p>
-              <button type="button" className="btn-primary btn-sm" disabled={!organizationId || busy || loading || loadFailed} onClick={() => { void assignOwnOrganization(); }}>
-                Seçili kurumu kendi klinik alanıma ata
-              </button>
-            </div>
-          )}
+            {!user.organizationId && (
+              <div className="cloud-admin-callout">
+                <p className="section-hint">Sistem yöneticisi kurumsuz olarak hesapları yönetebilir; klinik çalışma alanı için kendi kapsamınıza bir kurum atayın.</p>
+                <button type="button" className="btn-primary btn-sm" disabled={!organizationId || busy || loading || loadFailed} onClick={() => { void assignOwnOrganization(); }}>
+                  Seçili kurumu kendi klinik alanıma ata
+                </button>
+              </div>
+            )}
+          </div>
+
           {!!unassigned.length && (
-            <div style={{ margin: '16px 0' }}>
-              <h3 style={{ fontSize: 15 }}>Kurumu olmayan mevcut hesaplar</h3>
-              <p style={{ fontSize: 13, color: 'var(--soft)' }}>Yalnız henüz kurum atanmamış kullanıcılar burada atanır; mevcut kurumu olan hesabı klinik geçmişi incelemeden taşımayın.</p>
-              <ul>
-                {unassigned.map((profile) => <li key={profile.id} style={{ marginBottom: 8 }}>
-                  {profile.first_name} {profile.last_name} · {profile.email || '—'} · {profile.role}{' '}
-                  <button type="button" className="btn-secondary btn-sm" disabled={!organizationId || busy || loading || loadFailed} onClick={() => { void assignUnassigned(profile); }}>
-                    Seçili kuruma ata
-                  </button>
-                </li>)}
+            <div className="cloud-admin-block">
+              <h3>Kurumu olmayan mevcut hesaplar</h3>
+              <p className="section-hint">Yalnız henüz kurum atanmamış kullanıcılar burada atanır; mevcut kurumu olan hesabı klinik geçmişi incelemeden taşımayın.</p>
+              <ul className="cloud-admin-unassigned-list">
+                {unassigned.map((profile) => (
+                  <li key={profile.id}>
+                    <span>{profile.first_name} {profile.last_name} · {profile.email || '—'} · {ROLE_LABEL[profile.role] ?? profile.role}</span>
+                    <button type="button" className="btn-secondary btn-sm" disabled={!organizationId || busy || loading || loadFailed} onClick={() => { void assignUnassigned(profile); }}>
+                      Seçili kuruma ata
+                    </button>
+                  </li>
+                ))}
               </ul>
             </div>
           )}
         </>
       )}
 
-      {!platformAdmin && <p style={{ fontSize: 13 }}>Yönettiğiniz kurum: <strong>{organizationName(user.organizationId)}</strong>. Yalnız bu kuruma psikolog ekleyebilirsiniz.</p>}
-      <h3 style={{ fontSize: 15 }}>Yeni hesap oluştur</h3>
-      <p style={{ fontSize: 13, color: 'var(--soft)' }}>Önce kurum seçin. Şifre en az 10 karakter olmalıdır. Hesap oluşturma Supabase Edge Function üzerinden yapılır.</p>
-      <form onSubmit={(event) => { void onSubmit(event); }} className="form-row-2" style={{ alignItems: 'end' }}>
-        <label className="form-group">Ad<input value={form.firstName} onChange={(event) => setForm({ ...form, firstName: event.target.value })} required minLength={2} maxLength={80} /></label>
-        <label className="form-group">Soyad<input value={form.lastName} onChange={(event) => setForm({ ...form, lastName: event.target.value })} required minLength={2} maxLength={80} /></label>
-        <label className="form-group">E-posta<input type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} required /></label>
-        <label className="form-group">Geçici parola<input type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required minLength={10} maxLength={128} /></label>
-        {platformAdmin && <label className="form-group">Yetki
-          <select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value === 'ORG_ADMIN' ? 'ORG_ADMIN' : 'PSYCHOLOG' })}>
-            <option value="PSYCHOLOG">Psikolog</option>
-            <option value="ORG_ADMIN">Kurum yöneticisi</option>
-          </select>
-        </label>}
-        <button type="submit" className="btn-primary btn-sm" disabled={!organizationId || busy || loading || loadFailed}>Seçili kurumda hesap oluştur</button>
-      </form>
-      {!organizationId && !loading && <p role="status">Hesap oluşturmak için önce geçerli bir kurum seçin veya oluşturun.</p>}
-      <h3 style={{ fontSize: 15, marginBottom: 4 }}>Hesaplar</h3>
-      {profiles.length === 0 && !loading ? <p>Bu kapsamda hesap bulunamadı.</p> : (
-        <ul style={{ paddingLeft: 18, fontSize: 13 }}>
-          {profiles.map((profile) => (
-            <li key={profile.id}>{profile.first_name} {profile.last_name} · {profile.email || '—'} · {profile.role} · {profile.active ? 'aktif' : 'pasif'} · {organizationName(profile.organization_id)}</li>
-          ))}
-        </ul>
+      {!platformAdmin && (
+        <p className="section-hint">
+          Yönettiğiniz kurum: <strong>{organizationName(user.organizationId)}</strong>. Yalnız bu kuruma psikolog ekleyebilirsiniz.
+        </p>
       )}
+
+      <div className="cloud-admin-block">
+        <h3>Yeni hesap oluştur</h3>
+        <p className="section-hint">Önce kurum seçin. Şifre en az 10 karakter olmalıdır. Hesap oluşturma Supabase Edge Function üzerinden yapılır.</p>
+        <form onSubmit={(event) => { void onSubmit(event); }} className="form-row-2">
+          <label className="form-group">Ad<input value={form.firstName} onChange={(event) => setForm({ ...form, firstName: event.target.value })} required minLength={2} maxLength={80} /></label>
+          <label className="form-group">Soyad<input value={form.lastName} onChange={(event) => setForm({ ...form, lastName: event.target.value })} required minLength={2} maxLength={80} /></label>
+          <label className="form-group">E-posta<input type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} required /></label>
+          <label className="form-group">Geçici parola<input type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required minLength={10} maxLength={128} /></label>
+          {platformAdmin && (
+            <label className="form-group">Yetki
+              <select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value === 'ORG_ADMIN' ? 'ORG_ADMIN' : 'PSYCHOLOG' })}>
+                <option value="PSYCHOLOG">Psikolog</option>
+                <option value="ORG_ADMIN">Kurum yöneticisi</option>
+              </select>
+            </label>
+          )}
+          <button type="submit" className="btn-primary btn-sm" disabled={!organizationId || busy || loading || loadFailed}>Seçili kurumda hesap oluştur</button>
+        </form>
+        {!organizationId && !loading && <p role="status" className="section-hint">Hesap oluşturmak için önce geçerli bir kurum seçin veya oluşturun.</p>}
+      </div>
+
+      <div className="cloud-admin-block">
+        <h3>Hesaplar</h3>
+        {profiles.length === 0 && !loading ? (
+          <div className="empty-state-card">
+            <Icon name="users" size={30} />
+            <h4>Bu kapsamda hesap bulunamadı</h4>
+            <p>Seçili kurum kapsamında henüz hiç hesap yok.</p>
+          </div>
+        ) : (
+          <div className="client-table-wrap mobile-card-table">
+            <table className="client-table" data-mobile-cards>
+              <thead>
+                <tr>
+                  <th>Ad Soyad</th>
+                  <th>E-posta</th>
+                  <th>Rol</th>
+                  <th>Durum</th>
+                  <th>Kurum</th>
+                </tr>
+              </thead>
+              <tbody>
+                {profiles.map((profile) => (
+                  <tr key={profile.id}>
+                    <td data-label="Ad Soyad">{profile.first_name} {profile.last_name}</td>
+                    <td data-label="E-posta">{profile.email || '—'}</td>
+                    <td data-label="Rol">{ROLE_LABEL[profile.role] ?? profile.role}</td>
+                    <td data-label="Durum">
+                      <span className={`badge ${profile.active ? 'badge-active' : 'badge-archived'}`}>
+                        {profile.active ? 'Aktif' : 'Pasif'}
+                      </span>
+                    </td>
+                    <td data-label="Kurum">{organizationName(profile.organization_id)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </section>
   );
 }

@@ -427,7 +427,23 @@
   .task-priority { padding: 3px 8px; background: var(--primary-tint); border: 1px solid var(--primary-border); border-radius: 999px; color: var(--accent-ink); font-weight: 650; }
   .task-priority.priority-high { color: var(--danger-ink); background: var(--danger-tint); border-color: var(--danger-border); }
   .task-priority.priority-low { color: var(--soft); background: var(--bg-soft); border-color: var(--hairline); }
-  .task-card-actions { display: flex; align-items: center; flex: none; gap: 8px; }
+  .task-card-actions { display: flex; align-items: flex-end; flex: none; gap: 8px; }
+  .task-status-field { gap: 3px; }
+  .task-status-field label { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .task-status-select {
+    padding: 6px 26px 6px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--hairline);
+    background: var(--bg-soft);
+    color: var(--text);
+    font-size: 12.5px;
+    font-weight: 650;
+    cursor: pointer;
+  }
+  .task-status-select.status-todo { background: var(--bg-soft); border-color: var(--hairline); color: var(--text); }
+  .task-status-select.status-in_progress { background: var(--primary-tint); border-color: var(--primary-border); color: var(--accent-ink); }
+  .task-status-select.status-done { background: var(--success-tint); border-color: var(--success-border); color: var(--success); }
+  .task-status-select.status-cancelled { background: var(--danger-tint); border-color: var(--danger-border); color: var(--danger); }
 
   /* Other parts of the application share the same softer shell. */
   .info-topbar { background: rgba(255,255,255,.96); border-color: var(--hairline); }

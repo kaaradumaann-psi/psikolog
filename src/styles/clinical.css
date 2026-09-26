@@ -813,6 +813,125 @@
     text-decoration: line-through;
   }
 
+  .appointment-pill.status-noshow {
+    background: var(--warning-tint);
+    border-color: var(--warning-border);
+    color: var(--warning);
+  }
+
+  .view-toggle-group {
+    display: inline-flex;
+    gap: 4px;
+    background: var(--bg-soft);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-full);
+    padding: 3px;
+  }
+
+  .view-toggle-group .btn-secondary {
+    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .view-toggle-group .btn-secondary.is-active {
+    background: var(--bg);
+    border-color: var(--hairline);
+    color: var(--text);
+    box-shadow: 0 1px 2px rgba(13, 13, 13, 0.06);
+  }
+
+  .calendar-month-nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .calendar-month-label {
+    min-width: 140px;
+    text-align: center;
+    font-size: 14px;
+    text-transform: capitalize;
+  }
+
+  .calendar-card {
+    padding: 16px;
+    overflow: hidden;
+  }
+
+  .calendar-weekday-row {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .calendar-weekday-label {
+    text-align: center;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 4px 0;
+  }
+
+  .calendar-grid {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+
+  .calendar-day-cell.is-outside {
+    background: transparent;
+    border-color: transparent;
+  }
+
+  .calendar-day-cell.is-selected {
+    border-color: var(--accent);
+    background: var(--primary-tint);
+  }
+
+  .calendar-day-number {
+    width: 24px;
+    height: 24px;
+    border-radius: var(--radius-full);
+    background: var(--bg-soft);
+    border: 1px solid var(--hairline);
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 700;
+    display: grid;
+    place-items: center;
+    flex: none;
+  }
+
+  .calendar-day-cell.today .calendar-day-number {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+
+  .calendar-day-add {
+    width: 22px;
+    height: 22px;
+    min-height: 0;
+    color: var(--muted);
+  }
+
+  .calendar-day-appointments {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    overflow: hidden;
+    min-height: 0;
+    flex: 1;
+  }
+
+  .calendar-day-more {
+    font-size: 10px;
+    color: var(--soft);
+    text-align: center;
+  }
+
   /* ========================================================================
      09 · Modal Diyaloglar
      ======================================================================== */

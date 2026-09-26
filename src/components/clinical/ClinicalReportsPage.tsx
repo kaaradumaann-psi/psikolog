@@ -34,6 +34,7 @@ export function ClinicalReportsPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<ClinicalReport | null>(null);
   const [lockError, setLockError] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   // Form State
   const [reportForm, setReportForm] = useState<Partial<ClinicalReport>>({
@@ -66,9 +67,10 @@ export function ClinicalReportsPage() {
   function handleCreateNew(type: ClinicalReportType = 'comprehensive') {
     const firstClient = clients.find((client) => client.id === reportClientId);
     if (!firstClient) {
-      alert('Rapor hangi danışana aitse onu seçin.');
+      setCreateError('Rapor hangi danışana aitse onu seçin.');
       return;
     }
+    setCreateError(null);
     const cName = `${firstClient.firstName} ${firstClient.lastName}`;
     const cId = firstClient.id;
 
@@ -278,9 +280,13 @@ export function ClinicalReportsPage() {
             ))
           )}
 
+          {createError && <p className="record-lock-error" role="alert">{createError}</p>}
           <label className="form-group" style={{ marginTop: 8 }}>
             <span>Raporun danışanı</span>
-            <select value={reportClientId} onChange={(event) => setReportClientId(event.target.value)}>
+            <select
+              value={reportClientId}
+              onChange={(event) => { setReportClientId(event.target.value); setCreateError(null); }}
+            >
               <option value="">Danışan seçin</option>
               {clients.map((client) => (
                 <option key={client.id} value={client.id}>{client.fileNumber} · {client.firstName} {client.lastName}</option>

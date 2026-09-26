@@ -12,19 +12,23 @@ import {
   type TaskStatus,
 } from '../../clinical/practiceStore';
 import { ClinicalDialog } from '../clinical/ClinicalDialog';
+import { ConfirmDialog } from '../ConfirmDialog';
 import { Icon } from '../Icon';
 
 const STATUS_LABEL: Record<TaskStatus, string> = {
   todo: 'Yapılacak',
   in_progress: 'Sürüyor',
-  done: 'Tamam',
+  done: 'Tamamlandı',
   cancelled: 'İptal',
 };
+
+const STATUS_ORDER: TaskStatus[] = ['todo', 'in_progress', 'done', 'cancelled'];
 
 export function TasksPage() {
   const [tasks, setTasks] = useState<PracticeTask[]>(() => getTasks());
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<'open' | 'all'>('open');
+  const [pendingDelete, setPendingDelete] = useState<PracticeTask | null>(null);
   const clients = useMemo(() => getClients(), []);
   const [form, setForm] = useState({
     title: '',
@@ -38,10 +42,17 @@ export function TasksPage() {
 
   const visible = tasks.filter((task) => (filter === 'all' ? true : task.status === 'todo' || task.status === 'in_progress'));
 
-  function cycle(task: PracticeTask) {
-    const order: TaskStatus[] = ['todo', 'in_progress', 'done'];
-    const next = order[(order.indexOf(task.status) + 1) % order.length] ?? 'todo';
-    saveTask({ ...task, status: task.status === 'cancelled' ? 'todo' : next, updatedAt: new Date().toISOString() });
+  // Durum değişimi açık bir seçimle yapılır (UI → practiceStore → kalıcı
+  // depo) ve sayfa yenilense de kaybolmaz; gizli tıkla-değiştir davranışı yok.
+  function changeStatus(task: PracticeTask, status: TaskStatus) {
+    if (status === task.status) return;
+    saveTask({ ...task, status, updatedAt: new Date().toISOString() });
+  }
+
+  function confirmDeleteTask() {
+    if (!pendingDelete) return;
+    deleteTask(pendingDelete.id);
+    setPendingDelete(null);
   }
 
   function onSubmit(event: FormEvent) {
@@ -109,8 +120,20 @@ export function TasksPage() {
                 </div>
               </div>
               <div className="task-card-actions">
-                <button type="button" className="btn-secondary btn-sm" aria-label={`${task.title}: ${STATUS_LABEL[task.status]}. Durumu değiştir`} onClick={() => cycle(task)}>{STATUS_LABEL[task.status]} <Icon name="right" size={14} /></button>
-                <button type="button" className="btn-icon" aria-label={`${task.title} görevini sil`} onClick={() => { if (window.confirm('Bu görevi silmek istiyor musunuz?')) deleteTask(task.id); }}>
+                <div className="form-group task-status-field">
+                  <label htmlFor={`task-status-${task.id}`}>Durum</label>
+                  <select
+                    id={`task-status-${task.id}`}
+                    className={`task-status-select status-${task.status}`}
+                    value={task.status}
+                    onChange={(event) => changeStatus(task, event.target.value as TaskStatus)}
+                  >
+                    {STATUS_ORDER.map((status) => (
+                      <option key={status} value={status}>{STATUS_LABEL[status]}</option>
+                    ))}
+                  </select>
+                </div>
+                <button type="button" className="btn-icon" aria-label={`${task.title} görevini sil`} onClick={() => setPendingDelete(task)}>
                   <Icon name="trash" size={16} />
                 </button>
               </div>
@@ -163,6 +186,16 @@ export function TasksPage() {
               <button type="submit" className="btn-primary">Kaydet</button>
             </div>
         </ClinicalDialog>
+      )}
+
+      {pendingDelete && (
+        <ConfirmDialog
+          title="Görevi sil"
+          description={`"${pendingDelete.title}" görevi silinecek. Bu işlem geri alınamaz.`}
+          confirmLabel="Görevi sil"
+          onConfirm={confirmDeleteTask}
+          onCancel={() => setPendingDelete(null)}
+        />
       )}
     </div>
   );

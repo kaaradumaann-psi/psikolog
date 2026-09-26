@@ -62,6 +62,6 @@ test('bulut anlık görüntüsü uygulanmadan veya yükleme hatasında klinik i�
   const source = readFileSync('src/App.tsx', 'utf8');
   assert.match(source, /const gate = cloudGateStatus\(user\.id, localMode, syncState\)/);
   assert.match(source, /data-cloud-gate=\{gate\}/);
-  assert.match(source, /Klinik kayıtlar yükleniyor/);
+  assert.match(source, /Danışan kayıtlarınız açılıyor/);
   assert.match(source, /Klinik kayıtlar yüklenemedi/);
 });

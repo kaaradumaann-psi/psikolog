@@ -1,69 +1,80 @@
 const RIGHTS = [
   {
     title: 'Beck Depresyon ve Beck Anksiyete',
-    status: 'Yetkili materyal gerekli',
-    body: 'Bu depoda resmî Türkçe Beck formu için lisans/yetki veya doğrulanmış madde bankası belgesi bulunmamaktadır. Bu nedenle BDI ekranı madde ve seçenek metni dağıtmaz; yalnız yetkili form yanında numaralı puan aktarımı ve sonuç kaydı yapar. BDI modülü BDI-II olarak sunulmaz.',
+    status: 'UNKNOWN / VERIFY LICENSE · yetkili materyal ve dijital kullanım doğrulanmalı',
+    body: 'Bu depoda resmî Türkçe Beck formları için lisans, kullanım yetkisi veya doğrulanmış madde bankası belgesi yoktur. BDI ve BAI ekranları madde/yanıt çapası yayımlamaz; yalnız yetkili form yanında numaralı puan aktarımı yapar. BDI modülü BDI-II olarak sunulmaz.',
     href: 'https://www.pearsonassessments.com/footer/legal-policies.html',
     link: 'Pearson materyal kullanım politikası',
   },
   {
     title: 'SCL-90-R®',
-    status: 'Lisanslı / çoğaltma kısıtlı',
-    body: 'SCL-90-R® telif, marka ve test güvenliği koruması altındadır. Resmî materyal ve kullanım hakkı ayrıca temin edilmelidir. Uygulamadaki yanıt aktarım çıktısı test maddelerini yeniden üretmez.',
-    href: 'https://www.pearsonassessments.com/footer/legal-policies.html',
-    link: 'Pearson yasal kullanım politikası',
+    status: 'UNKNOWN / VERIFY LICENSE · bu kurulumun kullanım yetkisi belgelenmedi',
+    body: 'Pearson SCL-90-R® formlarını, puanlama anahtarını ve dijital uygulama/rapor kullanımını ticari ürün olarak sunar. Depoda bu hakları belgeleyen lisans yoktur. Ekran ve çıktı korunan madde/yanıt metnini yeniden üretmez; dağıtım öncesi dijital puanlama yetkisi ayrıca doğrulanmalıdır.',
+    href: 'https://www.pearsonassessments.com/en-us/Store/Professional-Assessments/Personality-%26-Biopsychosocial/Symptom-Checklist-90-Revised/p/100000645',
+    link: 'Pearson SCL-90-R ürün ve puanlama bilgisi',
   },
   {
     title: 'PHQ-9 ve GAD-7',
-    status: 'Çoğaltıma açık',
-    body: 'Drs. Robert L. Spitzer, Janet B.W. Williams, Kurt Kroenke ve çalışma arkadaşları tarafından Pfizer Inc. eğitim desteğiyle geliştirilmiştir. Resmî kullanım beyanına göre çoğaltmak, çevirmek, göstermek veya dağıtmak için izin gerekmez. Uygulama bu nedenle danışan için tam boş form çıktısı sunar.',
-    href: 'https://www.pfizer.com/news/press-release/press-release-detail/pfizer_to_offer_free_public_access_to_mental_health_assessment_tools_to_improve_diagnosis_and_patient_care',
-    link: 'Pfizer erişim duyurusu',
+    status: 'Çoğaltıma açık · Türkçe form provenansı UNKNOWN / VERIFY LICENSE',
+    body: 'PHQ Screeners resmî sayfası PHQ ve GAD-7 ölçekleri ile çevirilerinin izin almadan çoğaltılabileceğini, çevrilebileceğini, gösterilebileceğini ve dağıtılabileceğini belirtir. Buna rağmen depodaki önceki Türkçe ifadelerin otoritatif dağıtılmış/uyarlanmış formla birebir eşliği kanıtlanamadı. Klinik geçerliği uydurmamak için bu sürüm yalnız sayısal aktarım çizelgesi sunar.',
+    href: 'https://www.phqscreeners.com/select-screener',
+    link: 'PHQ Screeners resmî erişim ve kullanım beyanı',
   },
 ] as const;
 
-const BDI_AUTHORITATIVE_LINKS = [
-  { label: 'Beck ve ark. (1961) — PubMed kaydı', href: 'https://pubmed.ncbi.nlm.nih.gov/13688369/' },
-  { label: 'Beck ve ark. (1961) — JAMA Psychiatry / DOI', href: 'https://doi.org/10.1001/archpsyc.1961.01710120031004' },
-  { label: 'Türk Psikologlar Derneği — Hisli (1989) yayın kaydı', href: 'https://psikolog.org.tr/yayinlar/turk-psikoloji-dergisi' },
-  { label: 'APA — depresyon değerlendirme araçları ve erişim bilgisi', href: 'https://www.apa.org/depression-guideline/assessment' },
-  { label: 'Pearson — BDI-II resmî ürün bilgisi (ayrı sürüm)', href: 'https://www.pearsonclinical.in/products/programs/beck-depression-inventory.html' },
-  { label: 'Kapçı ve ark. (2008) — Türk yetişkin BDI-II çalışması', href: 'https://onlinelibrary.wiley.com/doi/10.1002/da.20371' },
+const AUTHORITATIVE_LINKS = [
+  { label: 'BDI — Beck ve ark. (1961), JAMA Psychiatry / DOI', href: 'https://doi.org/10.1001/archpsyc.1961.01710120031004' },
+  { label: 'BDI/BDI-II ayrımı — APA değerlendirme araçları', href: 'https://www.apa.org/depression-guideline/assessment' },
+  { label: 'BAI — Beck ve ark. (1988), DOI', href: 'https://doi.org/10.1037/0022-006X.56.6.893' },
+  { label: 'SCL-90-R — Pearson resmî ürün sayfası', href: 'https://www.pearsonassessments.com/en-us/Store/Professional-Assessments/Personality-%26-Biopsychosocial/Symptom-Checklist-90-Revised/p/100000645' },
+  { label: 'SCL-90-R Türkçe — Dağ (1991) bibliyografik kayıt', href: 'https://turkmedline.net/detay/belirti-tarama-listesi-scl-90-rnin-universite-ogrencileri-icin-guvenirligi-ve-gecerligi/d3a3f6156970f7/tr/29+1991' },
+  { label: 'GAD-7 Türkçe — Konkan ve ark. (2013) tam makale', href: 'https://www.noropsikiyatriarsivi.com/sayilar/415/buyuk/53-58ing.pdf' },
+  { label: 'PHQ/GAD-7 — resmî puanlama yönergesi', href: 'https://www.phqscreeners.com/images/sites/g/files/g10016261/f/201412/instructions.pdf' },
+  { label: 'PHQ-9 Türkçe — Sarı ve ark. (2016)', href: 'https://www.alliedacademies.org/articles/turkish-reliability-of-the-patient-health-questionnaire9.html' },
 ] as const;
 
 const SOURCES = [
   {
     kicker: 'Beck Depresyon — sürüm kararı',
     items: [
-      'Kodda bulunan tarihsel sıra; 1961 BDI / Hisli Türkçe uyarlama ailesiyle ilişkilidir ve BDI-II değildir. Önceki depodaki seçenek metinleri yetkili Türkçe formdan doğrulanamadığı için kaldırılmıştır.',
+      'Kimlik: 1961 özgün BDI / Hisli 1988–1989 Türkçe çalışma ailesi; BDI-II değildir. Önceki seçenek metinleri yetkili Türkçe formdan doğrulanamadığı için dağıtılmaz.',
       'Beck, A. T., Ward, C. H., Mendelson, M., Mock, J., & Erbaugh, J. (1961). An inventory for measuring depression. Archives of General Psychiatry, 4(6), 561–571. DOI: 10.1001/archpsyc.1961.01710120031004.',
       'Hisli, N. (1988). Beck Depresyon Envanteri’nin geçerliği üzerine bir çalışma. Psikoloji Dergisi, 6(22), 118–126; Hisli, N. (1989). Beck Depresyon Envanteri’nin üniversite öğrencileri için geçerliği, güvenirliği. Psikoloji Dergisi, 7(23), 3–13.',
-      'Puanlama yalnız 21 madde × 0–3 toplamıdır (0–63). Doğrulanmamış Bilişsel/Duygusal ve Somatik/Performans alt skorları üretilmez. 17 puan yalnız Türkçe BDI literatüründeki tarama referansı olarak gösterilir; tanı veya şiddet sınıfı değildir.',
-      'BDI-II ayrı bir 1996 sürümüdür. Pearson kaynağı farklı yazarları, iki haftalık süreyi, 13–80 yaş aralığını ve değişen madde yapısını bildirir; bu modül BDI-II puanlaması yapmaz. Kapçı ve ark. (2008) Türk yetişkin BDI-II çalışmasının 0–12 / 13–18 / 19–28 / 29–63 aralıkları bu BDI modülüne uygulanmaz.',
+      'Puanlama 21 madde × 0–3 toplamıdır. Doğrulanmamış alt skorlar ve şiddet sınıfları üretilmez. 17 yalnız Türkçe BDI literatüründeki tarama referansıdır; tanı değildir.',
     ],
   },
   {
-    kicker: 'Beck Anksiyete',
+    kicker: 'Beck Anksiyete — BAI',
     items: [
-      'Beck, A. T., Epstein, N., Brown, G., & Steer, R. A. (1988). An inventory for measuring clinical anxiety. Journal of Consulting and Clinical Psychology, 56(6), 893–897.',
-      'Ulusoy, M., Şahin, N. H., & Erkmen, H. (1998). Turkish version of the Beck Anxiety Inventory. Journal of Cognitive Psychotherapy, 12, 163–172.',
-      'Bu çalışma alanındaki bantlar: 0–7 minimal, 8–15 hafif, 16–25 orta, 26–63 şiddetli.',
+      'Beck, A. T., Epstein, N., Brown, G., & Steer, R. A. (1988). An inventory for measuring clinical anxiety. Journal of Consulting and Clinical Psychology, 56(6), 893–897. DOI: 10.1037/0022-006X.56.6.893.',
+      'Ulusoy, M., Şahin, N. H., & Erkmen, H. (1998). Turkish version of the Beck Anxiety Inventory: Psychometric properties. Journal of Cognitive Psychotherapy, 12(2), 163–172.',
+      'Standart sonuç tek 0–63 toplamdır. Eski dört geliştirici alt skoru kaldırılmıştır. 0–7 / 8–15 / 16–25 / 26–63 aralıkları el kitabı bağlamıyla etiketlenir; Türkçe tanı eşiği veya tedavi emri değildir.',
+      'Kimlik: 21 madde, 0–3, geçen hafta (bugün dâhil), ağırlıklı olarak yetişkin kullanım bağlamı. Madde ve yanıt çapaları bu depoda yer almaz.',
     ],
   },
   {
-    kicker: 'SCL-90-R',
+    kicker: 'SCL-90-R®',
     items: [
-      'Derogatis, L. R. (1994). SCL-90-R: Symptom Checklist-90-R. Administration, scoring, and procedures manual (3rd ed.). NCS Pearson.',
-      'Dağ, İ. (1991). Belirti Tarama Listesi (SCL-90-R)’nin üniversite öğrencileri için güvenirliği ve geçerliği. Türk Psikiyatri Dergisi, 2(1), 5–12.',
-      'Boyut puanı madde ortalamasıdır. GSI, PST ve PSDI genel indekslerdir. GSI ≥ 1,0 yalnız klinik eşik uyarısı olarak işaretlenir; tek başına tanı değildir.',
+      'Derogatis, L. R. (1994). SCL-90-R: Administration, scoring and procedures manual (3rd ed.). NCS Pearson. Yayıncı: 90 madde, beşli ölçek, 13 yaş ve üzeri, dokuz temel boyut ve üç global indeks.',
+      'Dağ, İ. (1991). Belirti Tarama Listesi (SCL-90-R)’nin üniversite öğrencileri için güvenirliği ve geçerliği. Türk Psikiyatri Dergisi, 2(1), 5–12. Örneklem üniversite öğrencileridir; çalışma alt boyutların klinik tanı amacıyla kullanımına yeterli kanıt olmadığını vurgular.',
+      'Uygulama yalnız ham dokuz boyut ortalaması ile GSI, PST ve PSDI üretir. “Ek maddeler” onuncu bir boyut olarak raporlanmaz. Norm tablosu, T-puanı ve genel GSI ≥ 1 klinik eşiği uygulanmaz.',
+      'Türkçe kaynaklarda zaman yönergesine ilişkin tutarsız ikincil aktarımlar bulunduğundan yetkili Türkçe formun kendi yönergesi esas alınır; UNKNOWN alanı tahminle tamamlanmaz.',
     ],
   },
   {
-    kicker: 'GAD-7 ve PHQ-9',
+    kicker: 'GAD-7',
     items: [
-      'Spitzer, R. L., Kroenke, K., Williams, J. B. W., & Löwe, B. (2006). A brief measure for assessing generalized anxiety disorder: The GAD-7. Archives of Internal Medicine, 166(10), 1092–1097.',
-      'Kroenke, K., Spitzer, R. L., & Williams, J. B. W. (2001). The PHQ-9. Journal of General Internal Medicine, 16(9), 606–613.',
-      'GAD-7: 0–4 minimal, 5–9 hafif, 10–14 orta, 15–21 şiddetli. PHQ-9: 0–4 minimal, 5–9 hafif, 10–14 orta, 15–19 orta-ileri, 20–27 şiddetli. PHQ-9 madde 9 ayrıca değerlendirilir.',
+      'Spitzer, R. L., Kroenke, K., Williams, J. B. W., & Löwe, B. (2006). A brief measure for assessing generalized anxiety disorder: The GAD-7. Archives of Internal Medicine, 166(10), 1092–1097. DOI: 10.1001/archinte.166.10.1092.',
+      'Konkan, R., Şenormancı, Ö., Güçlü, O., Aydın, E., & Sungur, M. Z. (2013). GAD-7 Türkçe uyarlaması, geçerlik ve güvenirliği. Nöropsikiyatri Arşivi, 50, 53–58. Klinik örneklemde en uygun tarama referansı 8 bulunmuştur.',
+      'Puan 7 madde × 0–3, toplam 0–21’dir. Özgün 5/10/15 belirti bantları gösterilir; Türkçe klinik örneklemdeki 8 puan yalnız tarama referansıdır. Hiçbiri tek başına tanı değildir.',
+    ],
+  },
+  {
+    kicker: 'PHQ-9',
+    items: [
+      'Kroenke, K., Spitzer, R. L., & Williams, J. B. W. (2001). The PHQ-9: Validity of a brief depression severity measure. Journal of General Internal Medicine, 16(9), 606–613. DOI: 10.1046/j.1525-1497.2001.016009606.x.',
+      'Sarı, Y. E., Kökoğlu, B., Balcıoğlu, H., Bilge, U., Çolak, E., & Ünlüoğlu, İ. (2016). Turkish reliability of the Patient Health Questionnaire-9. Çalışma 96 yetişkin aile hekimliği başvurusunda güvenirliği bildirmiştir; bu uygulama için tanısal Türkçe kesme değeri doğrulamamıştır.',
+      'Puan 9 madde × 0–3, toplam 0–27’dir. Puanlanmayan işlevsellik sorusu ayrı kod olarak saklanabilir. Madde 9 yanıtı toplamdan bağımsız nötr klinik inceleme bayrağıdır; risk yüzdesi veya düzeyi değildir.',
     ],
   },
 ] as const;
@@ -72,53 +83,22 @@ export function SourcesPage() {
   return (
     <div className="sources-page">
       <p className="sources-intro">
-        Bu sayfa hem psikometrik kaynakları hem de materyal kullanım sınırlarını kaydeder. Bir aracın çalışma
-        alanında listelenmesi, telifli test materyalini çoğaltma hakkı vermez. Uygulayıcı güncel yayıncı koşullarını
-        ve mesleki yetkinlik gerekliliklerini uygulama öncesinde doğrular.
+        Bu sayfa psikometrik kaynakları, sürüm kararlarını ve materyal kullanım sınırlarını kaydeder. Bir aracın çalışma alanında listelenmesi telifli test materyalini çoğaltma veya dijital puanlama hakkı vermez. UNKNOWN alanlar tahmin edilmez.
       </p>
 
       <section className="sources-rights" aria-labelledby="sources-rights-title">
-        <div className="sources-section-head">
-          <span>KULLANIM SINIRI</span>
-          <h2 id="sources-rights-title">Telif ve basılı form durumu</h2>
-        </div>
-        {RIGHTS.map((item) => (
-          <article key={item.title} className="sources-right-row">
-            <div><strong>{item.title}</strong><span>{item.status}</span></div>
-            <p>{item.body}</p>
-            <a href={item.href} target="_blank" rel="noopener noreferrer">{item.link}</a>
-          </article>
-        ))}
+        <div className="sources-section-head"><span>KULLANIM SINIRI</span><h2 id="sources-rights-title">Telif, form ve dijital kullanım durumu</h2></div>
+        {RIGHTS.map((item) => <article key={item.title} className="sources-right-row"><div><strong>{item.title}</strong><span>{item.status}</span></div><p>{item.body}</p><a href={item.href} target="_blank" rel="noopener noreferrer">{item.link}</a></article>)}
       </section>
 
-      <section className="sources-bibliography" aria-labelledby="sources-bdi-links-title">
-        <div className="sources-section-head">
-          <span>BDI KİMLİK DENETİMİ</span>
-          <h2 id="sources-bdi-links-title">Birincil ve otoritatif bağlantılar</h2>
-        </div>
-        <article className="sources-reference-row">
-          <h3>Doğrulama zinciri</h3>
-          <ul>
-            {BDI_AUTHORITATIVE_LINKS.map((source) => (
-              <li key={source.href}><a href={source.href} target="_blank" rel="noopener noreferrer">{source.label}</a></li>
-            ))}
-          </ul>
-        </article>
+      <section className="sources-bibliography" aria-labelledby="sources-links-title">
+        <div className="sources-section-head"><span>DOĞRULAMA ZİNCİRİ</span><h2 id="sources-links-title">Otoritatif ve hakemli bağlantılar</h2></div>
+        <article className="sources-reference-row"><ul>{AUTHORITATIVE_LINKS.map((source) => <li key={source.href}><a href={source.href} target="_blank" rel="noopener noreferrer">{source.label}</a></li>)}</ul></article>
       </section>
 
       <section className="sources-bibliography" aria-labelledby="sources-bibliography-title">
-        <div className="sources-section-head">
-          <span>KAYNAKÇA</span>
-          <h2 id="sources-bibliography-title">Araç bazında dayanaklar</h2>
-        </div>
-        {SOURCES.map((group) => (
-          <article key={group.kicker} className="sources-reference-row">
-            <h3>{group.kicker}</h3>
-            <ul>
-              {group.items.map((item) => <li key={item}>{item}</li>)}
-            </ul>
-          </article>
-        ))}
+        <div className="sources-section-head"><span>KAYNAKÇA</span><h2 id="sources-bibliography-title">Araç bazında kimlik ve yorum sınırları</h2></div>
+        {SOURCES.map((group) => <article key={group.kicker} className="sources-reference-row"><h3>{group.kicker}</h3><ul>{group.items.map((item) => <li key={item}>{item}</li>)}</ul></article>)}
       </section>
     </div>
   );

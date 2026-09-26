@@ -166,33 +166,47 @@ export interface BeckAnxietyResult {
   clientName: string;
   clientGender: Gender;
   clientAge?: number;
-  testDate: string; // YYYY-MM-DD
-  answers: number[]; // 21 madde, her biri 0-3
+  testDate: string; // YYYY-MM-DD, Europe/Istanbul klinik tarihi
+  instrumentId?: string;
+  instrumentVersion?: string;
+  scoringVersion?: string;
+  completionStatus?: 'complete';
+  responses?: Array<{ itemId: number; score: number }>;
+  answers: number[]; // Eski okuyucular için 21 × 0-3 anlık görüntüsü
   totalScore: number; // 0-63
-  severity: BeckAnxietySeverity;
-  subjectiveScore: number; // Öznel anksiyete
-  neurovegetativeScore: number; // Nörovejetatif
-  autonomicScore: number; // Otonomik
-  motorScore: number; // Motor
+  maximumScore?: number;
+  scoreBand?: string;
+  /** @deprecated Eski kayıt uyumluluğu; yeni kayıtlar scoreBand kullanır. */
+  severity?: BeckAnxietySeverity;
+  /** @deprecated Doğrulanmamış eski geliştirici alt skorları; yeni kayıtlarda üretilmez. */
+  subjectiveScore?: number;
+  /** @deprecated Doğrulanmamış eski geliştirici alt skorları; yeni kayıtlarda üretilmez. */
+  neurovegetativeScore?: number;
+  /** @deprecated Doğrulanmamış eski geliştirici alt skorları; yeni kayıtlarda üretilmez. */
+  autonomicScore?: number;
+  /** @deprecated Doğrulanmamış eski geliştirici alt skorları; yeni kayıtlarda üretilmez. */
+  motorScore?: number;
   clinicalInterpretation: string;
   notes?: string;
+  revision?: number;
+  revisionOf?: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 /* ==========================================================================
    SCL-90-R (Belirti Tarama Listesi)
    ========================================================================== */
 export interface Scl90DimensionScores {
-  somatization: number; // SOM: Somatizasyon
-  obsessiveCompulsive: number; // O-C: Obsesif-Kompulsif
-  interpersonalSensitivity: number; // I-S: Kişilerarası Duyarlık
-  depression: number; // DEP: Depresyon
-  anxiety: number; // ANX: Anksiyete
-  hostility: number; // HOS: Öfke ve Düşmanlık
-  phobicAnxiety: number; // PHOB: Fobik Anksiyete
-  paranoidIdeation: number; // PAR: Paranoid Düşünce
-  psychoticism: number; // PSY: Psikotizm
-  additional: number; // Ek Maddeler (uyku, iştah vb.)
+  somatization: number; // SOM: Somatizasyon ham ortalaması
+  obsessiveCompulsive: number; // O-C: Obsesif-Kompulsif ham ortalaması
+  interpersonalSensitivity: number; // I-S: Kişilerarası Duyarlık ham ortalaması
+  depression: number; // DEP: Depresyon ham ortalaması
+  anxiety: number; // ANX: Anksiyete ham ortalaması
+  hostility: number; // HOS: Öfke ve Düşmanlık ham ortalaması
+  phobicAnxiety: number; // PHOB: Fobik Anksiyete ham ortalaması
+  paranoidIdeation: number; // PAR: Paranoid Düşünce ham ortalaması
+  psychoticism: number; // PSY: Psikotizm ham ortalaması
 }
 
 export interface Scl90Result {
@@ -201,15 +215,26 @@ export interface Scl90Result {
   clientName: string;
   clientGender: Gender;
   clientAge?: number;
-  testDate: string; // YYYY-MM-DD
-  answers: number[]; // 90 madde, her biri 0-4
+  testDate: string; // YYYY-MM-DD, Europe/Istanbul klinik tarihi
+  instrumentId?: string;
+  instrumentVersion?: string;
+  scoringVersion?: string;
+  completionStatus?: 'complete';
+  responses?: Array<{ itemId: number; score: number }>;
+  answers: number[]; // Eski okuyucular için 90 × 0-4 anlık görüntüsü
+  totalScore?: number;
   dimensionScores: Scl90DimensionScores;
-  gsi: number; // Genel Semptom İndeksi (General Severity Index)
-  pst: number; // Pozitif Semptom Toplamı (Positive Symptom Total)
-  psdi: number; // Pozitif Semptom Düzeyi İndeksi (Positive Symptom Distress Index)
+  gsi: number; // Ham Genel Semptom İndeksi
+  pst: number; // Pozitif Semptom Toplamı
+  psdi: number; // Pozitif Semptom Düzeyi İndeksi
+  normReference?: 'none';
+  criticalItemFlags?: string[];
   clinicalInterpretation: string;
   notes?: string;
+  revision?: number;
+  revisionOf?: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 /* ==========================================================================

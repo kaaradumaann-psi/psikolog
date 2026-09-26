@@ -13,6 +13,9 @@ import type { IconName } from '../Icon';
 import { navigate } from '../../router';
 import { assessmentMeta, type AssessmentKey } from '../../clinical/assessmentCatalog';
 import { beckDepressionScoreContext, isBeckCriticalItemEndorsed } from '../../clinical/beckDepression';
+import { beckAnxietyScoreContext } from '../../clinical/beckAnxiety';
+import { phq9CriticalItemEndorsed, rapidScoreContext } from '../../clinical/rapidScreening';
+import { scl90CriticalItemFlags } from '../../clinical/scl90';
 
 type AssessmentTool = {
   key: AssessmentKey;
@@ -32,18 +35,18 @@ const TOOLS: AssessmentTool[] = [
     path: '/testler/beck-depresyon', action: 'Beck Depresyon testini başlat',
   },
   {
-    key: 'bai', code: 'BAI', title: 'Beck Anksiyete Envanteri', icon: 'activity', meta: '21 BELİRTİ · KAYGI',
-    detail: 'Ulusoy, Şahin ve Erkmen (1998) Türkçe uyarlaması. Bedensel ve bilişsel kaygı şiddetini izleyin.',
+    key: 'bai', code: 'BAI', title: 'Beck Anksiyete Envanteri', icon: 'activity', meta: '21 MADDE · TOPLAM PUAN',
+    detail: 'Ulusoy, Şahin ve Erkmen (1998) Türkçe uyarlaması için sayısal yanıt aktarımı. Yetkili form ve dijital kullanım hakkı ayrıca doğrulanır.',
     path: '/testler/beck-anksiyete', action: 'Beck Anksiyete testini başlat',
   },
   {
     key: 'scl90', code: 'SCL', title: 'SCL-90-R Belirti Tarama', icon: 'layers', meta: '90 MADDE · 9 BOYUT',
-    detail: 'Dağ (1991) Türkçe uyarlaması. Dokuz belirti boyutu ile GSI, PST ve PSDI sonuçlarını birlikte görün.',
+    detail: 'Dağ (1991) üniversite öğrencisi çalışmasıyla ilişkili form için sayısal aktarım. Ham boyutlar ve indeksler gösterilir; norm veya klinik eşik üretilmez.',
     path: '/testler/scl90', action: 'SCL-90-R testini başlat',
   },
   {
     key: 'phq9', code: 'KISA', title: 'PHQ-9 ve GAD-7', icon: 'trend', meta: 'KISA TARAMA · İKİ ÖLÇEK',
-    detail: 'Seans içi depresyon ve kaygı izlemi. PHQ-9 madde 9 pozitifse güvenlik uyarısı açılır.',
+    detail: 'Doğrulanmış Türkçe formlardan GAD-7 ve PHQ-9 sayısal yanıt aktarımı. PHQ-9 madde 9 işaretlenirse nötr klinik inceleme bayrağı oluşur.',
     path: '/testler/tarama', action: 'PHQ-9 ve GAD-7 taramasını başlat',
   },
 ];
@@ -59,12 +62,6 @@ type HistoryItem = {
   tone: 'normal' | 'warning' | 'danger';
   safetyFlag?: boolean;
 };
-
-function severityTone(severity: string): HistoryItem['tone'] {
-  if (severity.includes('Şiddetli')) return 'danger';
-  if (severity.includes('Orta')) return 'warning';
-  return 'normal';
-}
 
 export function AssessmentHubPage() {
   const [bdiTests, setBdiTests] = useState<BeckDepressionResult[]>(() => getBeckDepressionTests());
@@ -94,20 +91,20 @@ export function AssessmentHubPage() {
     ...baiTests.map((test) => ({
       id: test.id, clientId: test.clientId, clientName: test.clientName,
       title: 'Beck Anksiyete · BAI', date: test.testDate, score: `${test.totalScore}/63`,
-      severity: `${test.severity} anksiyete`, tone: severityTone(test.severity),
+      severity: beckAnxietyScoreContext(test), tone: 'normal' as const,
     })),
     ...scl90Tests.map((test) => ({
       id: test.id, clientId: test.clientId, clientName: test.clientName,
       title: 'SCL-90-R Belirti Tarama', date: test.testDate, score: `GSI ${test.gsi} · PST ${test.pst}`,
-      severity: test.gsi >= 1 ? 'Klinik eşik üzerinde' : 'Eşik altında',
-      tone: test.gsi >= 1 ? 'warning' as const : 'normal' as const,
-      safetyFlag: (test.answers?.[14] ?? 0) > 0,
+      severity: test.normReference === 'none' ? 'Ham indeks · norm uygulanmadı' : 'Eski kayıt · norm dayanağını doğrulayın',
+      tone: 'normal' as const,
+      safetyFlag: scl90CriticalItemFlags(test).length > 0,
     })),
     ...screenings.map((test) => ({
       id: test.id, clientId: test.clientId, clientName: test.clientName,
       title: test.type === 'phq9' ? 'PHQ-9 Kısa Tarama' : 'GAD-7 Kısa Tarama',
       date: test.testDate, score: `${test.totalScore}/${test.type === 'phq9' ? 27 : 21}`,
-      severity: test.severity, tone: severityTone(test.severity), safetyFlag: test.suicideRisk,
+      severity: rapidScoreContext(test), tone: 'normal' as const, safetyFlag: phq9CriticalItemEndorsed(test),
     })),
   ].sort((a, b) => b.date.localeCompare(a.date));
 

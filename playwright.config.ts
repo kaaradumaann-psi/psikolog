@@ -4,6 +4,8 @@ import { defineConfig, devices } from '@playwright/test';
 // preview :4173 veya dağıtılmış production URL) karşı koşar. Bu, PHASE 7/P0-8'in
 // "PRODUCTION bundle üzerinden doğrulama" adımını mümkün kılar.
 const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:5173';
+const chromiumExecutable = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?.trim();
+const chromiumLaunchOptions = chromiumExecutable ? { executablePath: chromiumExecutable } : undefined;
 
 export default defineConfig({
   testDir: './e2e',
@@ -19,7 +21,7 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: { ...devices['Desktop Chrome'], launchOptions: chromiumLaunchOptions },
     },
     {
       name: 'firefox',
@@ -31,7 +33,7 @@ export default defineConfig({
     },
     {
       name: 'Mobile Chrome',
-      use: { ...devices['Pixel 5'] },
+      use: { ...devices['Pixel 5'], launchOptions: chromiumLaunchOptions },
     },
   ],
   webServer: process.env.E2E_BASE_URL

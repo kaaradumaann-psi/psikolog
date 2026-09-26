@@ -1,116 +1,183 @@
 /**
- * Beck Anksiyete Envanteri (BAI / BAO) — 21 Belirti Değerlendirme & Yorumlama Motoru
- * Beck, Epstein, Brown & Steer (1988); Ulusoy, Şahin & Erkmen (1998) Türk Uyarlaması
- * Halil Karaduman · Uzman Psikolog & Geliştirici
+ * Beck Anxiety Inventory (BAI) — strict total-score implementation.
+ *
+ * The BAI is commercial test material. No symptom or response wording is kept
+ * in this repository. A qualified user transfers 21 numeric responses from an
+ * authorised form. The standard score is a single 0–63 total; historical
+ * developer-defined subscales have been removed.
  */
 
-import type { BeckAnxietyResult, BeckAnxietySeverity, Gender } from './clinicalTypes';
-import { clinicToday } from './recordRules';
+import type { BeckAnxietyResult, Gender } from './clinicalTypes';
+import {
+  responsesFromAnswerSlots,
+  validateNumberedAssessmentResponses,
+  type NumberedAssessmentResponse,
+  type NumberedAssessmentValidation,
+} from './assessmentResponses';
+import { clinicToday, isValidClinicDate } from './recordRules';
 
-export interface BeckAnxietySymptom {
-  id: number;
-  title: string;
-  category: 'subjective' | 'neurovegetative' | 'autonomic' | 'motor';
+export const BAI_INSTRUMENT_ID = 'beck-anxiety-inventory';
+export const BAI_INSTRUMENT_VERSION = 'BAI-1988-TR-Ulusoy-1998';
+export const BAI_SCORING_VERSION = 'bai-total-21x0-3-v2';
+export const BAI_ITEM_COUNT = 21;
+export const BAI_ITEM_MIN = 0;
+export const BAI_ITEM_MAX = 3;
+export const BAI_MAX_TOTAL = 63;
+
+/** IDs only: protected symptom wording is intentionally absent. */
+export const BAI_ITEMS = Array.from({ length: BAI_ITEM_COUNT }, (_, index) => ({ id: index + 1 }));
+
+/** Numeric transfer labels only: licensed response anchors are not republished. */
+export const BAI_SCORE_OPTIONS = [0, 1, 2, 3] as const;
+
+export type BeckAnxietyScoreBand =
+  | '0–7 · minimal düzey (el kitabı)'
+  | '8–15 · hafif düzey (el kitabı)'
+  | '16–25 · orta düzey (el kitabı)'
+  | '26–63 · yüksek düzey (el kitabı)';
+
+export type BeckAnxietyScoring =
+  | { status: 'invalid' | 'incomplete'; validation: NumberedAssessmentValidation }
+  | {
+      status: 'complete';
+      validation: NumberedAssessmentValidation;
+      responses: NumberedAssessmentResponse[];
+      totalScore: number;
+      maxScore: typeof BAI_MAX_TOTAL;
+      scoreBand: BeckAnxietyScoreBand;
+    };
+
+export function validateBeckAnxietyResponses(input: unknown): NumberedAssessmentValidation {
+  return validateNumberedAssessmentResponses(input, {
+    itemCount: BAI_ITEM_COUNT,
+    minScore: BAI_ITEM_MIN,
+    maxScore: BAI_ITEM_MAX,
+  });
 }
 
-export const BECK_ANXIETY_SYMPTOMS: BeckAnxietySymptom[] = [
-  { id: 1, title: 'Bedenin herhangi bir yerinde uyuşma veya karıncalanma', category: 'neurovegetative' },
-  { id: 2, title: 'Sıcak / alev basmaları', category: 'autonomic' },
-  { id: 3, title: 'Bacaklarda halsizlik, titreme veya dermansızlık', category: 'motor' },
-  { id: 4, title: 'Gevşeyememe, rahatlayamama', category: 'subjective' },
-  { id: 5, title: 'Çok kötü şeyler olacak korkusu', category: 'subjective' },
-  { id: 6, title: 'Baş dönmesi veya sersemlik hissi', category: 'neurovegetative' },
-  { id: 7, title: 'Kalp çarpıntısı veya kalbin hızla çarpması', category: 'autonomic' },
-  { id: 8, title: 'Dengeyi kaybetme veya düşecek gibi olma', category: 'motor' },
-  { id: 9, title: 'Dehşete kapılma, panik hissi', category: 'subjective' },
-  { id: 10, title: 'Sinirlilik, gerginlik veya tedirginlik', category: 'subjective' },
-  { id: 11, title: 'Boğuluyormuş gibi hissetme / nefes darlığı', category: 'neurovegetative' },
-  { id: 12, title: 'Ellerde titreme', category: 'motor' },
-  { id: 13, title: 'Titreklik veya sarsıntı hissi', category: 'motor' },
-  { id: 14, title: 'Kontrolü kaybetme korkusu', category: 'subjective' },
-  { id: 15, title: 'Nefes almada güçlük çekme', category: 'neurovegetative' },
-  { id: 16, title: 'Ölüm korkusu', category: 'subjective' },
-  { id: 17, title: 'Korkuya kapılma', category: 'subjective' },
-  { id: 18, title: 'Midede hazımsızlık, rahatsızlık veya bulantı', category: 'autonomic' },
-  { id: 19, title: 'Baygınlık hissi / bayılacak gibi olma', category: 'neurovegetative' },
-  { id: 20, title: 'Yüzün kızarması', category: 'autonomic' },
-  { id: 21, title: 'Soğuk veya sıcak terlemeler', category: 'autonomic' },
-];
+export function beckAnxietyScoreBand(totalScore: number): BeckAnxietyScoreBand {
+  if (totalScore >= 26) return '26–63 · yüksek düzey (el kitabı)';
+  if (totalScore >= 16) return '16–25 · orta düzey (el kitabı)';
+  if (totalScore >= 8) return '8–15 · hafif düzey (el kitabı)';
+  return '0–7 · minimal düzey (el kitabı)';
+}
 
-export const BAI_SEVERITY_OPTIONS = [
-  { score: 0, label: '0 - Hiç', desc: 'Beni hiç rahatsız etmedi' },
-  { score: 1, label: '1 - Hafif', desc: 'Beni pek fazla rahatsız etmedi' },
-  { score: 2, label: '2 - Orta', desc: 'Beni oldukça rahatsız etti ama katlanabildim' },
-  { score: 3, label: '3 - Ciddi', desc: 'Beni çok fazla rahatsız etti; neredeyse dayanamadım' },
-];
+export function scoreBeckAnxiety(input: unknown): BeckAnxietyScoring {
+  const validation = validateBeckAnxietyResponses(input);
+  if (!validation.valid) return { status: 'invalid', validation };
+  if (!validation.complete) return { status: 'incomplete', validation };
+  const totalScore = validation.responses.reduce((sum, response) => sum + response.score, 0);
+  return {
+    status: 'complete',
+    validation,
+    responses: validation.responses,
+    totalScore,
+    maxScore: BAI_MAX_TOTAL,
+    scoreBand: beckAnxietyScoreBand(totalScore),
+  };
+}
 
+export const beckAnxietyResponsesFromSlots = responsesFromAnswerSlots;
+
+export type BeckAnxietyRecordInput = {
+  id: string;
+  clientId?: string;
+  name: string;
+  gender: Gender;
+  age?: number;
+  testDate?: string;
+  expertNote?: string;
+  revision?: number;
+  revisionOf?: string;
+  createdAt?: string;
+};
+
+export function createBeckAnxietyResult(
+  scoring: BeckAnxietyScoring,
+  input: BeckAnxietyRecordInput,
+): BeckAnxietyResult {
+  if (scoring.status !== 'complete') {
+    throw new Error('Tamamlanmamış veya geçersiz BAI yanıtlarından sonuç kaydı oluşturulamaz.');
+  }
+  const createdAt = input.createdAt ?? new Date().toISOString();
+  return {
+    id: input.id,
+    clientId: input.clientId,
+    clientName: input.name,
+    clientGender: input.gender,
+    clientAge: input.age,
+    testDate: input.testDate ?? clinicToday(),
+    instrumentId: BAI_INSTRUMENT_ID,
+    instrumentVersion: BAI_INSTRUMENT_VERSION,
+    scoringVersion: BAI_SCORING_VERSION,
+    completionStatus: 'complete',
+    responses: scoring.responses,
+    answers: scoring.responses.map((response) => response.score),
+    totalScore: scoring.totalScore,
+    maximumScore: BAI_MAX_TOTAL,
+    scoreBand: scoring.scoreBand,
+    clinicalInterpretation: `BAI toplam puanı ${scoring.totalScore}/${BAI_MAX_TOTAL}. ${scoring.scoreBand}. Bu el kitabı aralığı Türkçe bir tanı eşiği değildir; sonuç tek başına anksiyete bozukluğu tanısı veya tedavi kararı üretmez.`,
+    notes: input.expertNote?.trim() || undefined,
+    revision: input.revision ?? 1,
+    revisionOf: input.revisionOf,
+    createdAt,
+    updatedAt: createdAt,
+  };
+}
+
+/** Backward-compatible entry point; unlike the retired implementation it throws on partial/invalid input. */
 export function calculateBeckAnxiety(
   answers: number[],
-  clientInfo: { name: string; gender: Gender; age?: number; clientId?: string; testDate?: string }
+  clientInfo: { name: string; gender: Gender; age?: number; clientId?: string; testDate?: string },
 ): BeckAnxietyResult {
-  const safeAnswers = answers.slice(0, 21);
-  while (safeAnswers.length < 21) safeAnswers.push(0);
-
-  let totalScore = 0;
-  let subjectiveScore = 0;
-  let neurovegetativeScore = 0;
-  let autonomicScore = 0;
-  let motorScore = 0;
-
-  safeAnswers.forEach((score, index) => {
-    const val = Math.max(0, Math.min(3, score || 0));
-    totalScore += val;
-    const cat = BECK_ANXIETY_SYMPTOMS[index]?.category || 'subjective';
-    if (cat === 'subjective') subjectiveScore += val;
-    else if (cat === 'neurovegetative') neurovegetativeScore += val;
-    else if (cat === 'autonomic') autonomicScore += val;
-    else if (cat === 'motor') motorScore += val;
-  });
-
-  let severity: BeckAnxietySeverity = 'Minimal';
-  if (totalScore >= 26) severity = 'Şiddetli';
-  else if (totalScore >= 16) severity = 'Orta';
-  else if (totalScore >= 8) severity = 'Hafif';
-  else severity = 'Minimal';
-
-  let interpretation = '';
-  if (severity === 'Minimal') {
-    interpretation =
-      'Danışanın BAI toplam puanı (' +
-      totalScore +
-      '/63) normal / minimal düzeydedir. Klinik düzeyde anksiyete tablosu saptanmamıştır. Somatik ve otonomik uyarılma olağan seviyededir.';
-  } else if (severity === 'Hafif') {
-    interpretation =
-      'Danışanın BAI toplam puanı (' +
-      totalScore +
-      '/63) hafif düzeyde anksiyeteye işaret etmektedir. Zaman zaman ortaya çıkan bedensel gerginlik ve endişe durumları mevcuttur. Gevşeme egzersizleri ve BDT temelli kaygı yönetimi önerilir.';
-  } else if (severity === 'Orta') {
-    interpretation =
-      'Danışanın BAI toplam puanı (' +
-      totalScore +
-      '/63) klinik olarak anlamlı orta düzeyde anksiyete düzeyine işaret etmektedir. Çarpıntı, nefes darlığı, kontrol kaybı korkusu gibi otonomik ve bilişsel semptomlar gün içinde yoğunlaşabilmektedir. Yapılandırılmış anksiyete terapisi protokolleri (maruz bırakma, bilişsel yeniden yapılandırma) uygulanmalıdır.';
-  } else {
-    interpretation =
-      'Danışanın BAI toplam puanı (' +
-      totalScore +
-      '/63) şiddetli anksiyete ve panik uyarılması düzeyindedir. Yüksek otonomik reaktivite, yoğun dehşet ve ölüm/kontrol kaybı korkuları günlük yaşamı ciddi derecede kısıtlamaktadır. Psikiyatrik farmakoterapi konsültasyonu ile eş zamanlı acil psikoterapi desteği gereklidir.';
-  }
-
-  return {
-    id: 'bai_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 7),
+  const scoring = scoreBeckAnxiety(responsesFromAnswerSlots(answers));
+  return createBeckAnxietyResult(scoring, {
+    id: `bai_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
     clientId: clientInfo.clientId,
-    clientName: clientInfo.name,
-    clientGender: clientInfo.gender,
-    clientAge: clientInfo.age,
-    testDate: clientInfo.testDate || clinicToday(),
-    answers: safeAnswers,
-    totalScore,
-    severity,
-    subjectiveScore,
-    neurovegetativeScore,
-    autonomicScore,
-    motorScore,
-    clinicalInterpretation: interpretation,
-    createdAt: new Date().toISOString(),
-  };
+    name: clientInfo.name,
+    gender: clientInfo.gender,
+    age: clientInfo.age,
+    testDate: clientInfo.testDate,
+  });
+}
+
+export function assertBeckAnxietyResultIntegrity(result: BeckAnxietyResult): void {
+  if (result.scoringVersion !== BAI_SCORING_VERSION) return;
+  if (
+    typeof result.id !== 'string' || !result.id.trim()
+    || typeof result.clientName !== 'string' || !result.clientName.trim()
+    || (result.clientGender !== 'KADIN' && result.clientGender !== 'ERKEK')
+    || (result.clientAge !== undefined && (!Number.isInteger(result.clientAge) || result.clientAge < 0 || result.clientAge > 120))
+    || !isValidClinicDate(result.testDate)
+    || !Number.isInteger(result.revision) || (result.revision ?? 0) < 1
+    || result.revisionOf === result.id
+    || !Number.isFinite(Date.parse(result.createdAt))
+    || typeof result.updatedAt !== 'string' || !Number.isFinite(Date.parse(result.updatedAt))
+  ) throw new Error('BAI bütünlük kontrolü başarısız: kayıt metadatası geçersiz.');
+
+  const scoring = scoreBeckAnxiety(result.responses);
+  if (scoring.status !== 'complete') {
+    throw new Error('BAI bütünlük kontrolü başarısız: yanıt kümesi tamamlanmış ve geçerli değil.');
+  }
+  const answersMatch = Array.isArray(result.answers)
+    && result.answers.length === BAI_ITEM_COUNT
+    && result.answers.every((answer, index) => answer === scoring.responses[index]?.score);
+  if (
+    result.instrumentId !== BAI_INSTRUMENT_ID
+    || result.instrumentVersion !== BAI_INSTRUMENT_VERSION
+    || result.completionStatus !== 'complete'
+    || result.totalScore !== scoring.totalScore
+    || result.maximumScore !== BAI_MAX_TOTAL
+    || result.scoreBand !== scoring.scoreBand
+    || result.severity !== undefined
+    || result.subjectiveScore !== undefined
+    || result.neurovegetativeScore !== undefined
+    || result.autonomicScore !== undefined
+    || result.motorScore !== undefined
+    || !answersMatch
+  ) throw new Error('BAI bütünlük kontrolü başarısız: sonuç yanıtlarla tutarlı değil; kayıt oluşturulmadı.');
+}
+
+export function beckAnxietyScoreContext(result: BeckAnxietyResult): string {
+  return result.scoreBand ?? (result.severity ? `${result.severity} (eski kayıt)` : `${result.totalScore}/63`);
 }

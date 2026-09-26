@@ -204,4 +204,10 @@ test('13 — sonuç PDF aynı sonuç nesnesindeki kimlik, toplam, 21 yanıt ve u
   expect(capture).toContain('21 / 63');
   expect(capture).toContain('Klinik görüşmede ayrıca değerlendirildi.');
   await expect(page.locator('.bdi-response-summary span')).toHaveCount(21);
+  await page.emulateMedia({ media: 'print' });
+  await expect(page.locator('.assessment-result-print-header')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Sonucu kaydet' })).toBeHidden();
+  const pdf = await page.pdf({ format: 'A4', printBackground: true });
+  expect(pdf.subarray(0, 4).toString()).toBe('%PDF');
+  expect(pdf.byteLength).toBeGreaterThan(8_000);
 });

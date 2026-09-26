@@ -13,6 +13,9 @@ import type {
 } from './clinicalTypes';
 import type { RapidScreeningResult } from './rapidScreening';
 import { beckCriticalItemScore, beckDepressionScoreContext, isBeckCriticalItemEndorsed } from './beckDepression';
+import { beckAnxietyScoreContext } from './beckAnxiety';
+import { phq9CriticalItemEndorsed, rapidScoreContext } from './rapidScreening';
+import { scl90CriticalItemFlags } from './scl90';
 
 export type GoalStatus = 'active' | 'met' | 'paused';
 
@@ -253,13 +256,25 @@ export function readingsForClient(
       'BAI',
       snapshot.bai
         .filter((item) => item.clientId === clientId)
-        .map((item) => ({ date: item.testDate, score: item.totalScore, band: item.severity })),
+        .map((item) => ({
+          date: item.testDate,
+          score: item.totalScore,
+          band: beckAnxietyScoreContext(item),
+          recordedAt: item.updatedAt ?? item.createdAt,
+          sequence: item.revision,
+        })),
     ),
     readScale(
       'GAD-7',
       snapshot.screenings
         .filter((item) => item.clientId === clientId && item.type === 'gad7')
-        .map((item) => ({ date: item.testDate, score: item.totalScore, band: item.severity })),
+        .map((item) => ({
+          date: item.testDate,
+          score: item.totalScore,
+          band: rapidScoreContext(item),
+          recordedAt: item.updatedAt ?? item.createdAt,
+          sequence: item.revision,
+        })),
     ),
     readScale(
       'PHQ-9',
@@ -268,8 +283,10 @@ export function readingsForClient(
         .map((item) => ({
           date: item.testDate,
           score: item.totalScore,
-          band: item.severity,
-          flag: item.suicideRisk ? 'Madde 9 pozitif' : undefined,
+          band: rapidScoreContext(item),
+          recordedAt: item.updatedAt ?? item.createdAt,
+          sequence: item.revision,
+          flag: phq9CriticalItemEndorsed(item) ? 'Madde 9 işaretli' : undefined,
         })),
     ),
     readScale(
@@ -279,8 +296,10 @@ export function readingsForClient(
         .map((item) => ({
           date: item.testDate,
           score: item.gsi,
-          band: item.gsi >= 1 ? 'Klinik eşik' : 'Eşik altı',
-          flag: (item.answers?.[14] ?? 0) > 0 ? `Madde 15: ${item.answers[14]}` : undefined,
+          band: item.normReference === 'none' ? 'Ham indeks · norm uygulanmadı' : 'Eski kayıt · norm dayanağını doğrulayın',
+          recordedAt: item.updatedAt ?? item.createdAt,
+          sequence: item.revision,
+          flag: scl90CriticalItemFlags(item).length ? scl90CriticalItemFlags(item).join(', ') : undefined,
         })),
     ),
   ];

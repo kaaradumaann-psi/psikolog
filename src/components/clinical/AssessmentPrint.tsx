@@ -74,13 +74,13 @@ export function AssessmentPaperSheet({
   options: PaperOption[];
 }) {
   const meta = assessmentMeta(assessment);
-  const licensed = meta.access === 'licensed';
+  const transferOnly = meta.itemContent === 'transfer-only';
 
   return (
-    <article className={`paper-assessment-sheet${licensed ? ' is-licensed-response-sheet' : ''}`}>
+    <article className={`paper-assessment-sheet${transferOnly ? ' is-licensed-response-sheet' : ''}`}>
       <header className="paper-assessment-header">
         <div>
-          <span>{licensed ? 'LİSANSLI FORM İÇİN YANIT AKTARIM SAYFASI' : 'DANIŞAN ÖZ BİLDİRİM FORMU'}</span>
+          <span>{transferOnly ? 'YETKİLİ / DOĞRULANMIŞ FORM İÇİN YANIT AKTARIM SAYFASI' : 'DANIŞAN ÖZ BİLDİRİM FORMU'}</span>
           <h1>{meta.title}</h1>
           <p>{meta.period} · {items.length} madde</p>
         </div>
@@ -92,16 +92,16 @@ export function AssessmentPaperSheet({
         <div><span>Tarih</span><strong>{date || ' '}</strong></div>
       </div>
 
-      <section className={`paper-assessment-instruction${licensed ? ' is-rights-restricted' : ''}`}>
-        <strong>{licensed ? 'Önemli lisans sınırı' : 'Yönerge'}</strong>
-        <p>{licensed ? meta.printNotice : meta.respondentInstruction}</p>
+      <section className={`paper-assessment-instruction${transferOnly ? ' is-rights-restricted' : ''}`}>
+        <strong>{transferOnly ? 'Aktarım ve kaynak sınırı' : 'Yönerge'}</strong>
+        <p>{transferOnly ? meta.printNotice : meta.respondentInstruction}</p>
       </section>
 
       <table className="paper-assessment-table">
         <thead>
           <tr>
             <th scope="col">No</th>
-            {!licensed && <th scope="col">Madde</th>}
+            {!transferOnly && <th scope="col">Madde</th>}
             {options.map((option) => <th scope="col" key={option.score}><b>{option.score}</b><span>{option.label}</span></th>)}
           </tr>
         </thead>
@@ -109,7 +109,7 @@ export function AssessmentPaperSheet({
           {items.map((item) => (
             <tr key={item.id}>
               <th scope="row">{item.id}</th>
-              {!licensed && <td>{item.text}</td>}
+              {!transferOnly && <td>{item.text}</td>}
               {options.map((option) => <td key={option.score}><span className="paper-answer-circle" /></td>)}
             </tr>
           ))}
@@ -159,7 +159,7 @@ function preparePrint(mode: 'paper' | 'result', title: string) {
 
 export function printAssessmentPaper(assessment: AssessmentKey) {
   const meta = assessmentMeta(assessment);
-  const suffix = meta.access === 'licensed' ? 'yanit-aktarim-formu' : 'bos-form';
+  const suffix = meta.itemContent === 'transfer-only' ? 'yanit-aktarim-formu' : 'bos-form';
   preparePrint('paper', `${meta.code}-${suffix}`);
 }
 

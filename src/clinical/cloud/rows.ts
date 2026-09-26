@@ -24,7 +24,10 @@ import type {
 } from '../clinicalTypes';
 import type { CaseFormulation, SafetyPlan } from '../casework';
 import type { PracticeDocument, PracticeNote, PracticeSettings, PracticeTask, TaskPriority, TaskStatus } from '../practiceStore';
-import type { RapidScreeningResult } from '../rapidScreening';
+import { assertRapidScreeningResultIntegrity, rapidScoreContext, type RapidScreeningResult } from '../rapidScreening';
+import { assertBeckAnxietyResultIntegrity, beckAnxietyScoreContext } from '../beckAnxiety';
+import { assertBeckDepressionResultIntegrity, beckDepressionScoreContext } from '../beckDepression';
+import { assertScl90ResultIntegrity } from '../scl90';
 import { ageFromBirthDate, clinicToday } from '../recordRules';
 
 export type Row = Record<string, unknown>;
@@ -331,6 +334,10 @@ export function testToRows(
       test_definition_id: SYSTEM_TEST_DEFINITIONS[definitionKey],
       administration_date: /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : clinicToday(),
       status: 'completed',
+      instrument_version: nullableText((result as { instrumentVersion?: string }).instrumentVersion),
+      scoring_version: nullableText((result as { scoringVersion?: string }).scoringVersion),
+      revision: (result as { revision?: number }).revision ?? 1,
+      amendment_of: optionalResolve(ctx, (result as { revisionOf?: string }).revisionOf),
       notes: nullableText((result as { notes?: string }).notes),
       created_by: ctx.userId,
     },
@@ -356,10 +363,14 @@ function summarizeTest(
   }
   if (kind === 'screening') {
     const screening = result as RapidScreeningResult;
-    return `${screening.type.toUpperCase()} · ${screening.totalScore} · ${screening.severity}`.slice(0, 500);
+    return `${screening.type.toUpperCase()} · ${screening.totalScore} · ${rapidScoreContext(screening)}`.slice(0, 500);
   }
-  const beck = result as BeckDepressionResult | BeckAnxietyResult;
-  return `${kind.toUpperCase()} · ${beck.totalScore} · ${beck.severity}`.slice(0, 500);
+  if (kind === 'bdi') {
+    const bdi = result as BeckDepressionResult;
+    return `BDI · ${bdi.totalScore} · ${beckDepressionScoreContext(bdi)}`.slice(0, 500);
+  }
+  const bai = result as BeckAnxietyResult;
+  return `BAI · ${bai.totalScore} · ${beckAnxietyScoreContext(bai)}`.slice(0, 500);
 }
 
 export type DecodedTest =
@@ -382,10 +393,33 @@ export function decodeTestRow(row: Row, clientName: string): DecodedTest | null 
     clientName,
   } as Row;
   delete value.kind;
-  if (kind === 'bdi') return { kind, value: value as unknown as BeckDepressionResult };
-  if (kind === 'bai') return { kind, value: value as unknown as BeckAnxietyResult };
-  if (kind === 'scl90') return { kind, value: value as unknown as Scl90Result };
-  if (kind === 'screening') return { kind, value: value as unknown as RapidScreeningResult };
+  try {
+    if (kind === 'bdi') {
+      const decoded = value as unknown as BeckDepressionResult;
+      assertBeckDepressionResultIntegrity(decoded);
+      return { kind, value: decoded };
+    }
+    if (kind === 'bai') {
+      const decoded = value as unknown as BeckAnxietyResult;
+      assertBeckAnxietyResultIntegrity(decoded);
+      return { kind, value: decoded };
+    }
+    if (kind === 'scl90') {
+      const decoded = value as unknown as Scl90Result;
+      assertScl90ResultIntegrity(decoded);
+      return { kind, value: decoded };
+    }
+    if (kind === 'screening') {
+      const decoded = value as unknown as RapidScreeningResult;
+      assertRapidScreeningResultIntegrity(decoded);
+      return { kind, value: decoded };
+    }
+  } catch {
+    // A current-version cloud payload with inconsistent derived fields must not
+    // enter histories or reports. Historical versions remain readable through
+    // each instrument's explicit compatibility policy.
+    return null;
+  }
   return null;
 }
 

@@ -27,10 +27,12 @@ import {
   subscribeClinicalStore,
 } from '../../clinical/clinicalStore';
 import { readingsForClient, measurementNote, safetyPlanIsEmpty } from '../../clinical/casework';
-import type { RapidScreeningResult } from '../../clinical/rapidScreening';
+import { phq9CriticalItemEndorsed, rapidScoreContext, type RapidScreeningResult } from '../../clinical/rapidScreening';
 import { getSafetyPlan, getScreenings, getSettings, subscribePracticeStore } from '../../clinical/practiceStore';
 import { clinicToday, formatClinicDate, maskTc } from '../../clinical/recordRules';
 import { beckDepressionScoreContext, isBeckCriticalItemEndorsed } from '../../clinical/beckDepression';
+import { beckAnxietyScoreContext } from '../../clinical/beckAnxiety';
+import { scl90CriticalItemFlags } from '../../clinical/scl90';
 import { ClinicalDialog } from './ClinicalDialog';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { RecordLockActions, RecordStatusBadge } from './RecordLockActions';
@@ -339,7 +341,7 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
               const count = section.id === 'sessions'
                 ? sessions.length
                 : section.id === 'tests'
-                  ? bdiTests.length + baiTests.length + scl90Tests.length
+                  ? bdiTests.length + baiTests.length + scl90Tests.length + screenings.length
                   : section.id === 'reports'
                     ? reports.length
                     : undefined;
@@ -541,15 +543,15 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
                     </div>
                     <div>
                       <strong style={{ fontSize: 15 }}>Beck Anksiyete Envanteri (BAI)</strong>
-                      <div style={{ fontSize: 12, color: 'var(--soft)' }}>Uygulama Tarihi: {t.testDate}</div>
+                      <div style={{ fontSize: 12, color: 'var(--soft)' }}>Uygulama: {formatClinicDate(t.testDate)} · Revizyon {t.revision ?? 1}</div>
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <span style={{ fontSize: 20, fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)' }}>
                       {t.totalScore} / 63
                     </span>
-                    <span className={`badge ${t.severity === 'Şiddetli' ? 'badge-risk-high' : t.severity === 'Orta' ? 'badge-risk-moderate' : 'badge-active'}`}>
-                      {t.severity} Anksiyete
+                    <span className="badge badge-active">
+                      {beckAnxietyScoreContext(t)}
                     </span>
                   </div>
                 </div>
@@ -569,16 +571,16 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
                     </div>
                     <div>
                       <strong style={{ fontSize: 15 }}>SCL-90-R Belirti Tarama Listesi</strong>
-                      <div style={{ fontSize: 12, color: 'var(--soft)' }}>Uygulama Tarihi: {t.testDate}</div>
+                      <div style={{ fontSize: 12, color: 'var(--soft)' }}>Uygulama: {formatClinicDate(t.testDate)} · Revizyon {t.revision ?? 1}</div>
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>Genel Semptom İndeksi</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>Ham Genel Semptom İndeksi</div>
                       <strong style={{ fontSize: 16 }}>GSI: {t.gsi}</strong>
                     </div>
-                    <span className={`badge ${t.gsi >= 1.0 ? 'badge-risk-moderate' : 'badge-active'}`}>
-                      {t.gsi >= 1.0 ? 'Klinik Eşik Üzerinde' : 'Normal Sınırlar'}
+                    <span className={`badge ${scl90CriticalItemFlags(t).length ? 'badge-risk-moderate' : 'badge-active'}`}>
+                      {scl90CriticalItemFlags(t).length ? 'Kritik yanıt incelemesi' : 'Norm uygulanmadı'}
                     </span>
                   </div>
                 </div>
@@ -588,7 +590,31 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
               </div>
             ))}
 
-            {bdiTests.length === 0 && baiTests.length === 0 && scl90Tests.length === 0 && (
+            {/* GAD-7 / PHQ-9 Kayıtları */}
+            {screenings.map(t => (
+              <div key={t.id} className="modern-table-card client-assessment-record">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div className="client-assessment-icon"><Icon name="trend" size={18} /></div>
+                    <div>
+                      <strong style={{ fontSize: 15 }}>{t.type === 'gad7' ? 'GAD-7' : 'PHQ-9'} Kısa Tarama</strong>
+                      <div style={{ fontSize: 12, color: 'var(--soft)' }}>Uygulama: {formatClinicDate(t.testDate)} · Revizyon {t.revision ?? 1}</div>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontSize: 20, fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)' }}>
+                      {t.totalScore} / {t.type === 'gad7' ? 21 : 27}
+                    </span>
+                    <span className={`badge ${phq9CriticalItemEndorsed(t) ? 'badge-risk-moderate' : 'badge-active'}`}>
+                      {phq9CriticalItemEndorsed(t) ? 'Madde 9 incelemesi' : rapidScoreContext(t)}
+                    </span>
+                  </div>
+                </div>
+                <p className="client-assessment-note">{t.clinicalNote}</p>
+              </div>
+            ))}
+
+            {bdiTests.length === 0 && baiTests.length === 0 && scl90Tests.length === 0 && screenings.length === 0 && (
               <div className="empty-state-card">
                 <Icon name="activity" size={32} />
                 <h4>Uygulanmış Test Bulunmuyor</h4>

@@ -15,6 +15,7 @@ import type {
 } from './clinicalTypes';
 import { getDocumentsByClient, getFormulations, getSafetyPlans, purgeClientPractice, recordAudit } from './practiceStore';
 import { MAX_CLIENTS, MAX_SESSIONS, reportStorageError } from './recordRules';
+import { assertBeckDepressionResultIntegrity } from './beckDepression';
 import { cacheKey, cloudContext, queueWrite } from './cloud/sync';
 import type { ClinicalSnapshot } from './cloud/repository';
 
@@ -407,6 +408,7 @@ export function getBeckDepressionTests(): BeckDepressionResult[] {
 }
 
 export function saveBeckDepressionTest(test: BeckDepressionResult): void {
+  assertBeckDepressionResultIntegrity(test);
   if (cloudContext() && (!test.clientId || !getClientById(test.clientId))) {
     throw new Error('Buluta kaydetmek için kayıtlı danışan dosyası seçin.');
   }

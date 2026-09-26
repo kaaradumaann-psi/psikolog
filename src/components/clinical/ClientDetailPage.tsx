@@ -29,7 +29,8 @@ import {
 import { readingsForClient, measurementNote, safetyPlanIsEmpty } from '../../clinical/casework';
 import type { RapidScreeningResult } from '../../clinical/rapidScreening';
 import { getSafetyPlan, getScreenings, getSettings, subscribePracticeStore } from '../../clinical/practiceStore';
-import { clinicToday, maskTc } from '../../clinical/recordRules';
+import { clinicToday, formatClinicDate, maskTc } from '../../clinical/recordRules';
+import { beckDepressionScoreContext, isBeckCriticalItemEndorsed } from '../../clinical/beckDepression';
 import { ClinicalDialog } from './ClinicalDialog';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { RecordLockActions, RecordStatusBadge } from './RecordLockActions';
@@ -511,16 +512,16 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
                       <Icon name="pulse" size={18} />
                     </div>
                     <div>
-                      <strong style={{ fontSize: 15 }}>Beck Depresyon Envanteri (BDI)</strong>
-                      <div style={{ fontSize: 12, color: 'var(--soft)' }}>Uygulama Tarihi: {t.testDate}</div>
+                      <strong style={{ fontSize: 15 }}>Beck Depresyon Envanteri (BDI; BDI-II değil)</strong>
+                      <div style={{ fontSize: 12, color: 'var(--soft)' }}>Uygulama: {formatClinicDate(t.testDate)} · Revizyon {t.revision ?? 1}</div>
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <span style={{ fontSize: 20, fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--text)' }}>
                       {t.totalScore} / 63
                     </span>
-                    <span className={`badge ${t.severity === 'Şiddetli' ? 'badge-risk-high' : t.severity === 'Orta' ? 'badge-risk-moderate' : 'badge-active'}`}>
-                      {t.severity} Depresyon
+                    <span className={`badge ${isBeckCriticalItemEndorsed(t) ? 'badge-risk-moderate' : 'badge-active'}`}>
+                      {isBeckCriticalItemEndorsed(t) ? 'Madde 9 değerlendirmesi' : beckDepressionScoreContext(t)}
                     </span>
                   </div>
                 </div>

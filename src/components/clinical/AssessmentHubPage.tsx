@@ -12,6 +12,7 @@ import { Icon } from '../Icon';
 import type { IconName } from '../Icon';
 import { navigate } from '../../router';
 import { assessmentMeta, type AssessmentKey } from '../../clinical/assessmentCatalog';
+import { beckDepressionScoreContext, isBeckCriticalItemEndorsed } from '../../clinical/beckDepression';
 
 type AssessmentTool = {
   key: AssessmentKey;
@@ -26,8 +27,8 @@ type AssessmentTool = {
 
 const TOOLS: AssessmentTool[] = [
   {
-    key: 'bdi', code: 'BDI', title: 'Beck Depresyon Envanteri', icon: 'pulse', meta: '21 MADDE · DEPRESYON',
-    detail: 'Hisli (1989) Türkçe uyarlaması. Depresif belirti şiddetini izleyin; madde 9 için güvenlik uyarısı görünür.',
+    key: 'bdi', code: 'BDI', title: 'Beck Depresyon Envanteri', icon: 'pulse', meta: '21 MADDE · TOPLAM PUAN',
+    detail: 'Hisli Türkçe BDI formu için puan aktarımı; BDI-II değildir. Yetkili form gerekir, madde metni uygulamada dağıtılmaz.',
     path: '/testler/beck-depresyon', action: 'Beck Depresyon testini başlat',
   },
   {
@@ -87,8 +88,8 @@ export function AssessmentHubPage() {
   const history: HistoryItem[] = [
     ...bdiTests.map((test) => ({
       id: test.id, clientId: test.clientId, clientName: test.clientName,
-      title: 'Beck Depresyon · BDI', date: test.testDate, score: `${test.totalScore}/63`,
-      severity: `${test.severity} depresyon`, tone: severityTone(test.severity), safetyFlag: test.suicideRisk,
+      title: 'Beck Depresyon · BDI (pre-II)', date: test.testDate, score: `${test.totalScore}/63`,
+      severity: beckDepressionScoreContext(test), tone: 'normal' as const, safetyFlag: isBeckCriticalItemEndorsed(test),
     })),
     ...baiTests.map((test) => ({
       id: test.id, clientId: test.clientId, clientName: test.clientName,

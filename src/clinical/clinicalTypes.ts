@@ -112,9 +112,9 @@ export interface Appointment {
 }
 
 /* ==========================================================================
-   Beck Depresyon Envanteri (BDI / BDO)
+   Beck Depresyon Envanteri — BDI (Hisli Türkçe formu; BDI-II değildir)
    ========================================================================== */
-export type BeckDepressionSeverity = 'Minimal' | 'Hafif' | 'Orta' | 'Şiddetli';
+export type BeckDepressionScoreBand = 'Tarama eşiğinin altında' | 'Tarama eşiğinde veya üzerinde';
 
 export interface BeckDepressionResult {
   id: string;
@@ -122,17 +122,37 @@ export interface BeckDepressionResult {
   clientName: string;
   clientGender: Gender;
   clientAge?: number;
-  testDate: string; // YYYY-MM-DD
-  answers: number[]; // 21 madde, her biri 0-3
+  testDate: string; // YYYY-MM-DD, Europe/Istanbul klinik tarihi
+  instrumentId?: string; // Eski kayıtlarda açık kimlik metadatası bulunmayabilir.
+  instrumentVersion?: string;
+  scoringVersion?: string;
+  completionStatus?: 'complete';
+  responses?: Array<{ itemId: number; score: number }>;
+  answers: number[]; // Eski okuyucular için 21 × 0-3 anlık görüntüsü.
   totalScore: number; // 0-63
-  severity: BeckDepressionSeverity;
-  cognitiveAffectiveScore: number; // Maddeler 1-13 (0-39)
-  somaticPerformanceScore: number; // Maddeler 14-21 (0-24)
-  suicideRisk: boolean; // Madde 9 > 0 ise true
-  suicideItemScore: number; // Madde 9 puanı (0-3)
+  maximumScore?: number;
+  screeningThreshold?: number;
+  screeningThresholdReached?: boolean;
+  scoreBand?: BeckDepressionScoreBand;
+  /** @deprecated Yeni BDI kayıtları şiddet sınıfı üretmez; yalnız eski kayıt uyumluluğu. */
+  severity?: 'Minimal' | 'Hafif' | 'Orta' | 'Şiddetli';
+  criticalItemEndorsed?: boolean;
+  criticalItemScore?: number;
+  criticalItemFlags?: string[];
+  /** @deprecated Eski kayıt uyumluluğu; yeni kayıtlarda criticalItemEndorsed kullanılır. */
+  suicideRisk?: boolean;
+  /** @deprecated Eski kayıt uyumluluğu; yeni kayıtlarda criticalItemScore kullanılır. */
+  suicideItemScore?: number;
+  /** @deprecated Doğrulanmamış tarihsel alt skor; yeni kayıtlarda üretilmez. */
+  cognitiveAffectiveScore?: number;
+  /** @deprecated Doğrulanmamış tarihsel alt skor; yeni kayıtlarda üretilmez. */
+  somaticPerformanceScore?: number;
   clinicalInterpretation: string;
   notes?: string;
+  revision?: number;
+  revisionOf?: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 /* ==========================================================================

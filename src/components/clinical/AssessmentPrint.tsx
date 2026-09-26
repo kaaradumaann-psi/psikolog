@@ -1,6 +1,7 @@
 import type { AssessmentKey } from '../../clinical/assessmentCatalog';
 import { assessmentMeta } from '../../clinical/assessmentCatalog';
 import { COPYRIGHT_HOLDER, COPYRIGHT_YEAR } from '../../site';
+import { formatClinicDate } from '../../clinical/recordRules';
 import { Icon } from '../Icon';
 
 type PaperItem = {
@@ -31,10 +32,14 @@ export function AssessmentResultPrintHeader({
   assessment,
   respondentName,
   date,
+  instrumentVersion,
+  demographics,
 }: {
   assessment: AssessmentKey;
   respondentName: string;
   date: string;
+  instrumentVersion?: string;
+  demographics?: string;
 }) {
   const meta = assessmentMeta(assessment);
   return (
@@ -45,9 +50,11 @@ export function AssessmentResultPrintHeader({
       </div>
       <dl>
         <div><dt>Danışan</dt><dd>{respondentName.trim() || '—'}</dd></div>
-        <div><dt>Uygulama tarihi</dt><dd>{date || '—'}</dd></div>
+        <div><dt>Uygulama tarihi</dt><dd>{formatClinicDate(date)}</dd></div>
+        {instrumentVersion && <div><dt>Sürüm</dt><dd>{instrumentVersion}</dd></div>}
+        {demographics && <div><dt>Demografi</dt><dd>{demographics}</dd></div>}
       </dl>
-      <p>{meta.rightsNotice}</p>
+      <p>{meta.citation} {meta.rightsNotice}</p>
       <span className="assessment-result-product-copyright">Uygulama çıktısı © {COPYRIGHT_YEAR} {COPYRIGHT_HOLDER}</span>
     </header>
   );

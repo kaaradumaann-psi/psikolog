@@ -26,6 +26,7 @@ import { Icon } from '../Icon';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { RecordLockActions, RecordStatusBadge } from './RecordLockActions';
 import { COPYRIGHT_HOLDER, COPYRIGHT_YEAR } from '../../site';
+import { beckDepressionScoreContext, isBeckCriticalItemEndorsed } from '../../clinical/beckDepression';
 
 export function ClinicalReportsPage() {
   const [reports, setReports] = useState<ClinicalReport[]>(() => getClinicalReports());
@@ -109,9 +110,9 @@ export function ClinicalReportsPage() {
       const bai = getBeckAnxietyTests().find((item) => item.clientId === cId);
       title = 'Beck Envanterleri Duygu-Durum Raporu';
       defaultSections = [
-        { id: 's1', title: '1. Uygulama', content: `Kayıtlı BDI: ${bdi ? 'var' : 'yok'}. Kayıtlı BAI: ${bai ? 'var' : 'yok'}. Uygulanmamış envanter rapora yazılmaz. Puanlar tarama bandıdır, tanı değildir.` },
-        { id: 's2', title: '2. Puanlar', content: `BDI: ${bdi ? `${bdi.totalScore}/63 (${bdi.severity})${bdi.suicideRisk ? ' — Madde 9 uyarısı' : ''}` : 'kayıt yok'}. BAI: ${bai ? `${bai.totalScore}/63 (${bai.severity})` : 'kayıt yok'}.` },
-        { id: 's3', title: '3. Klinik yorum', content: 'Şiddet bandı, görüşme ve işlevsellik ile birlikte okunmalıdır. Güvenlik maddesi pozitifse protokol işletilir.' },
+        { id: 's1', title: '1. Uygulama', content: `Kayıtlı BDI (Hisli Türkçe formu; BDI-II değil): ${bdi ? 'var' : 'yok'}. Kayıtlı BAI: ${bai ? 'var' : 'yok'}. Uygulanmamış envanter rapora yazılmaz. Ölçek puanları tek başına tanı değildir.` },
+        { id: 's2', title: '2. Puanlar', content: `BDI: ${bdi ? `${bdi.totalScore}/63 (${beckDepressionScoreContext(bdi)})${isBeckCriticalItemEndorsed(bdi) ? ' — Madde 9 işaretli; klinik değerlendirme gerekebilir' : ''}` : 'kayıt yok'}. BAI: ${bai ? `${bai.totalScore}/63 (${bai.severity})` : 'kayıt yok'}.` },
+        { id: 's3', title: '3. Klinik yorum', content: 'BDI toplam puanı ve tarama referansı görüşme ve işlevsellik bağlamında okunur; tanı üretmez. Madde 9 işaretliyse otomatik risk sınıfı üretilmeden klinik güvenlik değerlendirmesi yapılır.' },
       ];
     } else if (type === 'scl90') {
       const scl = getScl90Tests().find((item) => item.clientId === cId);

@@ -16,6 +16,7 @@ import './styles/coherence.css';
 import './styles/workspace.css';
 import './styles/content-system.css';
 import './styles/assessment-print.css';
+import './styles/bdi-workspace.css';
 import './styles/admin-workspace.css';
 import './styles/responsive.css';
 

@@ -21,13 +21,32 @@ export function clinicToday(date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
+export function isIsoCalendarDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  if (!year || !month || !day) return false;
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === day;
+}
+
+/** A clinical date is a real YYYY-MM-DD date that is not after today in Istanbul. */
+export function isValidClinicDate(value: string, today = clinicToday()): boolean {
+  return isIsoCalendarDate(value) && value <= today;
+}
+
+/** Formats a date-only value without constructing a timezone-sensitive Date. */
+export function formatClinicDate(value: string): string {
+  if (!isIsoCalendarDate(value)) return '—';
+  const [year, month, day] = value.split('-');
+  return `${day}.${month}.${year}`;
+}
+
 export function ageFromBirthDate(birthDate: string, today = clinicToday()): number | null {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate) || birthDate > today) return null;
+  if (!isIsoCalendarDate(birthDate) || !isIsoCalendarDate(today) || birthDate > today) return null;
   const [year, month, day] = birthDate.split('-').map(Number);
   const [ty, tm, td] = today.split('-').map(Number);
-  if (!year || !month || !day || month > 12 || day > 31) return null;
-  let age = (ty ?? 0) - year;
-  if ((tm ?? 0) < month || ((tm ?? 0) === month && (td ?? 0) < day)) age -= 1;
+  let age = (ty ?? 0) - (year ?? 0);
+  if ((tm ?? 0) < (month ?? 0) || ((tm ?? 0) === (month ?? 0) && (td ?? 0) < (day ?? 0))) age -= 1;
   if (age < 0 || age > 120) return null;
   return age;
 }

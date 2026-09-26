@@ -1,10 +1,10 @@
 const RIGHTS = [
   {
     title: 'Beck Depresyon ve Beck Anksiyete',
-    status: 'Lisanslı / çoğaltma kısıtlı',
-    body: 'Beck envanterleri telif ve marka koruması altındaki ticari araçlardır. Uygulayıcı resmî formu, güncel el kitabını ve gerekli kullanım hakkını yayıncıdan ayrıca temin etmelidir. Uygulamadaki yanıt aktarım çıktısı test kitapçığı değildir ve madde metni içermez.',
+    status: 'Yetkili materyal gerekli',
+    body: 'Bu depoda resmî Türkçe Beck formu için lisans/yetki veya doğrulanmış madde bankası belgesi bulunmamaktadır. Bu nedenle BDI ekranı madde ve seçenek metni dağıtmaz; yalnız yetkili form yanında numaralı puan aktarımı ve sonuç kaydı yapar. BDI modülü BDI-II olarak sunulmaz.',
     href: 'https://www.pearsonassessments.com/footer/legal-policies.html',
-    link: 'Pearson yasal kullanım politikası',
+    link: 'Pearson materyal kullanım politikası',
   },
   {
     title: 'SCL-90-R®',
@@ -22,13 +22,24 @@ const RIGHTS = [
   },
 ] as const;
 
+const BDI_AUTHORITATIVE_LINKS = [
+  { label: 'Beck ve ark. (1961) — PubMed kaydı', href: 'https://pubmed.ncbi.nlm.nih.gov/13688369/' },
+  { label: 'Beck ve ark. (1961) — JAMA Psychiatry / DOI', href: 'https://doi.org/10.1001/archpsyc.1961.01710120031004' },
+  { label: 'Türk Psikologlar Derneği — Hisli (1989) yayın kaydı', href: 'https://psikolog.org.tr/yayinlar/turk-psikoloji-dergisi' },
+  { label: 'APA — depresyon değerlendirme araçları ve erişim bilgisi', href: 'https://www.apa.org/depression-guideline/assessment' },
+  { label: 'Pearson — BDI-II resmî ürün bilgisi (ayrı sürüm)', href: 'https://www.pearsonclinical.in/products/programs/beck-depression-inventory.html' },
+  { label: 'Kapçı ve ark. (2008) — Türk yetişkin BDI-II çalışması', href: 'https://onlinelibrary.wiley.com/doi/10.1002/da.20371' },
+] as const;
+
 const SOURCES = [
   {
-    kicker: 'Beck Depresyon',
+    kicker: 'Beck Depresyon — sürüm kararı',
     items: [
-      'Beck, A. T., Ward, C. H., Mendelson, M., Mock, J., & Erbaugh, J. (1961). An inventory for measuring depression. Archives of General Psychiatry, 4(6), 561–571.',
-      'Hisli, N. (1989). Beck Depresyon Envanteri’nin üniversite öğrencileri için geçerliği, güvenirliği. Psikoloji Dergisi, 7(23), 3–13.',
-      'Bu çalışma alanındaki bantlar: 0–9 minimal, 10–16 hafif, 17–29 orta, 30–63 şiddetli. Madde 9 > 0 güvenlik değerlendirmesi uyarısıdır; tek başına risk kararı değildir.',
+      'Kodda bulunan tarihsel sıra; 1961 BDI / Hisli Türkçe uyarlama ailesiyle ilişkilidir ve BDI-II değildir. Önceki depodaki seçenek metinleri yetkili Türkçe formdan doğrulanamadığı için kaldırılmıştır.',
+      'Beck, A. T., Ward, C. H., Mendelson, M., Mock, J., & Erbaugh, J. (1961). An inventory for measuring depression. Archives of General Psychiatry, 4(6), 561–571. DOI: 10.1001/archpsyc.1961.01710120031004.',
+      'Hisli, N. (1988). Beck Depresyon Envanteri’nin geçerliği üzerine bir çalışma. Psikoloji Dergisi, 6(22), 118–126; Hisli, N. (1989). Beck Depresyon Envanteri’nin üniversite öğrencileri için geçerliği, güvenirliği. Psikoloji Dergisi, 7(23), 3–13.',
+      'Puanlama yalnız 21 madde × 0–3 toplamıdır (0–63). Doğrulanmamış Bilişsel/Duygusal ve Somatik/Performans alt skorları üretilmez. 17 puan yalnız Türkçe BDI literatüründeki tarama referansı olarak gösterilir; tanı veya şiddet sınıfı değildir.',
+      'BDI-II ayrı bir 1996 sürümüdür. Pearson kaynağı farklı yazarları, iki haftalık süreyi, 13–80 yaş aralığını ve değişen madde yapısını bildirir; bu modül BDI-II puanlaması yapmaz. Kapçı ve ark. (2008) Türk yetişkin BDI-II çalışmasının 0–12 / 13–18 / 19–28 / 29–63 aralıkları bu BDI modülüne uygulanmaz.',
     ],
   },
   {
@@ -78,6 +89,21 @@ export function SourcesPage() {
             <a href={item.href} target="_blank" rel="noopener noreferrer">{item.link}</a>
           </article>
         ))}
+      </section>
+
+      <section className="sources-bibliography" aria-labelledby="sources-bdi-links-title">
+        <div className="sources-section-head">
+          <span>BDI KİMLİK DENETİMİ</span>
+          <h2 id="sources-bdi-links-title">Birincil ve otoritatif bağlantılar</h2>
+        </div>
+        <article className="sources-reference-row">
+          <h3>Doğrulama zinciri</h3>
+          <ul>
+            {BDI_AUTHORITATIVE_LINKS.map((source) => (
+              <li key={source.href}><a href={source.href} target="_blank" rel="noopener noreferrer">{source.label}</a></li>
+            ))}
+          </ul>
+        </article>
       </section>
 
       <section className="sources-bibliography" aria-labelledby="sources-bibliography-title">

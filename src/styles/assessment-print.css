@@ -85,6 +85,8 @@
   .sources-reference-row h3 { margin: 0; color: var(--text); font-size: 13.5px; }
   .sources-reference-row ul { margin: 0; padding-left: 18px; color: var(--soft); font-size: 12px; line-height: 1.6; }
   .sources-reference-row li + li { margin-top: 5px; }
+  .sources-reference-row a { color: var(--accent-ink); font-weight: 650; text-decoration: none; }
+  .sources-reference-row a:hover { text-decoration: underline; text-underline-offset: 3px; }
 
   .assessment-print-actions {
     display: flex;

@@ -100,6 +100,35 @@ test('session prep names the homework and an empty safety plan', () => {
   assert.equal(prep?.scores.some((score) => score.flag), true);
 });
 
+test('scheduled (not yet held) appointment does not warn about a pending fee', () => {
+  // Bir görüşme henüz gerçekleşmediyse ödemenin "beklemede" olması normaldir;
+  // yanıltıcı "Ücret bekliyor" uyarısı yalnızca görüşme fiilen olduğunda
+  // (tamamlandı veya danışan gelmedi) ve ödeme hâlâ bekliyorsa çıkmalıdır.
+  const [prep] = buildSessionPreps(snapshot);
+  assert.equal(prep?.feePending, false);
+  assert.doesNotMatch(prep?.checks.join(' ') ?? '', /Ücret bekliyor/);
+});
+
+test('completed appointment with pending payment does warn about the fee', () => {
+  const completedSnapshot: CaseSnapshot = {
+    ...snapshot,
+    appointments: [{ ...snapshot.appointments[0], status: 'completed' }],
+  };
+  const [prep] = buildSessionPreps(completedSnapshot);
+  assert.equal(prep?.feePending, true);
+  assert.match(prep?.checks.join(' ') ?? '', /Ücret bekliyor/);
+});
+
+test('no-show appointment with pending payment does warn about the fee', () => {
+  const noshowSnapshot: CaseSnapshot = {
+    ...snapshot,
+    appointments: [{ ...snapshot.appointments[0], status: 'noshow' }],
+  };
+  const [prep] = buildSessionPreps(noshowSnapshot);
+  assert.equal(prep?.feePending, true);
+  assert.match(prep?.checks.join(' ') ?? '', /Ücret bekliyor/);
+});
+
 test('attention queue puts a safety flag ahead of a task', () => {
   const items = buildAttention(snapshot);
   assert.equal(items[0]?.severity, 'danger');

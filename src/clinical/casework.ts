@@ -329,7 +329,13 @@ export function buildSessionPreps(snapshot: CaseSnapshot, date = snapshot.today)
       if (formulation?.reviewDate && formulation.reviewDate <= date) {
         checks.push('Formülasyon gözden geçirme tarihi geldi.');
       }
-      if (appointment.paymentStatus === 'pending' && appointment.status !== 'cancelled') {
+      // Ücret takibi yalnızca görüşme fiilen gerçekleştiğinde (tamamlandı veya
+      // danışan gelmedi — gelmeyen seans da ücrete tabidir) anlamlıdır. Henüz
+      // gerçekleşmemiş (planlanmış) bir görüşme için "Ücret bekliyor" uyarısı
+      // yanıltıcıdır; ödeme zaten normal şekilde beklemededir.
+      const feeIsOutstanding = appointment.paymentStatus === 'pending'
+        && (appointment.status === 'completed' || appointment.status === 'noshow');
+      if (feeIsOutstanding) {
         checks.push('Ücret bekliyor.');
       }
       return {
@@ -341,7 +347,7 @@ export function buildSessionPreps(snapshot: CaseSnapshot, date = snapshot.today)
         sessionType: appointment.sessionType,
         location: appointment.location,
         status: appointment.status,
-        feePending: appointment.paymentStatus === 'pending',
+        feePending: feeIsOutstanding,
         lastSessionNumber: session?.sessionNumber,
         lastSessionDate: session?.date,
         lastAssessment: session?.assessment ? clip(session.assessment) : undefined,

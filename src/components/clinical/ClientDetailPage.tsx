@@ -41,15 +41,17 @@ import { navigate } from '../../router';
 
 type Tab = 'overview' | 'sessions' | 'formulation' | 'tests' | 'progress' | 'reports' | 'notes' | 'documents';
 
+// Klinik okuma sırası: önce danışan bağlamı (Anamnez), sonra seans akışı,
+// değerlendirme/ölçüm, en sonda idari çıktılar (Raporlar/Belgeler).
 const FILE_SECTIONS: { id: Tab; label: string }[] = [
+  { id: 'overview', label: 'Anamnez' },
   { id: 'sessions', label: 'Seans notları' },
   { id: 'formulation', label: 'Formülasyon' },
   { id: 'tests', label: 'Ölçekler' },
   { id: 'progress', label: 'Gelişim' },
-  { id: 'overview', label: 'Anamnez' },
   { id: 'notes', label: 'Notlar' },
-  { id: 'documents', label: 'Belgeler' },
   { id: 'reports', label: 'Raporlar' },
+  { id: 'documents', label: 'Belgeler' },
 ];
 
 function tabFromLocation(): Tab {
@@ -263,11 +265,20 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
             <Icon name="print" size={16} />
             <span>Dosyayı Yazdır</span>
           </button>
+          <button type="button" className="btn-secondary" onClick={() => navigate(`/takvim?yeni=1&danisan=${encodeURIComponent(client.id)}`)}>
+            <Icon name="calendar" size={16} />
+            <span>Randevu Planla</span>
+          </button>
+          <button type="button" className="btn-secondary" onClick={() => setActiveTab('tests')}>
+            <Icon name="clipboard" size={16} />
+            <span>Test Başlat</span>
+          </button>
           <button type="button" className="btn-primary" onClick={openNewSessionModal}>
             <Icon name="plus" size={16} />
             <span>Yeni Seans Notu (SOAP)</span>
           </button>
         </div>
+
       </div>
 
       {actionError && <p className="record-lock-error" role="alert">{actionError}</p>}
@@ -300,16 +311,10 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
             </p>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button type="button" className="btn-secondary btn-sm" onClick={() => navigate(`/takvim?yeni=1&danisan=${encodeURIComponent(client.id)}`)}>Randevu planla</button>
             <button type="button" className="btn-secondary btn-sm" onClick={() => setActiveTab('formulation')}>Formülasyon</button>
           </div>
         </div>
         <ScoreChips readings={readings} />
-        {readings.length === 0 && (
-          <button type="button" className="btn-secondary btn-sm" onClick={() => setActiveTab('tests')}>
-            Ölçek başlat
-          </button>
-        )}
         {safetyNeeded && safetyPlanIsEmpty(getSafetyPlan(client.id)) && (
           <p className="safety-callout">Güvenlik uyarısı var, plan boş.</p>
         )}

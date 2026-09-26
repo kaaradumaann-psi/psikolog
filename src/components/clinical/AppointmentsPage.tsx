@@ -16,12 +16,45 @@ import { ConfirmDialog } from '../ConfirmDialog';
 import { Icon } from '../Icon';
 import { navigate } from '../../router';
 
+const WEEKDAY_LABELS = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
+
+function monthLabel(date: Date): string {
+  return date.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' });
+}
+function isoFromDate(d: Date): string {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+function startOfMonth(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), 1);
+}
+function daysInMonth(d: Date): number {
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+}
+// Pazartesi (Pzt) haftanın ilk günü kabul edilir.
+function weekdayMon0(d: Date): number {
+  return (d.getDay() + 6) % 7;
+}
+function parseIsoDate(value: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [y, m, d] = value.split('-').map(Number);
+  const dt = new Date(y!, (m ?? 1) - 1, d);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+}
+
 export function AppointmentsPage() {
   const [appointments, setAppointments] = useState<Appointment[]>(() => getAppointments());
   const [clients, setClients] = useState<Client[]>(() => getClients());
   const [sessions, setSessions] = useState<SoapSession[]>(() => getSoapSessions());
   const [dateFilter, setDateFilter] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [view, setView] = useState<'calendar' | 'list'>('calendar');
+  const [monthCursor, setMonthCursor] = useState<Date>(() => {
+    const t = new Date();
+    return new Date(t.getFullYear(), t.getMonth(), 1);
+  });
   const [pendingComplete, setPendingComplete] = useState<Appointment | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Appointment | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -67,14 +100,36 @@ export function AppointmentsPage() {
       });
   }, [appointments, dateFilter, statusFilter]);
 
-  function openNewModal(forClientId?: string) {
+  // Takvim görünümü: gün başına randevu listesi (durum filtresi burada da geçerli;
+  // tarih filtresi ise ay içindeki gün seçimiyle eşleşir, ayrıca kısıtlamaz).
+  const calendarMap = useMemo(() => {
+    const map = new Map<string, Appointment[]>();
+    for (const appointment of appointments) {
+      if (statusFilter !== 'all' && appointment.status !== statusFilter) continue;
+      const list = map.get(appointment.date) ?? [];
+      list.push(appointment);
+      map.set(appointment.date, list);
+    }
+    for (const list of map.values()) list.sort((a, b) => a.time.localeCompare(b.time));
+    return map;
+  }, [appointments, statusFilter]);
+
+  // Tarihe göre filtrelendiğinde takvim de aynı aya kaydırılır, aksi halde
+  // kullanıcı doğru ayı manuel aramak zorunda kalır.
+  useEffect(() => {
+    const target = parseIsoDate(dateFilter);
+    if (!target) return;
+    setMonthCursor(new Date(target.getFullYear(), target.getMonth(), 1));
+  }, [dateFilter]);
+
+  function openNewModal(forClientId?: string, forDate?: string) {
     const selected = clients.find((client) => client.id === forClientId);
     setSaveError(null);
     setEditingApp(null);
     setForm({
       clientId: selected?.id ?? '',
       clientName: selected ? `${selected.firstName} ${selected.lastName}` : '',
-      date: clinicToday(),
+      date: forDate || clinicToday(),
       time: '14:00',
       durationMinutes: 50,
       sessionType: 'Bireysel Terapi',
@@ -188,6 +243,21 @@ export function AppointmentsPage() {
     }
   }
 
+  const todayIso = clinicToday();
+  const calendarCells = useMemo(() => {
+    const year = monthCursor.getFullYear();
+    const month = monthCursor.getMonth();
+    const total = daysInMonth(monthCursor);
+    const leading = weekdayMon0(startOfMonth(monthCursor));
+    const cells: Array<{ date: string | null; day: number | null }> = [];
+    for (let i = 0; i < leading; i++) cells.push({ date: null, day: null });
+    for (let day = 1; day <= total; day++) {
+      cells.push({ date: isoFromDate(new Date(year, month, day)), day });
+    }
+    while (cells.length % 7 !== 0) cells.push({ date: null, day: null });
+    return cells;
+  }, [monthCursor]);
+
   return (
     <div className="clinical-container">
       {/* Üst Başlık */}
@@ -201,7 +271,7 @@ export function AppointmentsPage() {
           <p>Danışan görüşmeleri, klinik seans saatleri ve randevu takibi.</p>
         </div>
         <div className="clinical-actions">
-          <button type="button" className="btn-primary" onClick={() => openNewModal()}>
+          <button type="button" className="btn-primary" onClick={() => openNewModal(undefined, dateFilter || undefined)}>
             <Icon name="plus" size={16} />
             <span>Yeni Randevu Planla</span>
           </button>
@@ -212,6 +282,40 @@ export function AppointmentsPage() {
 
       {/* Görünüm ve Filtreler */}
       <div className="calendar-view-controls">
+        <div className="view-toggle-group" role="group" aria-label="Görünüm seçimi">
+          <button
+            type="button"
+            className={`btn-secondary btn-sm ${view === 'calendar' ? 'is-active' : ''}`}
+            aria-pressed={view === 'calendar'}
+            onClick={() => setView('calendar')}
+          >
+            <Icon name="calendar" size={14} /> Takvim
+          </button>
+          <button
+            type="button"
+            className={`btn-secondary btn-sm ${view === 'list' ? 'is-active' : ''}`}
+            aria-pressed={view === 'list'}
+            onClick={() => setView('list')}
+          >
+            <Icon name="list" size={14} /> Liste
+          </button>
+        </div>
+
+        {view === 'calendar' && (
+          <div className="calendar-month-nav">
+            <button type="button" className="btn-secondary btn-sm" aria-label="Önceki ay" onClick={() => setMonthCursor(m => new Date(m.getFullYear(), m.getMonth() - 1, 1))}>
+              <Icon name="left" size={14} />
+            </button>
+            <strong className="calendar-month-label">{monthLabel(monthCursor)}</strong>
+            <button type="button" className="btn-secondary btn-sm" aria-label="Sonraki ay" onClick={() => setMonthCursor(m => new Date(m.getFullYear(), m.getMonth() + 1, 1))}>
+              <Icon name="right" size={14} />
+            </button>
+            <button type="button" className="btn-secondary btn-sm" onClick={() => { const t = new Date(); setMonthCursor(new Date(t.getFullYear(), t.getMonth(), 1)); }}>
+              Bugün
+            </button>
+          </div>
+        )}
+
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
           <input
             type="date"
@@ -244,7 +348,81 @@ export function AppointmentsPage() {
         </div>
       </div>
 
+      {/* Takvim Görünümü */}
+      {view === 'calendar' && (
+        <div className="modern-table-card calendar-card">
+          <div className="calendar-weekday-row" aria-hidden="true">
+            {WEEKDAY_LABELS.map(label => (
+              <div key={label} className="calendar-weekday-label">{label}</div>
+            ))}
+          </div>
+          <div className="calendar-grid">
+            {calendarCells.map((cell, index) => {
+              if (!cell.date) {
+                return <div key={`empty-${index}`} className="calendar-day-cell is-outside" aria-hidden="true" />;
+              }
+              const dayAppointments = calendarMap.get(cell.date) ?? [];
+              const isToday = cell.date === todayIso;
+              const isSelected = dateFilter === cell.date;
+              return (
+                <div key={cell.date} className={`calendar-day-cell${isToday ? ' today' : ''}${isSelected ? ' is-selected' : ''}`}>
+                  <div className="calendar-day-header">
+                    <button
+                      type="button"
+                      className="calendar-day-number"
+                      onClick={() => setDateFilter(isSelected ? '' : cell.date!)}
+                      aria-pressed={isSelected}
+                      aria-label={`${cell.date} gününü seç`}
+                    >
+                      {cell.day}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-icon calendar-day-add"
+                      title="Bu güne randevu ekle"
+                      aria-label={`${cell.date} için randevu planla`}
+                      onClick={() => openNewModal(undefined, cell.date!)}
+                    >
+                      <Icon name="plus" size={12} />
+                    </button>
+                  </div>
+                  <div className="calendar-day-appointments">
+                    {dayAppointments.slice(0, 3).map(appointment => (
+                      <button
+                        key={appointment.id}
+                        type="button"
+                        className={`appointment-pill status-${appointment.status}`}
+                        title={`${appointment.time} ${appointment.clientName} — ${appointment.sessionType}`}
+                        onClick={() => openEditModal(appointment)}
+                      >
+                        {appointment.time} {appointment.clientName}
+                      </button>
+                    ))}
+                    {dayAppointments.length > 3 && (
+                      <span className="calendar-day-more">+{dayAppointments.length - 3} daha</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {appointments.length === 0 && (
+            <div className="empty-state-card">
+              <Icon name="calendar" size={30} />
+              <h4>Takvim henüz boş</h4>
+              <p>Görüşme saatlerini burada planlayın ve seans öncesi hazırlığı tek yerden görün.</p>
+              {clients.length === 0 ? (
+                <button type="button" className="btn-primary btn-sm" onClick={() => navigate('/danisanlar?yeni=1')}>Önce danışan ekle</button>
+              ) : (
+                <button type="button" className="btn-primary btn-sm" onClick={() => openNewModal()}>Randevu ekle</button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Randevu Tablosu / Listesi */}
+      {view === 'list' && (
       <div className="client-table-wrap mobile-card-table">
         {filteredAppointments.length === 0 ? (
           <div className="empty-state-card">
@@ -373,6 +551,7 @@ export function AppointmentsPage() {
           </table>
         )}
       </div>
+      )}
 
       {/* Modal */}
       {modalOpen && (
@@ -387,8 +566,9 @@ export function AppointmentsPage() {
               <div className="clinical-modal-body">
                 {saveError && <p className="record-lock-error" role="alert">{saveError}</p>}
                 <div className="form-group">
-                  <label>Danışan *</label>
+                  <label htmlFor="appointment-client">Danışan *</label>
                   <select
+                    id="appointment-client"
                     value={form.clientId || ''}
                     disabled={Boolean(editingApp)}
                     onChange={e => {
@@ -412,8 +592,9 @@ export function AppointmentsPage() {
 
                 <div className="form-row-2">
                   <div className="form-group">
-                    <label>Tarih *</label>
+                    <label htmlFor="appointment-date">Tarih *</label>
                     <input
+                      id="appointment-date"
                       type="date"
                       value={form.date || ''}
                       onChange={e => setForm({ ...form, date: e.target.value })}
@@ -421,8 +602,9 @@ export function AppointmentsPage() {
                     />
                   </div>
                   <div className="form-group">
-                    <label>Saat *</label>
+                    <label htmlFor="appointment-time">Saat *</label>
                     <input
+                      id="appointment-time"
                       type="time"
                       value={form.time || '14:00'}
                       onChange={e => setForm({ ...form, time: e.target.value })}
@@ -433,8 +615,9 @@ export function AppointmentsPage() {
 
                 <div className="form-row-2">
                   <div className="form-group">
-                    <label>Seans Türü</label>
+                    <label htmlFor="appointment-type">Seans Türü</label>
                     <select
+                      id="appointment-type"
                       value={form.sessionType || 'Bireysel Terapi'}
                       onChange={e => setForm({ ...form, sessionType: e.target.value as SessionType })}
                     >
@@ -448,10 +631,11 @@ export function AppointmentsPage() {
                     </select>
                   </div>
                   <div className="form-group">
-                    <label>Görüşme Yeri</label>
+                    <label htmlFor="appointment-location">Görüşme Yeri</label>
                     <select
+                      id="appointment-location"
                       value={form.location || 'Klinik (Yüz Yüze)'}
-                      onChange={e => setForm({ ...form, location: e.target.value as any })}
+                      onChange={e => setForm({ ...form, location: e.target.value as Appointment['location'] })}
                     >
                       <option value="Klinik (Yüz Yüze)">Klinik (Yüz Yüze)</option>
                       <option value="Online (Görüntülü)">Online (Görüntülü)</option>
@@ -462,8 +646,9 @@ export function AppointmentsPage() {
 
                 <div className="form-row-2">
                   <div className="form-group">
-                    <label>Randevu Durumu</label>
+                    <label htmlFor="appointment-status">Randevu Durumu</label>
                     <select
+                      id="appointment-status"
                       value={form.status || 'scheduled'}
                       onChange={e => setForm({ ...form, status: e.target.value as AppointmentStatus })}
                     >
@@ -474,10 +659,12 @@ export function AppointmentsPage() {
                     </select>
                   </div>
                   <div className="form-group">
-                    <label>Seans Süresi (Dakika)</label>
+                    <label htmlFor="appointment-duration">Seans Süresi (Dakika)</label>
                     <input
+                      id="appointment-duration"
                       type="number"
                       min={15}
+                      max={600}
                       step={5}
                       value={form.durationMinutes || 50}
                       onChange={e => setForm({ ...form, durationMinutes: Number(e.target.value) })}
@@ -485,9 +672,37 @@ export function AppointmentsPage() {
                   </div>
                 </div>
 
+                <div className="form-row-2">
+                  <div className="form-group">
+                    <label htmlFor="appointment-fee">Ücret (TL)</label>
+                    <input
+                      id="appointment-fee"
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      step={10}
+                      value={form.fee ?? 0}
+                      onChange={e => setForm({ ...form, fee: Number(e.target.value) })}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="appointment-payment">Ödeme Durumu</label>
+                    <select
+                      id="appointment-payment"
+                      value={form.paymentStatus || 'pending'}
+                      onChange={e => setForm({ ...form, paymentStatus: e.target.value as PaymentStatus })}
+                    >
+                      <option value="pending">Ödeme bekliyor</option>
+                      <option value="paid">Tahsil edildi</option>
+                      <option value="waived">Ücret alınmayacak</option>
+                    </select>
+                  </div>
+                </div>
+
                 <div className="form-group">
-                  <label>Randevu Notu / Hatırlatıcı</label>
+                  <label htmlFor="appointment-notes">Randevu Notu / Hatırlatıcı</label>
                   <textarea
+                    id="appointment-notes"
                     rows={2}
                     value={form.notes || ''}
                     onChange={e => setForm({ ...form, notes: e.target.value })}

@@ -431,10 +431,10 @@ function WorkspaceShell({ user, onLogout, localMode, authActionError }: {
               <button type="button" className="btn-primary btn-sm" onClick={() => window.location.reload()}>Tekrar dene</button>
             </div>
           ) : cloudLoading ? (
-            <div className="empty-state-card" role="status">
-              <Icon name="shield" size={28} />
-              <h4>Klinik kayıtlar yükleniyor</h4>
-              <p>Sunucudaki veriler hazırlanıyor. Hazır olmadan kayıt oluşturulmaz; bu sırada hiçbir veri cihazda tutulmaz.</p>
+            <div className="loading-state-card" role="status" aria-live="polite">
+              <span className="spinner" aria-hidden="true" />
+              <h4>Danışan kayıtlarınız açılıyor…</h4>
+              <p>Sunucudaki güncel veriler getiriliyor. Bu birkaç saniye sürebilir; işlem tamamlanana kadar hiçbir kayıt cihazda saklanmaz.</p>
             </div>
           ) : (
             <>

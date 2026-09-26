@@ -20,6 +20,7 @@ export function ClientListPage() {
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Form State
   const [formData, setFormData] = useState<Partial<Client>>({
@@ -82,6 +83,7 @@ export function ClientListPage() {
 
   function openNewModal() {
     setEditingClient(null);
+    setSaveError(null);
     setFormData({
       fileNumber: nextFileNumber(clients.map((client) => client.fileNumber)),
       firstName: '',
@@ -120,6 +122,7 @@ export function ClientListPage() {
 
   function openEditModal(c: Client, e: React.MouseEvent) {
     e.stopPropagation();
+    setSaveError(null);
     setEditingClient(c);
     setFormData({ ...c });
     setDiagInput('');
@@ -146,34 +149,35 @@ export function ClientListPage() {
 
   function handleSave(e: React.FormEvent) {
     e.preventDefault();
+    setSaveError(null);
     if (!formData.firstName?.trim() || !formData.lastName?.trim()) {
-      alert('Ad ve soyad gerekli.');
+      setSaveError('Ad ve soyad gerekli.');
       return;
     }
     const gender = formData.gender;
     if (gender !== 'KADIN' && gender !== 'ERKEK') {
-      alert('Cinsiyet seçin. Varsayılan atanmaz.');
+      setSaveError('Cinsiyet seçin. Varsayılan atanmaz.');
       return;
     }
     const fileNumber = formData.fileNumber || nextFileNumber(clients.map((client) => client.fileNumber));
     if (clients.some((client) => client.fileNumber === fileNumber && client.id !== editingClient?.id)) {
-      alert('Bu dosya numarası başka bir danışanda kayıtlı.');
+      setSaveError('Bu dosya numarası başka bir danışanda kayıtlı.');
       return;
     }
     const email = formData.email?.trim() || '';
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      alert('E-posta geçersiz. Bilinmiyorsa boş bırakın.');
+      setSaveError('E-posta geçersiz. Bilinmiyorsa boş bırakın.');
       return;
     }
     const tcNumber = normalizeTc(formData.tcNumber || '');
     if (!isValidTc(tcNumber)) {
-      alert('Kimlik numarası 11 rakam olmalı. Bilinmiyorsa boş bırakın.');
+      setSaveError('Kimlik numarası 11 rakam olmalı. Bilinmiyorsa boş bırakın.');
       return;
     }
     const birthDate = formData.birthDate || '';
     const age = birthDate ? ageFromBirthDate(birthDate) : 0;
     if (birthDate && age === null) {
-      alert('Doğum tarihi geçersiz veya gelecekte.');
+      setSaveError('Doğum tarihi geçersiz veya gelecekte.');
       return;
     }
 
@@ -210,7 +214,7 @@ export function ClientListPage() {
       setModalOpen(false);
       if (!editingClient) navigate(`/danisanlar/${clientId}`);
     } catch (reason) {
-      alert(reason instanceof Error ? reason.message : 'Kayıt yazılamadı.');
+      setSaveError(reason instanceof Error ? reason.message : 'Kayıt yazılamadı.');
     }
   }
 
@@ -462,6 +466,7 @@ export function ClientListPage() {
             </div>
             <form onSubmit={handleSave}>
               <div className="clinical-modal-body">
+                {saveError && <p className="record-lock-error" role="alert">{saveError}</p>}
                 <div className="form-row-2">
                   <div className="form-group">
                     <label htmlFor="client-file-number">Protokol / Dosya No</label>

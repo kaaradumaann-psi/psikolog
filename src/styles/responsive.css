@@ -511,6 +511,75 @@
 }
 
 /* --------------------------------------------------------------------------
+   06b · Takvim (Randevular) — dar ekranlarda 7 sütunluk ay görünümü yatay
+   taşma yapmamalı; hücreler küçülür, metin kısalır, dokunma hedefleri kalır.
+   -------------------------------------------------------------------------- */
+@media screen and (max-width: 720px) {
+  .calendar-view-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .calendar-month-nav {
+    justify-content: center;
+  }
+
+  .calendar-card {
+    padding: 10px;
+  }
+
+  .calendar-weekday-row,
+  .calendar-grid {
+    gap: 4px;
+  }
+
+  .calendar-day-cell {
+    min-height: 64px;
+    padding: 4px;
+    gap: 3px;
+  }
+
+  .calendar-day-number {
+    width: 20px;
+    height: 20px;
+    font-size: 10.5px;
+  }
+
+  .calendar-day-add {
+    width: 18px;
+    height: 18px;
+  }
+
+  .appointment-pill {
+    padding: 2px 4px;
+    font-size: 9.5px;
+  }
+
+  .calendar-weekday-label {
+    font-size: 9.5px;
+    letter-spacing: 0.02em;
+  }
+}
+
+@media screen and (max-width: 430px) {
+  /* On the narrowest phones even the abbreviated weekday labels + day numbers
+     compete for space; drop the per-day "add" affordance (tapping the day
+     number itself still opens the filter, and the header's primary action
+     already creates a new appointment) so nothing is clipped or overlapped. */
+  .calendar-day-add {
+    display: none;
+  }
+
+  .calendar-day-cell {
+    min-height: 52px;
+  }
+
+  .appointment-pill {
+    font-size: 9px;
+  }
+}
+
+/* --------------------------------------------------------------------------
    07 · ≤430px — small phones (320 / 360 / 375 / 390 / 414 / 430)
    -------------------------------------------------------------------------- */
 @media screen and (max-width: 430px) {

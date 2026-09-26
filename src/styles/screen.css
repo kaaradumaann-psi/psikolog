@@ -516,6 +516,84 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   margin: 0 auto;
 }
 
+/* Genel "yardımcı metin" kalıbı: aynı gri/13px reçetesinin onlarca yerde
+   satır içi olarak tekrarlanması yerine tek bir sınıfta toplanır. */
+.section-hint {
+  margin: 0;
+  color: var(--slate-500);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+/* Kurum/hesap yönetimi paneli — mevcut kart/rozet/tablo dilini yeniden
+   kullanır, yeni bir görsel dil eklemez. */
+.cloud-admin-panel {
+  padding: 18px;
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.cloud-admin-panel h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.cloud-admin-panel h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.cloud-admin-block {
+  padding-top: 14px;
+  border-top: 1px solid var(--hairline);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cloud-admin-notice {
+  margin: 0;
+  padding: 8px 12px;
+  background: var(--success-tint);
+  border: 1px solid var(--success-border, var(--hairline));
+  border-radius: 8px;
+  color: var(--success, var(--ink));
+  font-size: 13px;
+}
+
+.cloud-admin-callout {
+  padding: 10px 12px;
+  background: var(--primary-tint);
+  border: 1px solid var(--primary-border, var(--hairline));
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cloud-admin-unassigned-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cloud-admin-unassigned-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
 .loading-state-card {
   display: flex;
   flex-direction: column;
@@ -525,6 +603,20 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   gap: 14px;
   color: var(--slate-600);
   font-size: 13px;
+  text-align: center;
+}
+
+.loading-state-card h4 {
+  margin: 0;
+  color: var(--slate-800);
+  font-size: 16px;
+}
+
+.loading-state-card p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--slate-500);
+  max-width: 420px;
 }
 
 .spinner {

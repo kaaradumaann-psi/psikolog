@@ -152,6 +152,29 @@ Hiçbir bileşen, servis, migration veya test dosyası silinmedi/birleştirilmed
 3. Gerçek tarayıcı / canlı Supabase / production doğrulaması bu ortamda mümkün değil — tüm ilgili maddeler NOT VERIFIED / NOT RUN olarak işaretlendi, asla PASS varsayılmadı.
 4. `arena/01a0db06-psikolog` dalı incelendi ama main'in 16 commit gerisinde olduğu için doğrudan birleştirilmedi; oradaki "RevisionDialog.tsx" gibi bazı fikirler, mevcut main'de zaten eşdeğer/daha güncel bir uygulamayla (RLS/phase-07 sonrası) karşılandığı için taşınmadı.
 
+## 19b) Ek tur: tüm dalların taranması + ek bir gerçek hata bulundu ve düzeltildi
+
+Bu ek turda `git fetch --prune` ile **tüm** uzak dallar (`origin/arena/01a0d39c`, `01a0d3d6`, `01a0d51c`, `01a0d892`, `01a0d937`, `01a0db06`, `01a0db11`) listelendi ve her biri `merge-base` ile mevcut `main`e göre konumlandırıldı:
+
+| Dal | main'e göre | Sonuç |
+|---|---|---|
+| `01a0d39c` | main'in 25 commit gerisinden dallanmış | Çok eski (ilk fazlar); `admin-users` Edge Function + profiles self-heal fikri **zaten** mevcut main'de var (`20260924000006_fix_profiles_rls.sql` + `supabaseAuth.ts` self-heal), taşınacak bir şey yok |
+| `01a0d3d6` | main'in 25 commit gerisinden dallanmış | **MMPI içeriyor** — kullanıcı talimatı gereği kesinlikle dokunulmadı/taşınmadı |
+| `01a0d51c` | main'in 16 commit gerisinden dallanmış | Marka değişikliği zaten farklı bir yönde tamamlandı (önceki oturum); **ancak** bu daldaki "ücret uyarısı düzeltildi" commit'i incelendi ve gerçek bir mantık hatası ortaya çıkardı (aşağıda) |
+| `01a0d892` | main'in 16 commit gerisinden dallanmış | `storage.objects` sahiplik açığı bulgusu incelendi — **main'de zaten düzeltilmiş** (`20260925100000_phase07_ownership_rls.sql` → `can_access_client()` fonksiyonu ile org+sahiplik birlikte kontrol ediliyor) |
+| `01a0d937` | main'in yalnız 4 commit gerisinden | main'e göre benzersiz commit yok, tamamen main'in bir alt kümesi |
+| `01a0db06`, `01a0db11` | main'in 16 commit gerisinden | Önceki turda incelenmişti (bkz. §1); revizyon diyaloğu fikri zaten main'de doğru şekilde mevcuttu |
+
+**Bulunan ve düzeltilen gerçek hata:** `01a0d51c` dalındaki "ücret uyarısı düzeltildi" commit'i incelenirken, mevcut `main`'in **hiçbir zaman bu düzeltmeyi almadığı** ve hatanın hâlâ canlı olduğu tespit edildi:
+
+- `src/clinical/casework.ts` → `buildSessionPreps()`, bugünkü randevular için "Ücret bekliyor." uyarısını yalnızca `paymentStatus === 'pending' && status !== 'cancelled'` koşuluyla üretiyordu. Bu, henüz **gerçekleşmemiş** (durum `scheduled`) bir randevu için de uyarı veriyordu — oysa bir görüşme daha yapılmadan ödemenin "beklemede" olması tamamen normaldir. Klinisyene yanıltıcı bir "ücret bekliyor" uyarısı gösteriliyordu (Dashboard → günün seans hazırlığı kartları).
+- **Düzeltme:** uyarı artık yalnızca randevu fiilen gerçekleştiğinde (`status === 'completed'`) veya danışan gelmediğinde (`status === 'noshow'`, gelmeyen seans da ücrete tabidir) ve ödeme hâlâ bekliyorsa üretiliyor. `feePending` alanı da aynı kurala bağlandı.
+- 3 yeni test eklendi (`tests/casework.test.ts`): planlanmış randevu uyarı vermiyor; tamamlanmış randevu uyarı veriyor; no-show randevu uyarı veriyor.
+- Doğrulama: `npx tsc --noEmit` temiz, `npm test` **200/200 PASS** (197 + 3 yeni), `npm run build` başarılı.
+- Bu, RLS/migration/service_role'e dokunmayan, salt istemci tarafı iş mantığı düzeltmesidir; "çalışan bir özelliği silme" değil, yanlış çalışan bir uyarıyı doğru koşula bağlamadır.
+
+**Sonuç:** Hiçbir dal doğrudan birleştirilmedi (hepsi eski bir main temelinden dallanmış ve doğrudan merge RLS/senkronizasyon altyapısını geriye götürürdü). Ancak her dal tek tek taranarak main'de eksik kalmış gerçek bir hata (ücret uyarısı) bulundu ve güvenli şekilde mevcut main mimarisine uyarlanarak düzeltildi. `service_role`/RLS/migration dosyalarına bu oturumda hiç dokunulmadı; `npm audit --omit=dev` → **0 güvenlik açığı**.
+
 ---
 
 ## 20) Nihai PASS / FAIL / NOT VERIFIED / NOT RUN tablosu

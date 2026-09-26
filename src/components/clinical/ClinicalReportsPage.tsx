@@ -20,6 +20,7 @@ import { getFormulation, getScreenings, getSettings } from '../../clinical/pract
 import { getSessionsByClientId } from '../../clinical/clinicalStore';
 import { clinicToday, isSafeImageUrl } from '../../clinical/recordRules';
 import { Icon } from '../Icon';
+import { ConfirmDialog } from '../ConfirmDialog';
 
 export function ClinicalReportsPage() {
   const [reports, setReports] = useState<ClinicalReport[]>(() => getClinicalReports());
@@ -27,6 +28,8 @@ export function ClinicalReportsPage() {
   const [reportClientId, setReportClientId] = useState('');
   const [activeReport, setActiveReport] = useState<ClinicalReport | null>(() => reports[0] || null);
   const [isEditing, setIsEditing] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
 
   // Form State
   const [reportForm, setReportForm] = useState<Partial<ClinicalReport>>({
@@ -59,7 +62,7 @@ export function ClinicalReportsPage() {
   function handleCreateNew(type: ClinicalReportType = 'comprehensive') {
     const firstClient = clients.find((client) => client.id === reportClientId);
     if (!firstClient) {
-      alert('Rapor hangi danışana aitse onu seçin.');
+      setFormError('Rapor hangi danışana aitse onu seçin.');
       return;
     }
     const cName = `${firstClient.firstName} ${firstClient.lastName}`;
@@ -178,12 +181,7 @@ export function ClinicalReportsPage() {
   }
 
   function handleDelete(id: string) {
-    if (confirm('Bu klinik raporu silmek istediğinize emin misiniz?')) {
-      deleteClinicalReport(id);
-      const remaining = reports.filter(r => r.id !== id);
-      setActiveReport(remaining[0] || null);
-      setIsEditing(false);
-    }
+    setDeleteId(id);
   }
 
   return (
@@ -213,6 +211,8 @@ export function ClinicalReportsPage() {
         </div>
       </div>
 
+      {formError && <div className="status-banner error-banner" role="alert" style={{ marginBottom: 16 }}><Icon name="alert" size={16} /><span>{formError}</span><button type="button" className="close-banner-btn" onClick={() => setFormError(null)}><Icon name="close" size={14} /></button></div>}
+      {deleteId && <ConfirmDialog title="Raporu sil" description="Bu klinik raporu silinecek. Geri alınamaz." confirmLabel="Sil" onCancel={() => setDeleteId(null)} onConfirm={() => { const id = deleteId; setDeleteId(null); if (id) { deleteClinicalReport(id); const remaining = reports.filter(r => r.id !== id); setActiveReport(remaining[0] || null); setIsEditing(false); } }} />}
       <div className="report-split">
         <div className="report-list btn-print-hide">
           <div className="report-list-label">Kayıtlı raporlar ({reports.length})</div>

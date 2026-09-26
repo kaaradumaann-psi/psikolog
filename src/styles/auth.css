@@ -486,8 +486,8 @@
 }
 
 .success-hint {
-  font-size: 12px !important;
-  color: #059669 !important;
+  font-size: 12px;
+  color: #059669;
 }
 
 .client-data-form {

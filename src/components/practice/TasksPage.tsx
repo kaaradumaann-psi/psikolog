@@ -12,20 +12,15 @@ import {
   type TaskStatus,
 } from '../../clinical/practiceStore';
 import { ClinicalDialog } from '../clinical/ClinicalDialog';
+import { ConfirmDialog } from '../ConfirmDialog';
 import { Icon } from '../Icon';
-
-const STATUS_LABEL: Record<TaskStatus, string> = {
-  todo: 'Yapılacak',
-  in_progress: 'Sürüyor',
-  done: 'Tamam',
-  cancelled: 'İptal',
-};
 
 export function TasksPage() {
   const [tasks, setTasks] = useState<PracticeTask[]>(() => getTasks());
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<'open' | 'all'>('open');
   const clients = useMemo(() => getClients(), []);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
   const [form, setForm] = useState({
     title: '',
     description: '',
@@ -38,10 +33,9 @@ export function TasksPage() {
 
   const visible = tasks.filter((task) => (filter === 'all' ? true : task.status === 'todo' || task.status === 'in_progress'));
 
-  function cycle(task: PracticeTask) {
-    const order: TaskStatus[] = ['todo', 'in_progress', 'done'];
-    const next = order[(order.indexOf(task.status) + 1) % order.length] ?? 'todo';
-    saveTask({ ...task, status: task.status === 'cancelled' ? 'todo' : next, updatedAt: new Date().toISOString() });
+  function updateStatus(task: PracticeTask, next: TaskStatus) {
+    if (task.status === next) return;
+    saveTask({ ...task, status: next, updatedAt: new Date().toISOString() });
   }
 
   function onSubmit(event: FormEvent) {
@@ -109,14 +103,41 @@ export function TasksPage() {
                 </div>
               </div>
               <div className="task-card-actions">
-                <button type="button" className="btn-secondary btn-sm" aria-label={`${task.title}: ${STATUS_LABEL[task.status]}. Durumu değiştir`} onClick={() => cycle(task)}>{STATUS_LABEL[task.status]} <Icon name="right" size={14} /></button>
-                <button type="button" className="btn-icon" aria-label={`${task.title} görevini sil`} onClick={() => { if (window.confirm('Bu görevi silmek istiyor musunuz?')) deleteTask(task.id); }}>
+                <label className="task-status-field">
+                  <span className="task-status-label">Durum</span>
+                  <select
+                    className="filter-select"
+                    value={task.status}
+                    onChange={(event) => updateStatus(task, event.target.value as TaskStatus)}
+                    aria-label={`${task.title} durumu`}
+                  >
+                    <option value="todo">Yapılacak</option>
+                    <option value="in_progress">Sürüyor</option>
+                    <option value="done">Tamamlandı</option>
+                    <option value="cancelled">İptal</option>
+                  </select>
+                </label>
+                <button type="button" className="btn-icon" aria-label={`${task.title} görevini sil`} onClick={() => setDeleteId(task.id)}>
                   <Icon name="trash" size={16} />
                 </button>
               </div>
             </article>
           ))}
         </div>
+      )}
+
+      {deleteId && (
+        <ConfirmDialog
+          title="Görevi sil"
+          description="Bu görev silinecek. Geri alınamaz."
+          confirmLabel="Sil"
+          onCancel={() => setDeleteId(null)}
+          onConfirm={() => {
+            const id = deleteId;
+            setDeleteId(null);
+            if (id) deleteTask(id);
+          }}
+        />
       )}
 
       {open && (

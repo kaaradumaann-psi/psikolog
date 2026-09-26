@@ -7,6 +7,7 @@ import {
   subscribeClinicalStore,
 } from '../../clinical/clinicalStore';
 import { ClinicalDialog } from './ClinicalDialog';
+import { ConfirmDialog } from '../ConfirmDialog';
 import { Icon } from '../Icon';
 import { ageFromBirthDate, isValidTc, nextFileNumber, normalizeTc } from '../../clinical/recordRules';
 import { navigate } from '../../router';
@@ -43,6 +44,8 @@ export function ClientListPage() {
     status: 'active',
   });
   const [diagInput, setDiagInput] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
 
   useEffect(() => {
     const unsub = subscribeClinicalStore(() => {
@@ -79,6 +82,7 @@ export function ClientListPage() {
 
   function openNewModal() {
     setEditingClient(null);
+    setFormError(null);
     setFormData({
       fileNumber: nextFileNumber(clients.map((client) => client.fileNumber)),
       firstName: '',
@@ -118,6 +122,7 @@ export function ClientListPage() {
   function openEditModal(c: Client, e: React.MouseEvent) {
     e.stopPropagation();
     setEditingClient(c);
+    setFormError(null);
     setFormData({ ...c });
     setDiagInput('');
     setModalOpen(true);
@@ -125,41 +130,39 @@ export function ClientListPage() {
 
   function handleDelete(id: string, name: string, e: React.MouseEvent) {
     e.stopPropagation();
-    if (confirm(`${name} isimli danışan kaydını ve tüm klinik dosyasını silmek istediğinize emin misiniz?`)) {
-      deleteClient(id);
-    }
+    setDeleteTarget({ id, name });
   }
 
   function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!formData.firstName?.trim() || !formData.lastName?.trim()) {
-      alert('Ad ve soyad gerekli.');
+      setFormError('Ad ve soyad gerekli.');
       return;
     }
     const gender = formData.gender;
     if (gender !== 'KADIN' && gender !== 'ERKEK') {
-      alert('Cinsiyet seçin. Varsayılan atanmaz.');
+      setFormError('Cinsiyet seçin. Varsayılan atanmaz.');
       return;
     }
     const fileNumber = formData.fileNumber || nextFileNumber(clients.map((client) => client.fileNumber));
     if (clients.some((client) => client.fileNumber === fileNumber && client.id !== editingClient?.id)) {
-      alert('Bu dosya numarası başka bir danışanda kayıtlı.');
+      setFormError('Bu dosya numarası başka bir danışanda kayıtlı.');
       return;
     }
     const email = formData.email?.trim() || '';
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      alert('E-posta geçersiz. Bilinmiyorsa boş bırakın.');
+      setFormError('E-posta geçersiz. Bilinmiyorsa boş bırakın.');
       return;
     }
     const tcNumber = normalizeTc(formData.tcNumber || '');
     if (!isValidTc(tcNumber)) {
-      alert('Kimlik numarası 11 rakam olmalı. Bilinmiyorsa boş bırakın.');
+      setFormError('Kimlik numarası 11 rakam olmalı. Bilinmiyorsa boş bırakın.');
       return;
     }
     const birthDate = formData.birthDate || '';
     const age = birthDate ? ageFromBirthDate(birthDate) : 0;
     if (birthDate && age === null) {
-      alert('Doğum tarihi geçersiz veya gelecekte.');
+      setFormError('Doğum tarihi geçersiz veya gelecekte.');
       return;
     }
 
@@ -196,7 +199,7 @@ export function ClientListPage() {
       setModalOpen(false);
       if (!editingClient) navigate(`/danisanlar/${clientId}`);
     } catch (reason) {
-      alert(reason instanceof Error ? reason.message : 'Kayıt yazılamadı.');
+      setFormError(reason instanceof Error ? reason.message : 'Kayıt yazılamadı.');
     }
   }
 
@@ -435,6 +438,10 @@ export function ClientListPage() {
         )}
       </div>
 
+      {deleteTarget && (
+        <ConfirmDialog title="Danışanı sil" description={`${deleteTarget.name} isimli danışan kaydı ve tüm klinik dosyası silinecek. Geri alınamaz.`} confirmLabel="Sil" onCancel={() => setDeleteTarget(null)} onConfirm={() => { const id = deleteTarget.id; setDeleteTarget(null); if (id) deleteClient(id); }} />
+      )}
+
       {/* Danışan Ekleme / Düzenleme Modalı */}
       {modalOpen && (
         <ClinicalDialog titleId="client-dialog-title" onClose={() => setModalOpen(false)}>
@@ -446,6 +453,7 @@ export function ClientListPage() {
             </div>
             <form onSubmit={handleSave}>
               <div className="clinical-modal-body">
+                {formError && <p className="form-error" role="alert" style={{ color: 'var(--danger-ink)', background: 'var(--danger-tint)', border: '1px solid var(--danger-border)', padding: '8px 10px', borderRadius: 8, fontSize: 13, margin: 0 }}>{formError}</p>}
                 <div className="form-row-2">
                   <div className="form-group">
                     <label htmlFor="client-file-number">Protokol / Dosya No</label>

@@ -10,6 +10,7 @@ import {
 import { getSettings } from '../../clinical/practiceStore';
 import { clinicToday } from '../../clinical/recordRules';
 import { ClinicalDialog } from './ClinicalDialog';
+import { ConfirmDialog } from '../ConfirmDialog';
 import { Icon } from '../Icon';
 import { SessionSummaryButton } from '../practice/SessionSummaryButton';
 import { navigate } from '../../router';
@@ -24,6 +25,8 @@ export function SoapSessionsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingSession, setEditingSession] = useState<SoapSession | null>(null);
 
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [form, setForm] = useState<Partial<SoapSession>>({
     clientId: '',
     clientName: '',
@@ -100,15 +103,14 @@ export function SoapSessionsPage() {
   }
 
   function handleDelete(id: string) {
-    if (confirm('Bu seans notunu silmek istediğinize emin misiniz?')) {
-      deleteSoapSession(id);
-    }
+    setDeleteId(id);
   }
 
   function handleSave(e: React.FormEvent) {
     e.preventDefault();
+    setFormError(null);
     if (!form.clientId) {
-      alert('Lütfen bir danışan seçiniz.');
+      setFormError('Lütfen bir danışan seçiniz.');
       return;
     }
 
@@ -161,6 +163,8 @@ export function SoapSessionsPage() {
           </button>
         </div>
       </div>
+
+      {deleteId && <ConfirmDialog title="Seans notunu sil" description="Bu seans notu silinecek. Geri alınamaz." confirmLabel="Sil" onCancel={() => setDeleteId(null)} onConfirm={() => { const id = deleteId; setDeleteId(null); if (id) deleteSoapSession(id); }} />}
 
       {/* Arama & Filtreleme */}
       <div className="search-filter-bar">
@@ -307,6 +311,7 @@ export function SoapSessionsPage() {
             </div>
             <form onSubmit={handleSave}>
               <div className="clinical-modal-body">
+                {formError && <p className="form-error" role="alert" style={{ color: 'var(--danger-ink)', background: 'var(--danger-tint)', border: '1px solid var(--danger-border)', padding: '8px 10px', borderRadius: 8, fontSize: 13, margin: 0 }}>{formError}</p>}
                 <div className="form-row-2">
                   <div className="form-group">
                     <label>Danışan *</label>

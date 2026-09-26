@@ -27,6 +27,7 @@ export function Scl90Page() {
   const [answers, setAnswers] = useState(() => emptyAnswers(90));
   const [pageIndex, setPageIndex] = useState<number>(0); // 10'arlı sayfalar (0-8)
   const [toast, setToast] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
 
   function handleClientSelect(id: string) {
     setSelectedClientId(id);
@@ -59,19 +60,19 @@ export function Scl90Page() {
 
   function handleSave() {
     if (!clientName.trim()) {
-      alert('Danışan adı gerekli. Varsayılan ad atanmaz.');
+      setFormError('Danışan adı gerekli. Varsayılan ad atanmaz.');
       return;
     }
     if (clientGender !== 'KADIN' && clientGender !== 'ERKEK') {
-      alert('Cinsiyet seçin. Varsayılan atanmaz.');
+      setFormError('Cinsiyet seçin. Varsayılan atanmaz.');
       return;
     }
     if (parsedAge === null) {
-      alert('Yaş boş bırakılabilir; girildiyse 0–120 arası tam sayı olmalı.');
+      setFormError('Yaş boş bırakılabilir; girildiyse 0–120 arası tam sayı olmalı.');
       return;
     }
     if (!completeAnswers) {
-      alert('İşaretlenmeyen madde var. Boş madde 0 sayılmaz.');
+      setFormError('İşaretlenmeyen madde var. Boş madde 0 sayılmaz.');
       return;
     }
     const result = calculateScl90(completeAnswers, {
@@ -122,6 +123,9 @@ export function Scl90Page() {
         </div>
       </div>
 
+      {formError && (
+        <div className="status-banner error-banner" role="alert" style={{ marginBottom: 16 }}><Icon name="alert" size={16} /><span>{formError}</span><button type="button" className="close-banner-btn" onClick={() => setFormError(null)}><Icon name="close" size={14} /></button></div>
+      )}
       {toast && (
         <div className="modern-table-card" style={{ background: 'var(--success-tint)', border: '1px solid var(--success-border)', color: 'var(--success)', padding: '12px 16px', marginBottom: 20 }}>
           {toast}

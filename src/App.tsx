@@ -58,12 +58,9 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
 
 function BrandMark() {
   return (
-    <svg width="24" height="24" viewBox="0 0 26 26" fill="none" aria-hidden="true">
-      <path d="M9 3H3v6M17 3h6v6M23 17v6h-6M9 23H3v-6" stroke="currentColor" strokeWidth="2.2" />
-      <circle cx="10" cy="10" r="1.8" fill="currentColor" />
-      <circle cx="16" cy="10" r="1.8" stroke="currentColor" strokeWidth="1.5" />
-      <circle cx="10" cy="16" r="1.8" stroke="currentColor" strokeWidth="1.5" />
-      <circle cx="16" cy="16" r="1.8" fill="currentColor" />
+    <svg width="24" height="24" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+      <text x="50%" y="60%" dominantBaseline="middle" textAnchor="middle" fontFamily="Newsreader, Georgia, serif" fontSize="22" fontWeight="400" fill="#ffffff">Ψ</text>
+      <circle cx="25.2" cy="6.6" r="2.4" fill="#0a84ff" stroke="#ffffff" strokeWidth="0.7" />
     </svg>
   );
 }

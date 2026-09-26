@@ -4,10 +4,15 @@ import { exportPracticeData, importPracticeData } from '../../clinical/practiceS
 import { MAX_BACKUP_BYTES, clinicToday } from '../../clinical/recordRules';
 import { ClinicalDialog } from './ClinicalDialog';
 import { Icon } from '../Icon';
+import { ConfirmDialog } from '../ConfirmDialog';
 
 export function DataManagementModal({ onClose }: { onClose: () => void }) {
   const [toast, setToast] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [wipeOpen, setWipeOpen] = useState(false);
+  const [wipeInput, setWipeInput] = useState('');
+  const [wipeError, setWipeError] = useState<string | null>(null);
 
   function handleDownloadBackup() {
     const backup = { ...exportClinicalBackup(), practice: exportPracticeData() };
@@ -37,8 +42,13 @@ export function DataManagementModal({ onClose }: { onClose: () => void }) {
       setError('Yalnızca JSON yedek yüklenir.');
       return;
     }
-    if (!confirm('Bu yedek, bu cihazdaki mevcut danışan, seans, ölçek ve rapor kayıtlarının yerine geçer. Devam edilsin mi?')) return;
+    setPendingFile(file);
+  }
 
+  function confirmImport() {
+    const file = pendingFile;
+    if (!file) return;
+    setPendingFile(null);
     const reader = new FileReader();
     reader.onload = () => {
       try {
@@ -55,9 +65,14 @@ export function DataManagementModal({ onClose }: { onClose: () => void }) {
   }
 
   function handleWipe() {
-    const answer = prompt('Tüm yerel klinik kayıt silinecek. Antet ayarı kalır. Onay için SIL yazın.');
-    if (answer !== 'SIL') return;
+    setWipeInput('');
+    setWipeError(null);
+    setWipeOpen(true);
+  }
+  function confirmWipe() {
+    if (wipeInput.trim() !== 'SIL') { setWipeError('Onay için tam olarak SIL yazın.'); return; }
     clearAllClinicalData();
+    setWipeOpen(false);
     setToast('Yerel klinik kayıt silindi.');
     window.setTimeout(onClose, 900);
   }
@@ -101,6 +116,23 @@ export function DataManagementModal({ onClose }: { onClose: () => void }) {
             <button type="button" className="btn-secondary btn-sm" onClick={handleWipe}>Sil</button>
           </div>
         </div>
+        {pendingFile && (
+          <ConfirmDialog title="Yedeği geri yükle" description={`${pendingFile.name} içindeki kayıtlar mevcut danışan, seans, ölçek ve raporların yerine geçecek. Devam edilsin mi?`} confirmLabel="Yükle" onCancel={() => setPendingFile(null)} onConfirm={confirmImport} />
+        )}
+        {wipeOpen && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: 20 }} role="dialog" aria-modal="true">
+            <div style={{ background: 'white', borderRadius: 12, width: '100%', maxWidth: 420, padding: 20, boxShadow: 'var(--shadow-lg)' }}>
+              <h4 style={{ margin: '0 0 8px', fontSize: 16 }}>Yerel kaydı sil</h4>
+              <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--soft)', lineHeight: 1.5 }}>Tüm yerel klinik kayıt silinecek. Antet ayarı kalır. Onay için <strong>SIL</strong> yazın.</p>
+              <input type="text" value={wipeInput} onChange={e => { setWipeInput(e.target.value); setWipeError(null); }} placeholder="SIL" style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--hairline)', borderRadius: 8, fontSize: 14 }} autoFocus />
+              {wipeError && <p style={{ color: 'var(--danger-ink)', fontSize: 12, margin: '8px 0 0' }}>{wipeError}</p>}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+                <button type="button" className="btn-secondary btn-sm" onClick={() => setWipeOpen(false)}>Vazgeç</button>
+                <button type="button" className="btn-primary btn-sm" onClick={confirmWipe}>Sil</button>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="clinical-modal-foot">
           <button type="button" className="btn-primary" onClick={onClose}>Kapat</button>
         </div>

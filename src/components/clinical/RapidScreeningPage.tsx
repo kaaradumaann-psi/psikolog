@@ -24,6 +24,7 @@ export function RapidScreeningPage() {
   const [gadAnswers, setGadAnswers] = useState(() => emptyAnswers(7));
   const [phqAnswers, setPhqAnswers] = useState(() => emptyAnswers(9));
   const [toast, setToast] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
 
   function handleClientSelect(id: string) {
     setSelectedClientId(id);
@@ -55,12 +56,12 @@ export function RapidScreeningPage() {
 
   function handleSave() {
     if (!clientName.trim()) {
-      alert('Danışan adı gerekli. Varsayılan ad atanmaz.');
+      setFormError('Danışan adı gerekli. Varsayılan ad atanmaz.');
       return;
     }
     const result = activeTool === 'gad7' ? liveGadResult : livePhqResult;
     if (!result) {
-      alert('İşaretlenmeyen madde var. Boş madde 0 sayılmaz.');
+      setFormError('İşaretlenmeyen madde var. Boş madde 0 sayılmaz.');
       return;
     }
     saveScreening({ ...result, clientName: clientName.trim() });
@@ -106,6 +107,9 @@ export function RapidScreeningPage() {
         </div>
       </div>
 
+      {formError && (
+        <div className="status-banner error-banner" role="alert" style={{ marginBottom: 16 }}><Icon name="alert" size={16} /><span>{formError}</span><button type="button" className="close-banner-btn" onClick={() => setFormError(null)}><Icon name="close" size={14} /></button></div>
+      )}
       {toast && (
         <div className="modern-table-card" style={{ background: 'var(--success-tint)', border: '1px solid var(--success-border)', color: 'var(--success)', padding: '12px 16px', marginBottom: 20 }}>
           {toast}

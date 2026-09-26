@@ -3,6 +3,10 @@ import type { FormEvent } from 'react';
 import type { AuthenticatedUser } from './auth/authTypes';
 import { displayName } from './auth/userDisplay';
 import { supabaseConfig } from './auth/supabaseClient';
+import { startClinicalCloud, stopClinicalCloud } from './clinical/cloud/bootstrap';
+import { cloudGateStatus, cloudWorkspaceEntry } from './clinical/cloud/gate';
+import { getSyncState, subscribeSync, type SyncState } from './clinical/cloud/sync';
+import { CloudSyncBanner } from './components/CloudSyncBanner';
 import { getSession, onAuthChange, signIn, signOut, userFromSession } from './auth/supabaseAuth';
 import { AppointmentsPage } from './components/clinical/AppointmentsPage';
 import { AssessmentHubPage } from './components/clinical/AssessmentHubPage';
@@ -23,6 +27,7 @@ import { InfoPageShell } from './components/InfoPageShell';
 import { MobileNav } from './components/MobileNav';
 import { PrivacyPolicyPage } from './components/PrivacyPolicyPage';
 import { AuditPage } from './components/practice/AuditPage';
+import { AdminSetupPage } from './components/practice/AdminSetupPage';
 import { SettingsPage } from './components/practice/SettingsPage';
 import { TasksPage } from './components/practice/TasksPage';
 import { SiteFooter } from './components/SiteFooter';
@@ -137,6 +142,22 @@ export default function App() {
     );
   }
   if (!supabaseConfig.configured) {
+    // The offline workspace is for local development only. A misconfigured
+    // production bundle must never accept clinical data in an anonymous,
+    // unencrypted browser cache instead of the Supabase source of truth.
+    if (import.meta.env.PROD) {
+      return (
+        <div className="auth-page">
+          <main className="auth-shell" role="alert">
+            <div className="auth-card">
+              <h1>Klinik çalışma alanı açılamadı</h1>
+              <p>Sunucu bağlantısı yapılandırılmamış. Klinik kayıt oluşturmayın; yöneticinizle iletişime geçin.</p>
+            </div>
+          </main>
+          <SiteFooter compact />
+        </div>
+      );
+    }
     return <WorkspaceShell user={LOCAL_USER} localMode onLogout={() => navigate('/')} />;
   }
   return <CloudGate />;
@@ -157,9 +178,18 @@ function CloudGate() {
         if (!cancelled) setUser(null);
       });
     const { data } = onAuthChange((_event, session) => {
-      void userFromSession(session).then((next) => {
-        if (!cancelled) setUser(next);
-      });
+      void userFromSession(session)
+        .then((next) => {
+          if (!cancelled) setUser(next);
+        })
+        .catch(() => {
+          // Expired/revoked session or profile failure: never keep showing the
+          // last user's clinical workspace while auth is uncertain.
+          if (!cancelled) {
+            setUser(null);
+            setError('Oturum doğrulanamadı. Lütfen yeniden giriş yapın.');
+          }
+        });
     });
     return () => {
       cancelled = true;
@@ -178,6 +208,20 @@ function CloudGate() {
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Giriş yapılamadı');
     }
+  }
+
+  function onLogout() {
+    setError(null);
+    void signOut()
+      .then(() => {
+        stopClinicalCloud({ purge: true });
+        setUser(null);
+        navigate('/', { replace: true });
+      })
+      .catch(() => {
+        // Do not claim logout when the local Auth session may still exist.
+        setError('Oturum kapatılamadı. Klinik verileri açık bırakmayın; çıkışı yeniden deneyin.');
+      });
   }
 
   if (user === undefined) {
@@ -233,20 +277,47 @@ function CloudGate() {
       </div>
     );
   }
-  return (
-    <WorkspaceShell
-      user={user}
-      localMode={false}
-      onLogout={() => {
-        void signOut().finally(() => navigate('/', { replace: true }));
-      }}
-    />
-  );
+  if (cloudWorkspaceEntry(user) === 'admin-setup') {
+    return (
+      <AdminSetupPage
+        user={user}
+        onLogout={onLogout}
+        logoutError={error}
+        onOwnOrganizationAssigned={(organizationId) => {
+          setError(null);
+          setUser({ ...user, organizationId });
+        }}
+      />
+    );
+  }
+  return <WorkspaceShell user={user} localMode={false} onLogout={onLogout} authActionError={error} />;
 }
 
-function WorkspaceShell({ user, onLogout, localMode }: { user: AuthenticatedUser; onLogout: () => void; localMode: boolean }) {
+function WorkspaceShell({ user, onLogout, localMode, authActionError }: {
+  user: AuthenticatedUser; onLogout: () => void; localMode: boolean; authActionError?: string | null;
+}) {
   const route = useRoute();
   const [storageError, setStorageError] = useState<string | null>(null);
+  const [syncState, setSyncState] = useState<SyncState>(() => getSyncState());
+
+  useEffect(() => subscribeSync(setSyncState), []);
+
+  /**
+   * Bulut modunda boş/eskimiş yerel önbellek çalışma alanı gibi gösterilmez.
+   * Kapı yalnızca sunucu anlık görüntüsü her iki store'a uygulandıktan sonra açılır;
+   * yükleme hatası açık bir hata ekranıdır, yazılabilir boş bir çalışma alanı değil.
+   */
+  const gate = cloudGateStatus(user.id, localMode, syncState);
+  const cloudLoadFailed = gate === 'error';
+  const cloudLoading = gate === 'loading';
+
+  // Oturum açıldığında klinik veri Supabase'den yüklenir (tek doğruluk kaynağı).
+  useEffect(() => {
+    if (localMode) return;
+    // Hata senkronizasyon durumuna yazılır; eski kullanıcının hata/önbelleği gösterilmez.
+    void startClinicalCloud(user).catch(() => {});
+  }, [localMode, user]);
+
   useEffect(() => {
     const onError = (event: Event) => {
       const detail = (event as CustomEvent<string>).detail;
@@ -295,7 +366,9 @@ function WorkspaceShell({ user, onLogout, localMode }: { user: AuthenticatedUser
           <div className="sidebar-privacy">
             <span className="sidebar-privacy-icon"><Icon name="shield" size={18} /></span>
             <strong>{localMode ? 'Yerel çalışma alanı' : 'Bulut hesabı açık'}</strong>
-            <p>{localMode ? 'Kayıtlar bu tarayıcıda tutulur ve şifrelenmez. Düzenli yedek alın.' : 'Yerel klinik kayıtlar bu cihazda tutulur. Hesap ayarlarınızı kontrol edin.'}</p>
+            <p>{localMode
+              ? 'Kayıtlar bu tarayıcıda tutulur ve şifrelenmez. Düzenli yedek alın.'
+              : 'Klinik kayıtlar sunucuda (Supabase) tutulur; bu cihazda yalnızca önbellek bulunur.'}</p>
             <a href="/ayarlar">Ayarları aç <Icon name="arrowRight" size={14} /></a>
           </div>
           <span className="sidebar-version">PSİKOLOG · KLİNİK ÇALIŞMA ALANI</span>
@@ -341,22 +414,46 @@ function WorkspaceShell({ user, onLogout, localMode }: { user: AuthenticatedUser
           </div>
         </header>
         <ConnectivityBanner />
+        {!localMode && !cloudLoading && !cloudLoadFailed && <CloudSyncBanner />}
+        {authActionError && <p className="shell-alert" role="alert">{authActionError}</p>}
         {storageError && <p className="shell-alert" role="alert">{storageError}</p>}
-        <main className="app-main" id="main" tabIndex={-1}>
-          {route.page === 'danisan' && <ClientDetailPage clientId={route.id} />}
-          {route.page === 'danisanlar' && <ClientListPage />}
-          {route.page === 'seanslar' && <SoapSessionsPage />}
-          {route.page === 'takvim' && <AppointmentsPage />}
-          {route.page === 'testler' && <AssessmentHubPage />}
-          {route.page === 'beck_depresyon' && <BeckDepressionPage />}
-          {route.page === 'beck_anksiyete' && <BeckAnxietyPage />}
-          {route.page === 'scl90' && <Scl90Page />}
-          {route.page === 'tarama' && <RapidScreeningPage />}
-          {route.page === 'raporlar' && <ClinicalReportsPage />}
-          {route.page === 'gorevler' && <TasksPage />}
-          {route.page === 'ayarlar' && <SettingsPage canAdmin={canAdmin} />}
-          {route.page === 'denetim' && <AuditPage />}
-          {route.page === 'home' && <Dashboard user={user} />}
+        <main
+          className="app-main"
+          id="main"
+          tabIndex={-1}
+          data-cloud-gate={gate}
+        >
+          {cloudLoadFailed ? (
+            <div className="empty-state-card" role="alert">
+              <Icon name="alert" size={28} />
+              <h4>Klinik kayıtlar yüklenemedi</h4>
+              <p>{syncState.lastError ?? 'Sunucudan veriler alınamadı. Bağlantınızı kontrol edin.'}</p>
+              <button type="button" className="btn-primary btn-sm" onClick={() => window.location.reload()}>Tekrar dene</button>
+            </div>
+          ) : cloudLoading ? (
+            <div className="empty-state-card" role="status">
+              <Icon name="shield" size={28} />
+              <h4>Klinik kayıtlar yükleniyor</h4>
+              <p>Sunucudaki veriler hazırlanıyor. Hazır olmadan kayıt oluşturulmaz; bu sırada hiçbir veri cihazda tutulmaz.</p>
+            </div>
+          ) : (
+            <>
+              {route.page === 'danisan' && <ClientDetailPage clientId={route.id} />}
+              {route.page === 'danisanlar' && <ClientListPage />}
+              {route.page === 'seanslar' && <SoapSessionsPage />}
+              {route.page === 'takvim' && <AppointmentsPage />}
+              {route.page === 'testler' && <AssessmentHubPage />}
+              {route.page === 'beck_depresyon' && <BeckDepressionPage />}
+              {route.page === 'beck_anksiyete' && <BeckAnxietyPage />}
+              {route.page === 'scl90' && <Scl90Page />}
+              {route.page === 'tarama' && <RapidScreeningPage />}
+              {route.page === 'raporlar' && <ClinicalReportsPage />}
+              {route.page === 'gorevler' && <TasksPage />}
+              {route.page === 'ayarlar' && <SettingsPage canAdmin={canAdmin} user={user} />}
+              {route.page === 'denetim' && <AuditPage />}
+              {route.page === 'home' && <Dashboard user={user} />}
+            </>
+          )}
         </main>
         <SiteFooter onNewEntry={() => navigate('/seanslar')} />
       </div>

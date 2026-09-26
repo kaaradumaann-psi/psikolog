@@ -21,7 +21,7 @@ type ActionBody =
       email: string;
       password: string;
       role?: 'PSYCHOLOG' | 'ORG_ADMIN';
-      organizationId?: string;
+      organizationId: string;
     }
   | { action: 'set_active'; userId: string; active: boolean }
   | { action: 'set_org'; userId: string; organizationId: string | null }
@@ -205,6 +205,10 @@ Deno.serve(async (request) => {
       !callerRow.active
     )
       return response(request, 403, { error: 'Admin role required' });
+    // An ORG_ADMIN without a tenant must not manage other unassigned profiles
+    // merely because both organization_id fields are NULL.
+    if (callerRow.role === 'ORG_ADMIN' && !callerRow.organization_id)
+      return response(request, 403, { error: 'Kurum yöneticisine kurum atanmamış.' });
 
     const declaredLength = Number(request.headers.get('content-length'));
     if (Number.isFinite(declaredLength) && declaredLength > 32 * 1024) {
@@ -227,17 +231,25 @@ Deno.serve(async (request) => {
         const userEmail = email(body.email);
         const passwordValue = password(body.password);
         const role = body.role === 'ORG_ADMIN' ? 'ORG_ADMIN' : 'PSYCHOLOG';
-        let orgId: string | null = null;
-        if (body.organizationId) orgId = uuid(body.organizationId);
-        else if (callerRow.role === 'ORG_ADMIN') orgId = callerRow.organization_id;
+        if (!body.organizationId)
+          return response(request, 400, { error: 'Hesap oluşturmadan önce bir kurum seçin.' });
+        const orgId = uuid(body.organizationId);
 
-        // ORG_ADMIN can only create PSYCHOLOG in own org
+        // ORG_ADMIN can only create PSYCHOLOG in their own existing org.
         if (callerRow.role === 'ORG_ADMIN') {
           if (role !== 'PSYCHOLOG')
             return response(request, 403, { error: 'ORG_ADMIN can only create PSYCHOLOG' });
           if (orgId !== callerRow.organization_id)
             return response(request, 403, { error: 'Organization mismatch' });
         }
+        const { data: organization, error: orgError } = await adminClient
+          .from('organizations').select('id').eq('id', orgId).maybeSingle();
+        if (orgError) {
+          console.error('Organization lookup before creation failed', orgError);
+          return response(request, 500, { error: 'Kurum kaydı doğrulanamadı.' });
+        }
+        if (!organization)
+          return response(request, 400, { error: 'Seçilen kurum bulunamadı. Kurum listesini yenileyin.' });
 
         const { data, error } = await adminClient.auth.admin.createUser({
           email: userEmail,
@@ -257,12 +269,14 @@ Deno.serve(async (request) => {
         }
 
         // Update profile with role and org
-        const { error: profileUpdateError } = await adminClient
+        const { data: updatedProfile, error: profileUpdateError } = await adminClient
           .from('profiles')
           .update({ first_name: firstName, last_name: lastName, role, organization_id: orgId })
-          .eq('id', data.user.id);
-        if (profileUpdateError) {
-          console.error('Profile update after creation failed', profileUpdateError);
+          .eq('id', data.user.id)
+          .select('id,organization_id,role')
+          .single();
+        if (profileUpdateError || !updatedProfile || updatedProfile.organization_id !== orgId || updatedProfile.role !== role) {
+          console.error('Profile update after creation failed', profileUpdateError ?? 'No matching profile/role/organization returned');
           await adminClient.auth.admin.deleteUser(data.user.id);
           return response(request, 500, { error: 'Kullanıcı profili oluşturulamadı' });
         }

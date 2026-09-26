@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { supabaseConfig } from '../../auth/supabaseClient';
+import type { AuthenticatedUser } from '../../auth/authTypes';
+import { cloudContext } from '../../clinical/cloud/sync';
 import { DataManagementModal } from '../clinical/DataManagementModal';
 import {
   MAX_BRAND_ASSET_BYTES,
@@ -31,19 +33,25 @@ function readAsset(file: File, onDone: (dataUrl: string) => void, onError: (mess
   reader.readAsDataURL(file);
 }
 
-export function SettingsPage({ canAdmin }: { canAdmin: boolean }) {
+export function SettingsPage({ canAdmin, user }: { canAdmin: boolean; user: AuthenticatedUser }) {
   const [settings, setSettings] = useState<PracticeSettings>(() => getSettings());
   const [backupOpen, setBackupOpen] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [saved, setSaved] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => subscribePracticeStore(() => setSettings(getSettings())), []);
 
   function onSubmit(event: FormEvent) {
     event.preventDefault();
-    saveSettings(settings);
-    setSaved(true);
-    window.setTimeout(() => setSaved(false), 1600);
+    try {
+      saveSettings(settings);
+      setError(null);
+      setSaved(cloudContext() ? 'Sunucuya gönderiliyor; sonucu üstteki şeritten kontrol edin.' : 'Bu cihaza kaydedildi.');
+      window.setTimeout(() => setSaved(null), 2500);
+    } catch {
+      setSaved(null);
+      setError('Ayarlar bu cihaza veya sunucu kuyruğuna yazılamadı. Değişiklikleri koruyup yeniden deneyin.');
+    }
   }
 
   return (
@@ -106,9 +114,9 @@ export function SettingsPage({ canAdmin }: { canAdmin: boolean }) {
             {isSafeImageUrl(settings.signatureDataUrl) && <img src={settings.signatureDataUrl} alt="İmza önizleme" style={{ height: 48 }} />}
           </div>
         )}
-        {error && <p style={{ color: 'var(--danger-ink)', margin: 0 }}>{error}</p>}
+        {error && <p role="alert" style={{ color: 'var(--danger-ink)', margin: 0 }}>{error}</p>}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          {saved && <span style={{ alignSelf: 'center', color: 'var(--success)' }}>Kaydedildi</span>}
+          {saved && <span role="status" style={{ alignSelf: 'center', color: 'var(--soft)' }}>{saved}</span>}
           <button type="submit" className="btn-primary">Ayarları kaydet</button>
         </div>
       </form>
@@ -116,13 +124,13 @@ export function SettingsPage({ canAdmin }: { canAdmin: boolean }) {
       <section className="modern-table-card" style={{ padding: 18, marginTop: 16 }}>
         <h2 style={{ fontSize: 16, marginTop: 0 }}>Bulut</h2>
         {supabaseConfig.configured ? (
-          <p style={{ color: 'var(--soft)' }}>Supabase bağlı. Kurum verisi RLS ile ayrılır. Yerel dosya yine bu cihazda kalır; bulut danışanları ayrı şemadadır.</p>
+          <p style={{ color: 'var(--soft)' }}>Supabase bağlı. Klinik kayıtların kaynağı sunucudur; bu cihazdaki klinik veriler yalnızca önbellek ve gönderilmeyi bekleyen kuyruktur. Sunucu durumunu üstteki şeritten izleyin.</p>
         ) : (
           <p style={{ color: 'var(--soft)' }}>
             Supabase tanımlı değil — çalışma alanı çevrimdışı önceliklidir. Kurumsal kurulum için <code>.env</code> içine yalnızca anon anahtar yazılır; hizmet rolü tarayıcıya girmez. Şema <code>supabase/migrations</code> altındadır.
           </p>
         )}
-        {canAdmin && supabaseConfig.configured && <CloudAdminPanel />}
+        {canAdmin && supabaseConfig.configured && <CloudAdminPanel user={user} />}
       </section>
       {backupOpen && <DataManagementModal onClose={() => setBackupOpen(false)} />}
     </div>

@@ -994,3 +994,11 @@
     page-break-inside: avoid;
   }
 }
+
+/* PHASE-07 — klinik kayıt durumu + imza/kilit aksiyonları */
+.record-status { font-weight: 600; }
+.record-status-draft { background: #f1f5f9; color: #475569; }
+.record-status-signed { background: #eefbf3; color: #14603a; }
+.record-status-locked { background: #eef2ff; color: #3730a3; }
+.record-lock-actions { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.record-lock-error { color: var(--danger, #b91c1c); font-size: 12px; margin: 6px 0 0; }

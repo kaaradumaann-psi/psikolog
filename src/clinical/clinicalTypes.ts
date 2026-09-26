@@ -55,7 +55,21 @@ export type RiskLevel = 'none' | 'low' | 'moderate' | 'high';
 
 export type PaymentStatus = 'paid' | 'pending' | 'waived';
 
-export interface SoapSession {
+export type RecordStatus = 'draft' | 'signed' | 'locked';
+
+export interface ClinicalRecordMeta {
+  /** draft → signed → locked. Kilitli kayıt DB'de de değiştirilemez. */
+  status?: RecordStatus;
+  revision?: number;
+  amendmentOf?: string;
+  amendmentReason?: string;
+  signedAt?: string;
+  lockedAt?: string;
+  /** Revizyon zinciri: bu kaydı geçersiz kılan yeni sürümün kimliği. */
+  supersededBy?: string;
+}
+
+export interface SoapSession extends ClinicalRecordMeta {
   id: string;
   clientId: string;
   clientName: string;
@@ -73,6 +87,8 @@ export interface SoapSession {
   homework?: string;
   fee?: number;
   paymentStatus: PaymentStatus;
+  /** Randevu → seans zinciri (P0-4) */
+  appointmentId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -194,6 +210,13 @@ export interface ReportSection {
 
 export interface ClinicalReport {
   id: string;
+  status?: 'draft' | 'final';
+  revision?: number;
+  amendmentOf?: string;
+  amendmentReason?: string;
+  supersededBy?: string;
+  signedAt?: string;
+  lockedAt?: string;
   clientId?: string;
   clientName: string;
   clientGender: Gender;

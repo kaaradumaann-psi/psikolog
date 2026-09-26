@@ -13,8 +13,10 @@ import type {
   Scl90Result,
   ClinicalReport,
 } from './clinicalTypes';
-import { purgeClientPractice, recordAudit } from './practiceStore';
+import { getDocumentsByClient, getFormulations, getSafetyPlans, purgeClientPractice, recordAudit } from './practiceStore';
 import { MAX_CLIENTS, MAX_SESSIONS, reportStorageError } from './recordRules';
+import { cacheKey, cloudContext, queueWrite } from './cloud/sync';
+import type { ClinicalSnapshot } from './cloud/repository';
 
 const CLIENTS_KEY = 'psikolog_clients_v2';
 const SESSIONS_KEY = 'psikolog_sessions_v2';
@@ -50,7 +52,7 @@ export function subscribeClinicalStore(listener: StoreListener): () => void {
 
 function getLocal<T>(key: string, fallback: T): T {
   try {
-    const raw = localStorage.getItem(key);
+    const raw = localStorage.getItem(cacheKey(key));
     if (!raw) return fallback;
     return JSON.parse(raw) as T;
   } catch (e) {
@@ -61,7 +63,7 @@ function getLocal<T>(key: string, fallback: T): T {
 
 function setLocal<T>(key: string, value: T): void {
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    localStorage.setItem(cacheKey(key), JSON.stringify(value));
     notify();
   } catch (error) {
     reportStorageError();
@@ -124,11 +126,24 @@ export function saveClient(client: Client): void {
   } else {
     list.unshift({ ...client, fileNumber, email, createdAt: now, updatedAt: now });
   }
+  queueWrite({ entity: 'client', op: 'upsert', value: client });
   setLocal(CLIENTS_KEY, list);
   recordAudit({ action: 'save', entity: 'client', entityId: client.id, summary: `${client.firstName} ${client.lastName}` });
 }
 
 export function deleteClient(id: string): void {
+  // DB cascade is rejected by the immutable-record triggers if ANY historical
+  // child is locked. Check before touching even the local cache.
+  if (getSoapSessions().some((item) => item.clientId === id && item.status === 'locked') ||
+      getClinicalReports().some((item) => item.clientId === id && !!item.lockedAt) ||
+      getFormulations().some((item) => item.clientId === id && item.status === 'locked') ||
+      getSafetyPlans().some((item) => item.clientId === id && item.status === 'locked')) {
+    throw new Error('Kilitli klinik kayıtlar bulunan danışan dosyası silinemez. Arşivlemeyi tercih edin.');
+  }
+  if (cloudContext() && getDocumentsByClient(id).length) {
+    throw new Error('Danışanın belgeleri varken dosya silinemez. Belgeleri önce silin ve sunucu eşitlemesini bekleyin.');
+  }
+  queueWrite({ entity: 'client', op: 'delete', value: id });
   setLocal(CLIENTS_KEY, getClients().filter(c => c.id !== id));
   setLocal(SESSIONS_KEY, getSoapSessions().filter(s => s.clientId !== id));
   setLocal(APPOINTMENTS_KEY, getAppointments().filter(a => a.clientId !== id));
@@ -158,18 +173,195 @@ export function getSessionsByClientId(clientId: string): SoapSession[] {
 export function saveSoapSession(session: SoapSession): void {
   const list = getSoapSessions();
   const idx = list.findIndex(s => s.id === session.id);
+  const existing = idx >= 0 ? list[idx] : undefined;
+  // Cloud UPDATE intentionally never moves a record to another client. Reject
+  // the same move locally, otherwise the UI would show a different file from
+  // the server after an apparently successful save.
+  if (existing && existing.clientId !== session.clientId) {
+    throw new Error('Seans notunun danışan dosyası değiştirilemez.');
+  }
+  if (existing?.status === 'locked') {
+    throw new Error('Kilitli seans notu değiştirilemez. Düzeltme için yeni revizyon oluşturun.');
+  }
+  if (existing?.status === 'signed' && session.status !== 'signed') {
+    throw new Error('İmzalı kayıt taslağa çevrilemez.');
+  }
+  if (existing?.supersededBy) {
+    throw new Error('Bu seans notu yeni bir revizyonla değiştirildi; eski sürüm düzenlenemez.');
+  }
   const now = new Date().toISOString();
   if (idx >= 0) {
     list[idx] = { ...session, updatedAt: now };
   } else {
     list.unshift({ ...session, createdAt: now, updatedAt: now });
   }
+  queueWrite({ entity: 'session', op: 'upsert', value: session });
   setLocal(SESSIONS_KEY, list);
 }
 
 export function deleteSoapSession(id: string): void {
+  const current = getSoapSessions().find(s => s.id === id);
+  if (current?.status === 'locked') {
+    throw new Error('Kilitli seans notu silinemez. Düzeltme için yeni revizyon oluşturun.');
+  }
+  if (current?.appointmentId || current?.amendmentOf) {
+    throw new Error('Randevuya veya revizyona bağlı seans notu silinemez; dosya zinciri korunur.');
+  }
+  if (current?.supersededBy) {
+    throw new Error('Revizyonla değiştirilmiş eski seans sürümü silinemez.');
+  }
   const list = getSoapSessions().filter(s => s.id !== id);
+  queueWrite({ entity: 'session', op: 'delete', value: id });
   setLocal(SESSIONS_KEY, list);
+}
+
+/**
+ * İmzala: DRAFT → SIGNED. Kayıt kilitlenene kadar düzenlenebilir kalır.
+ * Kilitli kayıt DB trigger'ı ile korunur; imza yerelde de görünür.
+ */
+export function signSoapSession(id: string): SoapSession | null {
+  const list = getSoapSessions();
+  const index = list.findIndex(session => session.id === id);
+  const current = list[index];
+  if (!current) return null;
+  if (current.status === 'locked') throw new Error('Kilitli seans notu imzalanamaz.');
+  const next: SoapSession = { ...current, status: 'signed', signedAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  list[index] = next;
+  queueWrite({ entity: 'sign', op: 'sign', value: { table: 'sessions', id } });
+  setLocal(SESSIONS_KEY, list);
+  recordAudit({ action: 'save', entity: 'session', entityId: id, summary: 'Seans notu imzalandı' });
+  return next;
+}
+
+/** İmzala ve kilitle: SIGNED → LOCKED. Bundan sonra yalnız revizyon eklenebilir. */
+export function lockSoapSession(id: string): SoapSession | null {
+  const list = getSoapSessions();
+  const index = list.findIndex(session => session.id === id);
+  const current = list[index];
+  if (!current) return null;
+  const now = new Date().toISOString();
+  const next: SoapSession = {
+    ...current,
+    status: 'locked',
+    signedAt: current.signedAt ?? now,
+    lockedAt: now,
+    updatedAt: now,
+  };
+  list[index] = next;
+  queueWrite({ entity: 'lock', op: 'lock', value: { table: 'sessions', id, signedAt: next.signedAt } });
+  setLocal(SESSIONS_KEY, list);
+  recordAudit({ action: 'save', entity: 'session', entityId: id, summary: 'Seans notu imzalandı ve kilitlendi' });
+  return next;
+}
+
+/* ------------------------------------------------------------------ */
+/*  P0-4 — Randevu → Seans → Not zinciri                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Revizyon: kilitli seans notunun içeriği değiştirilmez; yeni taslak sürüm
+ * açılır ve eski sürüm supersededBy ile işaretlenir (DB trigger'ı da aynısını yapar).
+ */
+export function createSessionRevision(sessionId: string, reason: string): SoapSession | null {
+  const list = getSoapSessions();
+  const index = list.findIndex(session => session.id === sessionId);
+  const current = list[index];
+  if (!current) return null;
+  if (current.status !== 'locked') throw new Error('Revizyon yalnızca kilitli seans notları için oluşturulur.');
+  const trimmed = reason.trim();
+  if (trimmed.length < 3) throw new Error('Revizyon nedeni en az 3 karakter olmalıdır.');
+
+  const now = new Date().toISOString();
+  const revision: SoapSession = {
+    ...current,
+    id: `sess_rev_${current.id}_${Date.now().toString(36)}`,
+    amendmentOf: current.id,
+    amendmentReason: trimmed,
+    // The source note keeps its appointment link. A second active row with
+    // the same appointment_id would violate the DB unique index before the
+    // AFTER INSERT superseding trigger can run.
+    appointmentId: undefined,
+    revision: (current.revision ?? 1) + 1,
+    status: 'draft',
+    signedAt: undefined,
+    lockedAt: undefined,
+    supersededBy: undefined,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  list[index] = { ...current, supersededBy: revision.id };
+  list.unshift(revision);
+  queueWrite({ entity: 'session', op: 'upsert', value: revision });
+  setLocal(SESSIONS_KEY, list);
+  recordAudit({ action: 'save', entity: 'session', entityId: sessionId, summary: `Seans revizyonu oluşturuldu (${trimmed.slice(0, 80)})` });
+  return revision;
+}
+
+/**
+ * Kilitli/superseded kayıt korunur: düzenleme doğrudan yapılamaz.
+ * (Aynı kural DB'de trigger ile de uygulanır.)
+ */
+export function canEditSession(session: SoapSession): boolean {
+  return session.status !== 'locked' && !session.supersededBy;
+}
+
+/** Randevuya bağlı seansı bulur: aynı randevudan ikinci not oluşmaz. */
+export function findSessionByAppointmentId(appointmentId: string): SoapSession | null {
+  return getSoapSessions().find(session => session.appointmentId === appointmentId) ?? null;
+}
+
+/** Deterministik kimlik — çift tıklama/yeniden deneme kopya üretmez. */
+export function sessionIdForAppointment(appointmentId: string): string {
+  return `sess_appt_${appointmentId}`;
+}
+
+/**
+ * "Görüşmeyi tamamla": randevuyu tamamlar ve danışan, seans no, tarih/saat,
+ * ücret bilgileri otomatik doldurulmuş taslak SOAP notunu oluşturur.
+ * Ikinci çağrıda mevcut seansı döner (idempotent).
+ */
+export function completeAppointmentWithSession(appointment: Appointment): SoapSession {
+  const existing = findSessionByAppointmentId(appointment.id);
+  if (existing) {
+    if (appointment.status !== 'completed') saveAppointment({ ...appointment, status: 'completed' });
+    return existing;
+  }
+
+  const client = getClientById(appointment.clientId);
+  const previous = getSessionsByClientId(appointment.clientId);
+  const sessionNumber = previous.reduce((max, item) => Math.max(max, item.sessionNumber || 0), 0) + 1;
+  const now = new Date().toISOString();
+
+  const session: SoapSession = {
+    id: sessionIdForAppointment(appointment.id),
+    appointmentId: appointment.id,
+    clientId: appointment.clientId,
+    clientName: client ? `${client.firstName} ${client.lastName}` : appointment.clientName,
+    sessionNumber,
+    date: appointment.date,
+    startTime: appointment.time,
+    durationMinutes: appointment.durationMinutes,
+    sessionType: appointment.sessionType,
+    subjective: '',
+    objective: '',
+    assessment: '',
+    plan: '',
+    riskLevel: 'none',
+    riskNotes: '',
+    homework: '',
+    fee: appointment.fee ?? 0,
+    paymentStatus: appointment.paymentStatus ?? 'pending',
+    status: 'draft',
+    revision: 1,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  saveSoapSession(session);
+  if (appointment.status !== 'completed') saveAppointment({ ...appointment, status: 'completed' });
+  recordAudit({ action: 'save', entity: 'session', entityId: session.id, summary: `Randevudan seans oluşturuldu (#${sessionNumber})` });
+  return session;
 }
 
 /* ------------------------------------------------------------------ */
@@ -184,16 +376,24 @@ export function getAppointments(): Appointment[] {
 export function saveAppointment(appointment: Appointment): void {
   const list = getAppointments();
   const idx = list.findIndex(a => a.id === appointment.id);
+  if (idx >= 0 && list[idx]?.clientId !== appointment.clientId) {
+    throw new Error('Randevunun danışan dosyası değiştirilemez.');
+  }
   if (idx >= 0) {
     list[idx] = appointment;
   } else {
     list.push(appointment);
   }
+  queueWrite({ entity: 'appointment', op: 'upsert', value: appointment });
   setLocal(APPOINTMENTS_KEY, list);
 }
 
 export function deleteAppointment(id: string): void {
+  if (getSoapSessions().some((session) => session.appointmentId === id)) {
+    throw new Error('Seans notuna bağlı randevu silinemez; görüşme zinciri korunur.');
+  }
   const list = getAppointments().filter(a => a.id !== id);
+  queueWrite({ entity: 'appointment', op: 'delete', value: id });
   setLocal(APPOINTMENTS_KEY, list);
 }
 
@@ -207,6 +407,9 @@ export function getBeckDepressionTests(): BeckDepressionResult[] {
 }
 
 export function saveBeckDepressionTest(test: BeckDepressionResult): void {
+  if (cloudContext() && (!test.clientId || !getClientById(test.clientId))) {
+    throw new Error('Buluta kaydetmek için kayıtlı danışan dosyası seçin.');
+  }
   const list = getBeckDepressionTests();
   const idx = list.findIndex(t => t.id === test.id);
   if (idx >= 0) {
@@ -214,11 +417,13 @@ export function saveBeckDepressionTest(test: BeckDepressionResult): void {
   } else {
     list.unshift(test);
   }
+  queueWrite({ entity: 'bdi', op: 'upsert', value: test });
   setLocal(BDI_KEY, list);
 }
 
 export function deleteBeckDepressionTest(id: string): void {
   const list = getBeckDepressionTests().filter(t => t.id !== id);
+  queueWrite({ entity: 'bdi', op: 'delete', value: id });
   setLocal(BDI_KEY, list);
 }
 
@@ -232,6 +437,9 @@ export function getBeckAnxietyTests(): BeckAnxietyResult[] {
 }
 
 export function saveBeckAnxietyTest(test: BeckAnxietyResult): void {
+  if (cloudContext() && (!test.clientId || !getClientById(test.clientId))) {
+    throw new Error('Buluta kaydetmek için kayıtlı danışan dosyası seçin.');
+  }
   const list = getBeckAnxietyTests();
   const idx = list.findIndex(t => t.id === test.id);
   if (idx >= 0) {
@@ -239,11 +447,13 @@ export function saveBeckAnxietyTest(test: BeckAnxietyResult): void {
   } else {
     list.unshift(test);
   }
+  queueWrite({ entity: 'bai', op: 'upsert', value: test });
   setLocal(BAI_KEY, list);
 }
 
 export function deleteBeckAnxietyTest(id: string): void {
   const list = getBeckAnxietyTests().filter(t => t.id !== id);
+  queueWrite({ entity: 'bai', op: 'delete', value: id });
   setLocal(BAI_KEY, list);
 }
 
@@ -257,6 +467,9 @@ export function getScl90Tests(): Scl90Result[] {
 }
 
 export function saveScl90Test(test: Scl90Result): void {
+  if (cloudContext() && (!test.clientId || !getClientById(test.clientId))) {
+    throw new Error('Buluta kaydetmek için kayıtlı danışan dosyası seçin.');
+  }
   const list = getScl90Tests();
   const idx = list.findIndex(t => t.id === test.id);
   if (idx >= 0) {
@@ -264,11 +477,13 @@ export function saveScl90Test(test: Scl90Result): void {
   } else {
     list.unshift(test);
   }
+  queueWrite({ entity: 'scl90', op: 'upsert', value: test });
   setLocal(SCL90_KEY, list);
 }
 
 export function deleteScl90Test(id: string): void {
   const list = getScl90Tests().filter(t => t.id !== id);
+  queueWrite({ entity: 'scl90', op: 'delete', value: id });
   setLocal(SCL90_KEY, list);
 }
 
@@ -284,18 +499,109 @@ export function getClinicalReports(): ClinicalReport[] {
 export function saveClinicalReport(report: ClinicalReport): void {
   const list = getClinicalReports();
   const idx = list.findIndex(r => r.id === report.id);
+  const existing = idx >= 0 ? list[idx] : undefined;
+  if (cloudContext() && (!report.clientId || !getClientById(report.clientId))) {
+    throw new Error('Buluta kaydetmek için kayıtlı danışan dosyası seçin.');
+  }
+  if (existing?.clientId !== undefined && existing.clientId !== report.clientId) {
+    throw new Error('Raporun danışan dosyası değiştirilemez.');
+  }
+  if (existing?.lockedAt) {
+    throw new Error('Kilitli rapor değiştirilemez. Düzeltme için yeni revizyon oluşturun.');
+  }
+  if (existing?.supersededBy) throw new Error('Eski rapor sürümü düzenlenemez.');
+  if (existing?.signedAt && report.status !== 'final') throw new Error('İmzalı rapor taslağa çevrilemez.');
   const now = new Date().toISOString();
   if (idx >= 0) {
     list[idx] = { ...report, updatedAt: now };
   } else {
     list.unshift({ ...report, createdAt: now, updatedAt: now });
   }
+  queueWrite({ entity: 'report', op: 'upsert', value: report });
   setLocal(REPORTS_KEY, list);
 }
 
 export function deleteClinicalReport(id: string): void {
+  const current = getClinicalReports().find(r => r.id === id);
+  if (current?.lockedAt) {
+    throw new Error('Kilitli rapor silinemez. Düzeltme için yeni revizyon oluşturun.');
+  }
+  if (current?.amendmentOf || current?.supersededBy) {
+    throw new Error('Revizyon zincirindeki rapor silinemez; dosya geçmişi korunur.');
+  }
   const list = getClinicalReports().filter(r => r.id !== id);
+  queueWrite({ entity: 'report', op: 'delete', value: id });
   setLocal(REPORTS_KEY, list);
+}
+
+/* ------------------------------------------------------------------ */
+/*  P0-5 — RAPOR İMZA / KİLİT / REVİZYON                               */
+/* ------------------------------------------------------------------ */
+
+function updateReport(id: string, patch: Partial<ClinicalReport>, summary: string): ClinicalReport | null {
+  const list = getClinicalReports();
+  const index = list.findIndex(r => r.id === id);
+  const current = list[index];
+  if (!current) return null;
+  const next: ClinicalReport = { ...current, ...patch, updatedAt: new Date().toISOString() };
+  list[index] = next;
+  setLocal(REPORTS_KEY, list);
+  recordAudit({ action: 'save', entity: 'report', entityId: id, summary });
+  return next;
+}
+
+/** İmzala: taslak rapor imzalanır (durum 'final'). Kilitlenene kadar düzeltilebilir. */
+export function signClinicalReport(id: string): ClinicalReport | null {
+  const current = getClinicalReports().find(r => r.id === id);
+  if (!current) return null;
+  if (current.lockedAt) throw new Error('Kilitli rapor yeniden imzalanamaz.');
+  const now = new Date().toISOString();
+  queueWrite({ entity: 'sign', op: 'sign', value: { table: 'reports', id } });
+  return updateReport(id, { status: 'final', signedAt: current.signedAt ?? now, revision: current.revision ?? 1 }, 'Rapor imzalandı');
+}
+
+/** İmzala ve kilitle: rapor değiştirilemez hale gelir; düzeltme yeni revizyonla yapılır. */
+export function lockClinicalReport(id: string): ClinicalReport | null {
+  const current = getClinicalReports().find(r => r.id === id);
+  if (!current) return null;
+  const now = new Date().toISOString();
+  queueWrite({ entity: 'lock', op: 'lock', value: { table: 'reports', id, signedAt: current.signedAt } });
+  return updateReport(id, {
+    status: 'final',
+    signedAt: current.signedAt ?? now,
+    lockedAt: current.lockedAt ?? now,
+  }, 'Rapor imzalandı ve kilitlendi');
+}
+
+/** Revizyon: kilitli raporun içeriği değişmez; yeni taslak sürüm oluşturulur. */
+export function createClinicalReportRevision(id: string, reason: string): ClinicalReport | null {
+  const list = getClinicalReports();
+  const current = list.find(r => r.id === id);
+  if (!current) return null;
+  if (!current.lockedAt) throw new Error('Revizyon yalnızca kilitli raporlar için oluşturulur.');
+  if (current.supersededBy) throw new Error('Bu raporun yeni bir revizyonu zaten var.');
+  const trimmed = reason.trim();
+  if (trimmed.length < 3) throw new Error('Revizyon nedeni en az 3 karakter olmalıdır.');
+  const now = new Date().toISOString();
+  const next: ClinicalReport = {
+    ...current,
+    id: `rep_rev_${current.id}_${Date.now().toString(36)}`,
+    status: 'draft',
+    revision: (current.revision ?? 1) + 1,
+    amendmentOf: current.id,
+    amendmentReason: trimmed,
+    supersededBy: undefined,
+    signedAt: undefined,
+    lockedAt: undefined,
+    createdAt: now,
+    updatedAt: now,
+  };
+  const oldIndex = list.findIndex((item) => item.id === current.id);
+  list[oldIndex] = { ...current, supersededBy: next.id };
+  queueWrite({ entity: 'report', op: 'upsert', value: next });
+  setLocal(REPORTS_KEY, [next, ...list]);
+  recordAudit({ action: 'save', entity: 'report', entityId: id, summary: `Rapor revizyonu oluşturuldu (${trimmed.slice(0, 80)})` });
+  return next;
 }
 
 /* ------------------------------------------------------------------ */
@@ -340,6 +646,11 @@ function backupArray<T extends { id?: string }>(value: unknown, label: string, m
 }
 
 export function importClinicalBackup(bundle: ClinicalBackupBundle): void {
+  if (cloudContext()) {
+    throw new Error(
+      'Bulut modunda yedek geri yükleme kapalıdır: kayıtlar sunucudan okunur. Cihaz verisini değiştirmek için önce bulut yapılandırmasını kaldırın.',
+    );
+  }
   if (!bundle || bundle.version !== '2.0' || !Array.isArray(bundle.clients)) {
     throw new Error('Geçersiz yedek. Yalnızca bu uygulamanın 2.0 dosyası yüklenir.');
   }
@@ -378,4 +689,21 @@ export function clearAllClinicalData(): void {
   purgeClientPractice('*');
   localStorage.setItem(PURGE_FLAG, '1');
   recordAudit({ action: 'delete', entity: 'backup', entityId: 'clinical', summary: 'Yerel klinik kayıt temizlendi' });
+}
+
+
+/* ==========================================================================
+   PHASE-07 — Bulut anlık görüntüsünü yerel cache'e uygulama
+   Sunucu tek doğruluk kaynağıdır; bu fonksiyon yalnızca cache'i tazeler.
+   ========================================================================== */
+export function applyClinicalSnapshot(snapshot: ClinicalSnapshot): void {
+  initialized = true;
+  setLocal(CLIENTS_KEY, snapshot.clients);
+  setLocal(SESSIONS_KEY, snapshot.sessions);
+  setLocal(APPOINTMENTS_KEY, snapshot.appointments);
+  setLocal(BDI_KEY, snapshot.bdi);
+  setLocal(BAI_KEY, snapshot.bai);
+  setLocal(SCL90_KEY, snapshot.scl90);
+  setLocal(REPORTS_KEY, snapshot.reports);
+  localStorage.setItem(PURGE_FLAG, '1');
 }

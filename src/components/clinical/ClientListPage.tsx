@@ -7,6 +7,7 @@ import {
   subscribeClinicalStore,
 } from '../../clinical/clinicalStore';
 import { ClinicalDialog } from './ClinicalDialog';
+import { ConfirmDialog } from '../ConfirmDialog';
 import { Icon } from '../Icon';
 import { ageFromBirthDate, isValidTc, nextFileNumber, normalizeTc } from '../../clinical/recordRules';
 import { navigate } from '../../router';
@@ -17,6 +18,8 @@ export function ClientListPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   // Form State
   const [formData, setFormData] = useState<Partial<Client>>({
@@ -125,8 +128,19 @@ export function ClientListPage() {
 
   function handleDelete(id: string, name: string, e: React.MouseEvent) {
     e.stopPropagation();
-    if (confirm(`${name} isimli danışan kaydını ve tüm klinik dosyasını silmek istediğinize emin misiniz?`)) {
-      deleteClient(id);
+    setActionError(null);
+    setPendingDelete({ id, name });
+  }
+
+  function confirmDeleteClient() {
+    if (!pendingDelete) return;
+    try {
+      deleteClient(pendingDelete.id);
+      setActionError(null);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Danışan dosyası silinemedi.');
+    } finally {
+      setPendingDelete(null);
     }
   }
 
@@ -235,6 +249,8 @@ export function ClientListPage() {
           </button>
         </div>
       </div>
+
+      {actionError && <p className="record-lock-error" role="alert">{actionError}</p>}
 
       {/* İstatistikler */}
       <div className="stats-grid-4">
@@ -789,6 +805,15 @@ export function ClientListPage() {
               </div>
             </form>
         </ClinicalDialog>
+      )}
+      {pendingDelete && (
+        <ConfirmDialog
+          title="Danışan dosyasını sil"
+          description={`${pendingDelete.name} dosyası ve bağlı klinik kayıtları silinecek. Kilitli kayıtlar varsa işlem engellenir. Bu işlem geri alınamaz.`}
+          confirmLabel="Dosyayı sil"
+          onConfirm={confirmDeleteClient}
+          onCancel={() => setPendingDelete(null)}
+        />
       )}
     </div>
   );

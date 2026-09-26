@@ -1,5 +1,10 @@
 import { defineConfig, devices } from '@playwright/test';
 
+// E2E_BASE_URL verilirse dev sunucusu başlatılmaz; testler o adrese (ör. production
+// preview :4173 veya dağıtılmış production URL) karşı koşar. Bu, PHASE 7/P0-8'in
+// "PRODUCTION bundle üzerinden doğrulama" adımını mümkün kılar.
+const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:5173';
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -8,7 +13,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: 'html',
   use: {
-    baseURL: 'http://localhost:5173',
+    baseURL,
     trace: 'on-first-retry',
   },
   projects: [
@@ -29,9 +34,11 @@ export default defineConfig({
       use: { ...devices['Pixel 5'] },
     },
   ],
-  webServer: {
-    command: 'npm run dev',
-    url: 'http://localhost:5173',
-    reuseExistingServer: !process.env.CI,
-  },
+  webServer: process.env.E2E_BASE_URL
+    ? undefined
+    : {
+        command: 'npm run dev',
+        url: 'http://localhost:5173',
+        reuseExistingServer: !process.env.CI,
+      },
 });

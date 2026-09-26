@@ -9,6 +9,7 @@ import {
 import { getClients } from '../../clinical/clinicalStore';
 import { saveScreening } from '../../clinical/practiceStore';
 import { clinicToday } from '../../clinical/recordRules';
+import { cloudContext } from '../../clinical/cloud/sync';
 import { asCompleteAnswers, emptyAnswers } from '../../clinical/scaleIntake';
 import { Icon } from '../Icon';
 import { navigate } from '../../router';
@@ -24,6 +25,7 @@ export function RapidScreeningPage() {
   const [gadAnswers, setGadAnswers] = useState(() => emptyAnswers(7));
   const [phqAnswers, setPhqAnswers] = useState(() => emptyAnswers(9));
   const [toast, setToast] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   function handleClientSelect(id: string) {
     setSelectedClientId(id);
@@ -54,22 +56,23 @@ export function RapidScreeningPage() {
   }, [completePhq, clientName, selectedClientId, testDate]);
 
   function handleSave() {
-    if (!clientName.trim()) {
-      alert('Danışan adı gerekli. Varsayılan ad atanmaz.');
+    setSaveError(null);
+    setToast(null);
+    const cloud = Boolean(cloudContext());
+    if (cloud && !clients.some((client) => client.id === selectedClientId)) {
+      setSaveError('Bulutta kaydetmek için kayıtlı danışan dosyası seçin.');
       return;
     }
+    if (!clientName.trim()) { setSaveError('Danışan adı gerekli.'); return; }
     const result = activeTool === 'gad7' ? liveGadResult : livePhqResult;
-    if (!result) {
-      alert('İşaretlenmeyen madde var. Boş madde 0 sayılmaz.');
-      return;
+    if (!result) { setSaveError('İşaretlenmeyen madde var. Boş madde 0 sayılmaz.'); return; }
+    try {
+      saveScreening({ ...result, clientName: clientName.trim() });
+      setToast(cloud ? 'Sonuç sunucuya gönderiliyor; durumu üstteki şeritten kontrol edin.' : 'Sonuç bu cihaza kaydedildi.');
+      setTimeout(() => setToast(null), 3000);
+    } catch {
+      setSaveError('Sonuç saklanamadı. Alan açıp tekrar deneyin; kayıt sunucuya gönderilmedi.');
     }
-    saveScreening({ ...result, clientName: clientName.trim() });
-    setToast(
-      activeTool === 'gad7'
-        ? 'GAD-7 tarama sonucu kaydedildi'
-        : 'PHQ-9 tarama sonucu kaydedildi'
-    );
-    setTimeout(() => setToast(null), 3000);
   }
 
   return (
@@ -106,8 +109,9 @@ export function RapidScreeningPage() {
         </div>
       </div>
 
+      {saveError && <p className="record-lock-error" role="alert">{saveError}</p>}
       {toast && (
-        <div className="modern-table-card" style={{ background: 'var(--success-tint)', border: '1px solid var(--success-border)', color: 'var(--success)', padding: '12px 16px', marginBottom: 20 }}>
+        <div className="modern-table-card" role="status" style={{ background: 'var(--success-tint)', border: '1px solid var(--success-border)', color: 'var(--success)', padding: '12px 16px', marginBottom: 20 }}>
           {toast}
         </div>
       )}
@@ -142,7 +146,7 @@ export function RapidScreeningPage() {
               value={selectedClientId}
               onChange={e => handleClientSelect(e.target.value)}
             >
-              <option value="">Doğrudan İsim Gir / Seçilmedi</option>
+              <option value="">{cloudContext() ? 'Danışan dosyası seçin' : 'Doğrudan İsim Gir / Seçilmedi'}</option>
               {clients.map(c => (
                 <option key={c.id} value={c.id}>
                   {c.firstName} {c.lastName} ({c.fileNumber})

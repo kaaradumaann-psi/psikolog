@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createElement } from 'react';
 import { renderToString } from 'react-dom/server';
+import { readFileSync } from 'node:fs';
 import { createServer } from 'vite';
 
 test('workspace navigation and empty states render on the main routes', async () => {
@@ -55,4 +56,12 @@ test('workspace navigation and empty states render on the main routes', async ()
     await vite.close();
     Object.assign(globalThis, { window: previousWindow, localStorage: previousStorage });
   }
+});
+
+test('bulut anlık görüntüsü uygulanmadan veya yükleme hatasında klinik içerik render edilmez', () => {
+  const source = readFileSync('src/App.tsx', 'utf8');
+  assert.match(source, /const gate = cloudGateStatus\(user\.id, localMode, syncState\)/);
+  assert.match(source, /data-cloud-gate=\{gate\}/);
+  assert.match(source, /Klinik kayıtlar yükleniyor/);
+  assert.match(source, /Klinik kayıtlar yüklenemedi/);
 });

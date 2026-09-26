@@ -1,8 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
 import type { SoapSession, Client, RiskLevel, SessionType, PaymentStatus } from '../../clinical/clinicalTypes';
 import {
+  createSessionRevision,
   getSoapSessions,
+  lockSoapSession,
   saveSoapSession,
+  signSoapSession,
   deleteSoapSession,
   getClients,
   subscribeClinicalStore,
@@ -10,6 +13,8 @@ import {
 import { getSettings } from '../../clinical/practiceStore';
 import { clinicToday } from '../../clinical/recordRules';
 import { ClinicalDialog } from './ClinicalDialog';
+import { ConfirmDialog } from '../ConfirmDialog';
+import { RecordLockActions, RecordStatusBadge } from './RecordLockActions';
 import { Icon } from '../Icon';
 import { SessionSummaryButton } from '../practice/SessionSummaryButton';
 import { navigate } from '../../router';
@@ -23,6 +28,9 @@ export function SoapSessionsPage() {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingSession, setEditingSession] = useState<SoapSession | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<SoapSession | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const [form, setForm] = useState<Partial<SoapSession>>({
     clientId: '',
@@ -71,6 +79,7 @@ export function SoapSessionsPage() {
   }, [sessions, search, clientFilter, riskFilter]);
 
   function openNewModal() {
+    setSaveError(null);
     setEditingSession(null);
     setForm({
       clientId: '',
@@ -94,21 +103,35 @@ export function SoapSessionsPage() {
   }
 
   function openEditModal(s: SoapSession) {
+    if (s.status === 'locked') return;
+    setSaveError(null);
     setEditingSession(s);
     setForm({ ...s });
     setModalOpen(true);
   }
 
-  function handleDelete(id: string) {
-    if (confirm('Bu seans notunu silmek istediğinize emin misiniz?')) {
-      deleteSoapSession(id);
+  function handleDelete(session: SoapSession) {
+    setPendingDelete(session);
+  }
+
+  function confirmDeleteSession() {
+    const session = pendingDelete;
+    if (!session) return;
+    try {
+      deleteSoapSession(session.id);
+      setActionError(null);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Seans notu silinemedi.');
+    } finally {
+      setPendingDelete(null);
     }
   }
 
   function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.clientId) {
-      alert('Lütfen bir danışan seçiniz.');
+    setSaveError(null);
+    if (!form.clientId || !clients.some((client) => client.id === form.clientId)) {
+      setSaveError('Kayıtlı bir danışan seçin.');
       return;
     }
 
@@ -133,12 +156,22 @@ export function SoapSessionsPage() {
       homework: form.homework?.trim() || '',
       fee: Number(form.fee) || 0,
       paymentStatus: (form.paymentStatus as PaymentStatus) || 'paid',
+      appointmentId: editingSession?.appointmentId,
+      status: editingSession?.status ?? 'draft',
+      signedAt: editingSession?.signedAt,
+      revision: editingSession?.revision,
+      amendmentOf: editingSession?.amendmentOf,
+      amendmentReason: editingSession?.amendmentReason,
       createdAt: editingSession ? editingSession.createdAt : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
 
-    saveSoapSession(sessionToSave);
-    setModalOpen(false);
+    try {
+      saveSoapSession(sessionToSave);
+      setModalOpen(false);
+    } catch {
+      setSaveError('Seans notu saklanamadı. Verileri silmeyin; senkronizasyon durumunu kontrol edip yeniden deneyin.');
+    }
   }
 
   return (
@@ -161,6 +194,8 @@ export function SoapSessionsPage() {
           </button>
         </div>
       </div>
+
+      {actionError && <p className="record-lock-error" role="alert">{actionError}</p>}
 
       {/* Arama & Filtreleme */}
       <div className="search-filter-bar">
@@ -224,7 +259,8 @@ export function SoapSessionsPage() {
                     </div>
                   </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <RecordStatusBadge status={s.status} revision={s.revision} />
                   <span className={`badge badge-risk-${s.riskLevel}`}>
                     Risk: {s.riskLevel === 'none' ? 'Yok' : s.riskLevel === 'low' ? 'Düşük' : s.riskLevel === 'moderate' ? 'Orta' : 'Yüksek!'}
                   </span>
@@ -237,17 +273,28 @@ export function SoapSessionsPage() {
                     <Icon name="user" size={14} />
                     <span>Dosya</span>
                   </button>
-                  <button type="button" className="btn-secondary btn-sm" onClick={() => openEditModal(s)}>
-                    <Icon name="edit" size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-secondary btn-sm"
-                    style={{ color: 'var(--danger)' }}
-                    onClick={() => handleDelete(s.id)}
-                  >
-                    <Icon name="trash" size={14} />
-                  </button>
+                  {s.status !== 'locked' && (
+                    <button type="button" className="btn-secondary btn-sm" title="Seans notunu düzenle" onClick={() => openEditModal(s)}>
+                      <Icon name="edit" size={14} />
+                    </button>
+                  )}
+                  {s.status !== 'locked' && !s.appointmentId && !s.amendmentOf && !s.supersededBy && (
+                    <button
+                      type="button"
+                      className="btn-secondary btn-sm"
+                      style={{ color: 'var(--danger)' }}
+                      title="Seans notunu sil"
+                      onClick={() => handleDelete(s)}
+                    >
+                      <Icon name="trash" size={14} />
+                    </button>
+                  )}
+                  <RecordLockActions
+                    status={s.status}
+                    onSign={() => signSoapSession(s.id)}
+                    onLock={() => lockSoapSession(s.id)}
+                    onRevise={reason => createSessionRevision(s.id, reason)}
+                  />
                 </div>
               </div>
 
@@ -307,11 +354,13 @@ export function SoapSessionsPage() {
             </div>
             <form onSubmit={handleSave}>
               <div className="clinical-modal-body">
+                {saveError && <p className="record-lock-error" role="alert">{saveError}</p>}
                 <div className="form-row-2">
                   <div className="form-group">
                     <label>Danışan *</label>
                     <select
                       value={form.clientId || ''}
+                      disabled={Boolean(editingSession)}
                       onChange={e => {
                         const cl = clients.find(c => c.id === e.target.value);
                         const prior = sessions.filter((session) => session.clientId === e.target.value);
@@ -466,6 +515,16 @@ export function SoapSessionsPage() {
               </div>
             </form>
         </ClinicalDialog>
+      )}
+
+      {pendingDelete && (
+        <ConfirmDialog
+          title="Seans notunu sil"
+          description={`${pendingDelete.clientName} · #${pendingDelete.sessionNumber} · ${pendingDelete.date} seans notu silinecek. Bu işlem geri alınamaz.`}
+          confirmLabel="Seans notunu sil"
+          onConfirm={confirmDeleteSession}
+          onCancel={() => setPendingDelete(null)}
+        />
       )}
     </div>
   );
